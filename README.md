@@ -4,6 +4,10 @@
 
 Client implementations that interact with the Stability Generator API
 
+## Installation
+
+`pip install stability-sdk`
+
 # Python client
 
 `client.py` is both a command line client and an API class that wraps the gRPC based API. To try the client:
@@ -19,7 +23,11 @@ Then to invoke:
 
 It will generate and put PNGs in your current directory.
 
-## Usage
+## SDK Usage
+
+See usage demo notebooks in ./nbs
+
+## Command line usage
 ```
 usage: client.py [-h] [--height HEIGHT] [--width WIDTH]
                  [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS]
