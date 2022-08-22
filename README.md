@@ -6,6 +6,10 @@ Client implementations that interact with the Stability Generator API
 
 ## Installation
 
+First, instal libmagic using the method appropriate to your OS: https://github.com/ahupp/python-magic#installation
+
+Then just install the PyPI package via:
+
 `pip install stability-sdk`
 
 # Python client
@@ -16,7 +20,7 @@ Client implementations that interact with the Stability Generator API
 * Set up in venv dependencies: `pyenv/bin/pip3 install -r requirements.txt`
 * `pyenv/bin/enable` to use the venv.
 * Set the `STABILITY_HOST` environment variable. This is by default set to the production endpoint `grpc.stability.ai:443`.
-* Set the `API_KEY` environment variable.
+* Set the `STABILITY_KEY` environment variable.
 
 Then to invoke:
 * `python3 client.py -W 512 -H 512 "A stunning house."`
@@ -58,4 +62,5 @@ optional arguments:
   --num_samples NUM_SAMPLES, -n NUM_SAMPLES
                         number of samples to generate
   --show                open artifacts using PIL
+  --engine, -e          engine to use for inference
 ```

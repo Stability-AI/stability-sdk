@@ -5,9 +5,9 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.0.1',
-    author='stability.ai',
-    author_email='api@stability.ai',
+    version='0.1.0',
+    author='Wes Brown',
+    author_email='wesbrown18@gmail.com',
     maintainer='David Marx',
     maintainer_email='david@stability.ai',
     url='https://beta.dreamstudio.ai/',
@@ -22,6 +22,7 @@ setup(
         'grpcio',
         'grpcio-tools',
         'python-dotenv',
+        'python-magic',
     ],
     packages=find_packages(
         where='src',
@@ -50,5 +51,5 @@ setup(
         'Topic :: Scientific/Engineering :: Image Processing',
     ],
     keywords=[],
-    license='',
+    license='MIT',
 )
