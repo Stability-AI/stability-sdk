@@ -15,6 +15,7 @@ setup(
     
     description='Python SDK for interacting with stability.ai APIs',
     long_description=README,
+    long_description_content_type="text/markdown",
 
     install_requires=[
         'Pillow',
