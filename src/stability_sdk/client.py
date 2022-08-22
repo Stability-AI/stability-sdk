@@ -7,11 +7,14 @@ import random
 import io
 import logging
 import time
+import magic
+import mimetypes
 
 import grpc
 from argparse import ArgumentParser, Namespace
 from typing import Dict, Generator, List, Union, Any, Sequence, Tuple
 from dotenv import load_dotenv
+from google.protobuf.json_format import MessageToJson
 
 load_dotenv()
 
@@ -72,12 +75,29 @@ def process_artifacts_from_answers(
     idx = 0
     for resp in answers:
         for artifact in resp.artifacts:
-            img_p = f"{prefix}-{resp.request_id}-{resp.answer_id}-{idx}.png"
+            artifact_p = f"{prefix}-{resp.request_id}-{resp.answer_id}-{idx}"
+            if artifact.type == generation.ARTIFACT_IMAGE:
+                ext = mimetypes.guess_extension(
+                    magic.from_buffer(artifact.binary, mime=True))
+                contents = artifact.binary
+            elif artifact.type == generation.ARTIFACT_CLASSIFICATIONS:
+                ext = ".pb.json"
+                contents = MessageToJson(artifact.classifier).encode('utf-8')
+            elif artifact.type == generation.ARTIFACT_TEXT:
+                ext = ".pb.json"
+                contents = MessageToJson(artifact).encode('utf-8')
+            else:
+                ext = ".pb"
+                contents = artifact.SerializeToString()
+            out_p = f"{artifact_p}{ext}"            
             if write:
-                open(img_p, "wb").write(artifact.binary)
-                if verbose:
-                    logger.info(f"wrote {img_p}")
-            yield [img_p, artifact]
+                with open(out_p, "wb") as f:
+                    f.write(bytes(contents))
+                    if verbose:
+                        artifact_t = generation.ArtifactType.Name(artifact.type)
+                        logger.info(f"wrote {artifact_t} to {out_p}")
+
+            yield [out_p, artifact]
             idx += 1
 
 
@@ -85,20 +105,24 @@ def open_images(
     images: Union[
         Sequence[Tuple[str, generation.Artifact]],
         Generator[Tuple[str, generation.Artifact], None, None],
-    ]
+    ],
+    verbose: bool = False,
 ) -> Generator[Tuple[str, generation.Artifact], None, None]:
     """
-    Open the images from the filenames and Artifacts.
+    Open the images from the filenames and Artifacts tuples.
 
-    :param images: The filenames and Artifacts to open.
+    :param images: The tuples of Artifacts and associated images to open.
     :return:  A Generator of tuples of image filenames and Artifacts, intended
      for passthrough.
     """
     from PIL import Image
 
     for path, artifact in images:
-        img = Image.open(io.BytesIO(artifact.binary))
-        img.show()
+        if artifact.type == generation.ARTIFACT_IMAGE:
+            if verbose:
+                logger.info(f"opening {path}")
+            img = Image.open(io.BytesIO(artifact.binary))
+            img.show()
         yield [path, artifact]
 
 
@@ -109,6 +133,7 @@ class StabilityInference:
         key: str = "",
         engine: str = "stable-diffusion-v1",
         verbose=False,
+        wait_for_ready: bool = True,
     ):
         """
         Initialize the client.
@@ -117,11 +142,13 @@ class StabilityInference:
         :param key: Key to use for authentication.
         :param engine: Engine to use.
         :param verbose: Whether to print debug messages.
+        :param wait_for_ready: Whether to wait for the server to be ready, or
+            to fail immediately.
         """
         self.verbose = verbose
         self.engine = engine
 
-        self.args = {"wait_for_ready": True}
+        self.grpc_args = {"wait_for_ready": wait_for_ready}
 
         if verbose:
             logger.info(f"Opening channel to {host}")
@@ -130,7 +157,8 @@ class StabilityInference:
 
         if host.endswith("443"):
             if key:
-                call_credentials.append(grpc.access_token_call_credentials(f"{key}"))
+                call_credentials.append(
+                    grpc.access_token_call_credentials(f"{key}"))
             else:
                 raise ValueError(f"key is required for {host}")
             channel_credentials = grpc.composite_channel_credentials(
@@ -158,6 +186,8 @@ class StabilityInference:
         steps: int = 50,
         seed: Union[Sequence[int], int] = 0,
         samples: int = 1,
+        safety: bool = True,
+        classifiers: generation.ClassifierParameters = None,
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -170,8 +200,13 @@ class StabilityInference:
         :param steps: Number of steps to take.
         :param seed: Seed for the random number generator.
         :param samples: Number of samples to generate.
+        :param safety: Whether to use safety mode.
+        :param classifications: Classifier parameters to use.
         :return: Generator of Answer objects.
         """
+        if safety and classifiers is None:
+            classifiers = generation.ClassifierParameters()
+
         if not prompt:
             raise ValueError("prompt must be provided")
 
@@ -203,16 +238,24 @@ class StabilityInference:
                     )
                 ],
             ),
+            classifier=classifiers,
         )
 
         if self.verbose:
             logger.info("Sending request.")
 
         start = time.time()
-        for answer in self.stub.Generate(rq, **self.args):
+        for answer in self.stub.Generate(rq, **self.grpc_args):
             duration = time.time() - start
             if self.verbose:
-                logger.info(f"Got {answer.answer_id} in {duration:0.2f}s")
+                if len(answer.artifacts) > 0:
+                    artifact_ts = [generation.ArtifactType.Name(artifact.type)
+                                   for artifact in answer.artifacts]
+                    logger.info(f"Got {answer.answer_id} with {artifact_ts} in "
+                                f"{duration:0.2f}s")
+                else:
+                    logger.info(f"Got keepalive {answer.answer_id} in "
+                                f"{duration:0.2f}s")
 
             yield answer
             start = time.time()
@@ -243,16 +286,16 @@ if __name__ == "__main__":
     logger.addHandler(fh)
 
     INFERENCE_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
-    API_KEY = os.getenv("API_KEY", "")
+    STABILITY_KEY = os.getenv("STABILITY_KEY", "")
 
     if not INFERENCE_HOST:
         logger.warning("STABILITY_HOST environment variable needs to be set.")
         sys.exit(1)
 
-    if not API_KEY:
+    if not STABILITY_KEY:
         logger.warning(
-            "API_KEY environment variable needs to be set. You may"
-            " need to login to the Stability website to obtain the"
+            "STABILITY_KEY environment variable needs to be set. You may"
+            " need to login to the Stability website to obtain your"
             " API key."
         )
         sys.exit(1)
@@ -313,7 +356,7 @@ if __name__ == "__main__":
     request = build_request_dict(args)
 
     stability_api = StabilityInference(
-        INFERENCE_HOST, API_KEY, engine=args.engine, verbose=True
+        INFERENCE_HOST, STABILITY_KEY, engine=args.engine, verbose=True
     )
 
     answers = stability_api.generate(args.prompt, **request)
@@ -321,7 +364,8 @@ if __name__ == "__main__":
         args.prefix, answers, write=not args.no_store, verbose=True
     )
     if args.show:
-        open_images(artifacts)
+        for artifact in open_images(artifacts, verbose=True):
+            pass
     else:
-        for image in artifacts:
+        for artifact in artifacts:
             pass

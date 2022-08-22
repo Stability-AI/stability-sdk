@@ -22,6 +22,7 @@ setup(
         'grpcio',
         'grpcio-tools',
         'python-dotenv',
+        'python-magic',
     ],
     packages=find_packages(
         where='src',
