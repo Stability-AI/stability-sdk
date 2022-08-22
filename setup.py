@@ -51,5 +51,5 @@ setup(
         'Topic :: Scientific/Engineering :: Image Processing',
     ],
     keywords=[],
-    license='',
+    license='MIT',
 )
