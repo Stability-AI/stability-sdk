@@ -1,12 +1,16 @@
 # stability-clients
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stability-ai/stability-sdk/blob/main/nbs/demo_colab.ipynb)
+
 Client implementations that interact with the Stability Generator API
 
-# Interfaces Dependency
-These clients depend on the `interfaces` submodules. You will need to do a:
-* `git submodule update --init`
+## Installation
 
-Additionally, if you pull code changes, there may be changes to the gRPC interfaces, so when you do so, please perform:
-* `git submodule update --init --recursive`
+First, instal libmagic using the method appropriate to your OS: https://github.com/ahupp/python-magic#installation
+
+Then just install the PyPI package via:
+
+`pip install stability-sdk`
 
 # Python client
 
@@ -16,14 +20,18 @@ Additionally, if you pull code changes, there may be changes to the gRPC interfa
 * Set up in venv dependencies: `pyenv/bin/pip3 install -r requirements.txt`
 * `pyenv/bin/enable` to use the venv.
 * Set the `STABILITY_HOST` environment variable. This is by default set to the production endpoint `grpc.stability.ai:443`.
-* Set the `API_KEY` environment variable.
+* Set the `STABILITY_KEY` environment variable.
 
 Then to invoke:
 * `python3 client.py -W 512 -H 512 "A stunning house."`
 
 It will generate and put PNGs in your current directory.
 
-## Usage
+## SDK Usage
+
+See usage demo notebooks in ./nbs
+
+## Command line usage
 ```
 usage: client.py [-h] [--height HEIGHT] [--width WIDTH]
                  [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS]
@@ -54,4 +62,5 @@ optional arguments:
   --num_samples NUM_SAMPLES, -n NUM_SAMPLES
                         number of samples to generate
   --show                open artifacts using PIL
+  --engine, -e          engine to use for inference
 ```
