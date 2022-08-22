@@ -1,0 +1,4 @@
+Pillow
+grpcio
+grpcio-tools
+python-dotenv

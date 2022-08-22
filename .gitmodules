@@ -1,0 +1,3 @@
+[submodule "interfaces"]
+	path = interfaces
+	url = git@github.com:Stability-AI/api-interfaces.git
