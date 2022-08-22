@@ -1,13 +1,6 @@
 # stability-clients
 Client implementations that interact with the Stability Generator API
 
-# Interfaces Dependency
-These clients depend on the `interfaces` submodules. You will need to do a:
-* `git submodule update --init`
-
-Additionally, if you pull code changes, there may be changes to the gRPC interfaces, so when you do so, please perform:
-* `git submodule update --init --recursive`
-
 # Python client
 
 `client.py` is both a command line client and an API class that wraps the gRPC based API. To try the client:
