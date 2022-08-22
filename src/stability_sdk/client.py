@@ -19,8 +19,8 @@ thisPath = pathlib.Path(__file__).parent.resolve()
 genPath = thisPath / "interfaces/gooseai/generation"
 sys.path.append(str(genPath))
 
-import interfaces.gooseai.generation.generation_pb2 as generation
-import interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
+import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
