@@ -13,6 +13,7 @@ setup(
     ########################
     packages=find_packages(
         where='src',
+        include=['stability_sdk*'],
         #include=['pkg*'],
         #exclude=['additional*'],
     ),
