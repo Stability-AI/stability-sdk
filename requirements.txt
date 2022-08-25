@@ -2,4 +2,3 @@ Pillow
 grpcio
 grpcio-tools
 python-dotenv
-python-magic

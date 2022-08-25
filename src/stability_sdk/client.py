@@ -7,7 +7,6 @@ import random
 import io
 import logging
 import time
-import magic
 import mimetypes
 
 import grpc
@@ -77,8 +76,7 @@ def process_artifacts_from_answers(
         for artifact in resp.artifacts:
             artifact_p = f"{prefix}-{resp.request_id}-{resp.answer_id}-{idx}"
             if artifact.type == generation.ARTIFACT_IMAGE:
-                ext = mimetypes.guess_extension(
-                    magic.from_buffer(artifact.binary, mime=True))
+                ext = mimetypes.guess_extension(artifact.mime)
                 contents = artifact.binary
             elif artifact.type == generation.ARTIFACT_CLASSIFICATIONS:
                 ext = ".pb.json"
