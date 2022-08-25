@@ -6,9 +6,7 @@ Client implementations that interact with the Stability Generator API
 
 ## Installation
 
-First, instal libmagic using the method appropriate to your OS: https://github.com/ahupp/python-magic#installation
-
-Then just install the PyPI package via:
+Install the PyPI package via:
 
 `pip install stability-sdk`
 
