@@ -71,12 +71,10 @@ def process_artifacts_from_answers(
     :return: A Generator of tuples of artifact filenames and Artifacts, intended
         for passthrough.
     """
-    request_idx = 0
-    response_idx = 0
+    idx = 0
     for resp in answers:
-        response_idx = 0
         for artifact in resp.artifacts:
-            artifact_p = f"{prefix}-{request_idx}-{response_idx}"
+            artifact_p = f"{prefix}-{idx}"
             if artifact.type == generation.ARTIFACT_IMAGE:
                 ext = mimetypes.guess_extension(artifact.mime)
                 contents = artifact.binary
@@ -98,8 +96,7 @@ def process_artifacts_from_answers(
                         logger.info(f"wrote {artifact_t} to {out_p}")
 
             yield [out_p, artifact]
-            response_idx += 1
-        request_idx += 1
+            idx += 1
 
 
 def open_images(
