@@ -62,3 +62,15 @@ optional arguments:
   --show                open artifacts using PIL
   --engine, -e          engine to use for inference
 ```
+
+
+## Connecting to the API in using langauges other than python
+
+The `src` subdirectory contains pre-compiled gRPC stubs for the following languages:
+
+* [Javascript/Typescript](https://github.com/Stability-AI/stability-sdk/tree/main/src/js)
+
+If a language you would like to connect to the API with is not listed above, you can use the following
+protobuf definition to compile stubs for your language:
+
+* [protobuf spec](https://github.com/Stability-AI/stability-sdk/tree/ecma_clients/src/proto)
