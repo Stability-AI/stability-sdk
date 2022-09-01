@@ -63,6 +63,9 @@ optional arguments:
   --engine, -e          engine to use for inference
 ```
 
+# TypeScript Client
+* Stability-ts: https://github.com/jakiestfu/stability-ts
+
 
 ## Connecting to the API in using langauges other than python
 
