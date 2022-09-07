@@ -236,10 +236,10 @@ class StabilityInference:
         if safety and classifiers is None:
             classifiers = generation.ClassifierParameters()
 
-        if not prompt and not init_image:
+        if (prompt is None) and (init_image is None):
             raise ValueError("prompt and/or init_image must be provided")
 
-        if mask_image and not init_image:
+        if (mask_image is not None) and (init_image is None):
             raise ValueError("If mask_image is provided, init_image must also be provided")
 
         request_id = str(uuid.uuid4())
@@ -256,7 +256,7 @@ class StabilityInference:
         else:
             raise TypeError("prompt must be a string or a sequence")
 
-        if init_image:
+        if (init_image is not None):
             prompt += [image_to_prompt(init_image, init=True)]
             parameters = generation.StepParameter(
                     scaled_step=0,
@@ -268,7 +268,7 @@ class StabilityInference:
                         end=end_schedule,
                     )
                 ),
-            if mask_image:
+            if (mask_image is not None):
                 prompt += [image_to_prompt(mask_image, mask=True)]
         else:
             parameters = generation.StepParameter(
