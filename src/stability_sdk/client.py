@@ -230,7 +230,7 @@ class StabilityInference:
         :param seed: Seed for the random number generator.
         :param samples: Number of samples to generate.
         :param safety: Whether to use safety mode.
-        :param classifications: Classifier parameters to use.
+        :param classifiers: Classifier parameters to use.
         :return: Generator of Answer objects.
         """
         if safety and classifiers is None:
