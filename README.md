@@ -16,7 +16,7 @@ Install the PyPI package via:
 
 * Use Python venv: `python3 -m venv pyenv`
 * Set up in venv dependencies: `pyenv/bin/pip3 install -r requirements.txt`
-* `pyenv/bin/enable` to use the venv.
+* `pyenv/bin/activate` to use the venv.
 * Set the `STABILITY_HOST` environment variable. This is by default set to the production endpoint `grpc.stability.ai:443`.
 * Set the `STABILITY_KEY` environment variable.
 
@@ -31,11 +31,11 @@ See usage demo notebooks in ./nbs
 
 ## Command line usage
 ```
-usage: client.py [-h] [--height HEIGHT] [--width WIDTH]
-                 [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS]
-                 [--seed SEED] [--prefix PREFIX] [--no-store]
-                 [--num_samples NUM_SAMPLES] [--show]
-                 prompt [prompt ...]
+usage: python -m stability_sdk.client [-h] [--height HEIGHT] [--width WIDTH]
+	  								  [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS]
+									  [--seed SEED] [--prefix PREFIX] [--no-store]
+									  [--num_samples NUM_SAMPLES] [--show]
+									  prompt [prompt ...]
 
 positional arguments:
   prompt
