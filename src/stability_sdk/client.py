@@ -204,7 +204,7 @@ class StabilityInference:
         mask_image: Image.Image = None,
         height: int = 512,
         width: int = 512,
-        start_schedule: float = 0.5,
+        start_schedule: float = 1.0,
         end_schedule: float = 0.01,
         cfg_scale: float = 7.0,
         sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
