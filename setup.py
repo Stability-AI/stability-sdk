@@ -1,7 +1,12 @@
+# fmt: off
+
 from setuptools import setup, find_packages
 
 with open('README.md','r') as f:
     README = f.read()
+
+with open('requirements.txt') as f:
+    requirements = f.read().splitlines()
 
 setup(
     name='stability-sdk',
@@ -12,18 +17,12 @@ setup(
     maintainer_email='david@stability.ai',
     url='https://beta.dreamstudio.ai/',
     download_url='https://github.com/Stability-AI/stability-sdk/',
-    
+
     description='Python SDK for interacting with stability.ai APIs',
     long_description=README,
     long_description_content_type="text/markdown",
 
-    install_requires=[
-        'Pillow',
-        'grpcio',
-        'grpcio-tools',
-        'python-dotenv',
-        'protobuf==3.20.1',
-    ],
+    install_requires=requirements,
     packages=find_packages(
         where='src',
         include=['stability_sdk*'],
