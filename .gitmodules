@@ -1,0 +1,3 @@
+[submodule "api-interfaces"]
+	path = api-interfaces
+	url = https://github.com/stability-ai/api-interfaces
