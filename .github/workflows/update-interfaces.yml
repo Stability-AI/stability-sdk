@@ -1,7 +1,8 @@
 name: Update protobuf stubs
 
 on:
-  push
+  push:
+  workflow_dispatch:
 
 jobs:
   update_proto:
