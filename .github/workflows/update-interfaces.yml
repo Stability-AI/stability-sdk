@@ -13,7 +13,7 @@ jobs:
     - name: Copy files
       run: |
         SRC=./api-interfaces/gooseai
-        TGT=./src/stability-sdk/gooseai
+        TGT=./src/stability_sdk/gooseai
         KIND=generation
         cp $SRC/$KIND/${KIND}_pb2_grpc.py $TGT/$KIND/${KIND}_pb2_grpc.py
         cp $SRC/$KIND/${KIND}_pb2.py $TGT/$KIND/${KIND}_pb2.py
