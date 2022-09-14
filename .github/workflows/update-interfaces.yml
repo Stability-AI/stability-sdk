@@ -21,10 +21,10 @@ jobs:
         # for backwards compatibility
         #############################
         cp ./api-interfaces/src/proto/generation.proto ./src/proto/generation.proto 
-        cp $SRC/$KIND/$KIND_pb_service.d.ts ./src/js/$KIND_pb_service.d.ts
-        cp $SRC/$KIND/$KIND_pb_service.js ./src/js/$KIND_pb_service.js
-        cp $SRC/$KIND/$KIND_pb.d.ts ./src/js/$KIND_pb.d.ts
-        cp $SRC/$KIND/$KIND_pb.js ./src/js/$KIND_pb.js
+        cp $SRC/$KIND/${KIND}_pb_service.d.ts ./src/js/${KIND}_pb_service.d.ts
+        cp $SRC/$KIND/${KIND}_pb_service.js ./src/js/${KIND}_pb_service.js
+        cp $SRC/$KIND/${KIND}_pb.d.ts ./src/js/${KIND}_pb.d.ts
+        cp $SRC/$KIND/${KIND}_pb.js ./src/js/${KIND}_pb.js
     - name: Commit files
       run: |
         git config --local user.name "dmarx"
