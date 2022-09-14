@@ -15,6 +15,12 @@ jobs:
         SRC=./api-interfaces/gooseai
         TGT=./src/stability_sdk/gooseai
         KIND=generation
+        # debugging...
+        pwd
+        ls -lh .
+        ls -lh $SRC
+        ls -lh $TGT
+        # /debugging
         cp $SRC/$KIND/${KIND}_pb2_grpc.py $TGT/$KIND/${KIND}_pb2_grpc.py
         cp $SRC/$KIND/${KIND}_pb2.py $TGT/$KIND/${KIND}_pb2.py
         #############################
