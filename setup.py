@@ -5,7 +5,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.2.2',
+    version='0.2.3',
     author='Wes Brown',
     author_email='wesbrown18@gmail.com',
     maintainer='David Marx',
