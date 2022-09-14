@@ -33,8 +33,9 @@ jobs:
         git add ./src/**/*.ts
         git add ./src/**/*.proto
         git commit -m "Updated protobuf files"
-    - name: Push changes # push the output folder to your repo
+    - name: Push change
       uses: ad-m/github-push-action@master
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        force: true
+        branch: ${{ github.ref }}
+        #force: true
