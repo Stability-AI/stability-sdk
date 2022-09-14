@@ -13,9 +13,19 @@ type GenerationServiceGenerate = {
   readonly responseType: typeof generation_pb.Answer;
 };
 
+type GenerationServiceChainGenerate = {
+  readonly methodName: string;
+  readonly service: typeof GenerationService;
+  readonly requestStream: false;
+  readonly responseStream: true;
+  readonly requestType: typeof generation_pb.ChainRequest;
+  readonly responseType: typeof generation_pb.Answer;
+};
+
 export class GenerationService {
   static readonly serviceName: string;
   static readonly Generate: GenerationServiceGenerate;
+  static readonly ChainGenerate: GenerationServiceChainGenerate;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -51,5 +61,6 @@ export class GenerationServiceClient {
 
   constructor(serviceHost: string, options?: grpc.RpcOptions);
   generate(requestMessage: generation_pb.Request, metadata?: grpc.Metadata): ResponseStream<generation_pb.Answer>;
+  chainGenerate(requestMessage: generation_pb.ChainRequest, metadata?: grpc.Metadata): ResponseStream<generation_pb.Answer>;
 }
 

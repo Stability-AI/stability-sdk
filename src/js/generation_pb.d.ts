@@ -366,6 +366,34 @@ export namespace ConditionerParameters {
   }
 }
 
+export class ScheduleParameters extends jspb.Message {
+  hasStart(): boolean;
+  clearStart(): void;
+  getStart(): number;
+  setStart(value: number): void;
+
+  hasEnd(): boolean;
+  clearEnd(): void;
+  getEnd(): number;
+  setEnd(value: number): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ScheduleParameters.AsObject;
+  static toObject(includeInstance: boolean, msg: ScheduleParameters): ScheduleParameters.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ScheduleParameters, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ScheduleParameters;
+  static deserializeBinaryFromReader(message: ScheduleParameters, reader: jspb.BinaryReader): ScheduleParameters;
+}
+
+export namespace ScheduleParameters {
+  export type AsObject = {
+    start: number,
+    end: number,
+  }
+}
+
 export class StepParameter extends jspb.Message {
   getScaledStep(): number;
   setScaledStep(value: number): void;
@@ -374,6 +402,11 @@ export class StepParameter extends jspb.Message {
   clearSampler(): void;
   getSampler(): SamplerParameters | undefined;
   setSampler(value?: SamplerParameters): void;
+
+  hasSchedule(): boolean;
+  clearSchedule(): void;
+  getSchedule(): ScheduleParameters | undefined;
+  setSchedule(value?: ScheduleParameters): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): StepParameter.AsObject;
@@ -389,6 +422,7 @@ export namespace StepParameter {
   export type AsObject = {
     scaledStep: number,
     sampler?: SamplerParameters.AsObject,
+    schedule?: ScheduleParameters.AsObject,
   }
 }
 
@@ -589,6 +623,30 @@ export namespace ClassifierParameters {
   }
 }
 
+export class AssetParameters extends jspb.Message {
+  getAction(): AssetActionMap[keyof AssetActionMap];
+  setAction(value: AssetActionMap[keyof AssetActionMap]): void;
+
+  getProject(): string;
+  setProject(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): AssetParameters.AsObject;
+  static toObject(includeInstance: boolean, msg: AssetParameters): AssetParameters.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: AssetParameters, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): AssetParameters;
+  static deserializeBinaryFromReader(message: AssetParameters, reader: jspb.BinaryReader): AssetParameters;
+}
+
+export namespace AssetParameters {
+  export type AsObject = {
+    action: AssetActionMap[keyof AssetActionMap],
+    project: string,
+  }
+}
+
 export class Request extends jspb.Message {
   getEngineId(): string;
   setEngineId(value: string): void;
@@ -609,15 +667,20 @@ export class Request extends jspb.Message {
   getImage(): ImageParameters | undefined;
   setImage(value?: ImageParameters): void;
 
-  hasConditioner(): boolean;
-  clearConditioner(): void;
-  getConditioner(): ConditionerParameters | undefined;
-  setConditioner(value?: ConditionerParameters): void;
-
   hasClassifier(): boolean;
   clearClassifier(): void;
   getClassifier(): ClassifierParameters | undefined;
   setClassifier(value?: ClassifierParameters): void;
+
+  hasAsset(): boolean;
+  clearAsset(): void;
+  getAsset(): AssetParameters | undefined;
+  setAsset(value?: AssetParameters): void;
+
+  hasConditioner(): boolean;
+  clearConditioner(): void;
+  getConditioner(): ConditionerParameters | undefined;
+  setConditioner(value?: ConditionerParameters): void;
 
   getParamsCase(): Request.ParamsCase;
   serializeBinary(): Uint8Array;
@@ -637,13 +700,108 @@ export namespace Request {
     requestedType: ArtifactTypeMap[keyof ArtifactTypeMap],
     promptList: Array<Prompt.AsObject>,
     image?: ImageParameters.AsObject,
-    conditioner?: ConditionerParameters.AsObject,
     classifier?: ClassifierParameters.AsObject,
+    asset?: AssetParameters.AsObject,
+    conditioner?: ConditionerParameters.AsObject,
   }
 
   export enum ParamsCase {
     PARAMS_NOT_SET = 0,
     IMAGE = 5,
+    CLASSIFIER = 7,
+    ASSET = 8,
+  }
+}
+
+export class OnStatus extends jspb.Message {
+  clearReasonList(): void;
+  getReasonList(): Array<FinishReasonMap[keyof FinishReasonMap]>;
+  setReasonList(value: Array<FinishReasonMap[keyof FinishReasonMap]>): void;
+  addReason(value: FinishReasonMap[keyof FinishReasonMap], index?: number): FinishReasonMap[keyof FinishReasonMap];
+
+  hasTarget(): boolean;
+  clearTarget(): void;
+  getTarget(): string;
+  setTarget(value: string): void;
+
+  clearActionList(): void;
+  getActionList(): Array<StageActionMap[keyof StageActionMap]>;
+  setActionList(value: Array<StageActionMap[keyof StageActionMap]>): void;
+  addAction(value: StageActionMap[keyof StageActionMap], index?: number): StageActionMap[keyof StageActionMap];
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): OnStatus.AsObject;
+  static toObject(includeInstance: boolean, msg: OnStatus): OnStatus.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: OnStatus, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): OnStatus;
+  static deserializeBinaryFromReader(message: OnStatus, reader: jspb.BinaryReader): OnStatus;
+}
+
+export namespace OnStatus {
+  export type AsObject = {
+    reasonList: Array<FinishReasonMap[keyof FinishReasonMap]>,
+    target: string,
+    actionList: Array<StageActionMap[keyof StageActionMap]>,
+  }
+}
+
+export class Stage extends jspb.Message {
+  getId(): string;
+  setId(value: string): void;
+
+  hasRequest(): boolean;
+  clearRequest(): void;
+  getRequest(): Request | undefined;
+  setRequest(value?: Request): void;
+
+  clearOnStatusList(): void;
+  getOnStatusList(): Array<OnStatus>;
+  setOnStatusList(value: Array<OnStatus>): void;
+  addOnStatus(value?: OnStatus, index?: number): OnStatus;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): Stage.AsObject;
+  static toObject(includeInstance: boolean, msg: Stage): Stage.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: Stage, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): Stage;
+  static deserializeBinaryFromReader(message: Stage, reader: jspb.BinaryReader): Stage;
+}
+
+export namespace Stage {
+  export type AsObject = {
+    id: string,
+    request?: Request.AsObject,
+    onStatusList: Array<OnStatus.AsObject>,
+  }
+}
+
+export class ChainRequest extends jspb.Message {
+  getRequestId(): string;
+  setRequestId(value: string): void;
+
+  clearStageList(): void;
+  getStageList(): Array<Stage>;
+  setStageList(value: Array<Stage>): void;
+  addStage(value?: Stage, index?: number): Stage;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ChainRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: ChainRequest): ChainRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ChainRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ChainRequest;
+  static deserializeBinaryFromReader(message: ChainRequest, reader: jspb.BinaryReader): ChainRequest;
+}
+
+export namespace ChainRequest {
+  export type AsObject = {
+    requestId: string,
+    stageList: Array<Stage.AsObject>,
   }
 }
 
@@ -665,6 +823,7 @@ export interface ArtifactTypeMap {
   ARTIFACT_TOKENS: 4;
   ARTIFACT_EMBEDDING: 5;
   ARTIFACT_CLASSIFICATIONS: 6;
+  ARTIFACT_MASK: 7;
 }
 
 export const ArtifactType: ArtifactTypeMap;
@@ -707,4 +866,20 @@ export interface ClassifierModeMap {
 }
 
 export const ClassifierMode: ClassifierModeMap;
+
+export interface AssetActionMap {
+  ASSET_PUT: 0;
+  ASSET_GET: 1;
+  ASSET_DELETE: 2;
+}
+
+export const AssetAction: AssetActionMap;
+
+export interface StageActionMap {
+  STAGE_ACTION_PASS: 0;
+  STAGE_ACTION_DISCARD: 1;
+  STAGE_ACTION_RETURN: 2;
+}
+
+export const StageAction: StageActionMap;
 
