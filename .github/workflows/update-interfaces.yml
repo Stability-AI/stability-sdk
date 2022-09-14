@@ -1,0 +1,40 @@
+name: Update protobuf stubs
+
+on:
+  push
+
+jobs:
+  update_proto:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Copy files
+      run: |
+        SRC=./api-interfaces/gooseai
+        TGT=./src/stability-sdk/gooseai
+        KIND=generation
+        cp $SRC/$KIND/$KIND_pb2_grpc.py $TGT/$KIND/$KIND_pb2_grpc.py
+        cp $SRC/$KIND/$KIND_pb2.py $TGT/$KIND/$KIND_pb2.py
+        #############################
+        # for backwards compatibility
+        #############################
+        cp ./api-interfaces/src/proto/generation.proto ./src/proto/generation.proto 
+        cp $SRC/$KIND/$KIND_pb_service.d.ts ./src/js/$KIND_pb_service.d.ts
+        cp $SRC/$KIND/$KIND_pb_service.js ./src/js/$KIND_pb_service.js
+        cp $SRC/$KIND/$KIND_pb.d.ts ./src/js/$KIND_pb.d.ts
+        cp $SRC/$KIND/$KIND_pb.js ./src/js/$KIND_pb.js
+    - name: Commit files
+      run: |
+        git config --local user.name "dmarx"
+        git add ./src/**/*.py
+        git add ./src/**/*.js
+        git add ./src/**/*.ts
+        git add ./src/**/*.proto
+        git commit -m "Updated protobuf files"
+    - name: Push changes # push the output folder to your repo
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        force: true
