@@ -28,7 +28,6 @@ jobs:
         cp $SRC/$KIND/${KIND}_pb.js ./src/js/${KIND}_pb.js
     - name: Commit files
       run: |
-        git config --local user.name "dmarx"
         git add ./src/**/*.py
         git add ./src/**/*.js
         git add ./src/**/*.ts
