@@ -29,6 +29,7 @@ jobs:
     - name: Commit files
       run: |
         shopt -s globstar
+        git config --local user.name "gh-action-worker"
         git add ./src/**/*.py
         git add ./src/**/*.js
         git add ./src/**/*.ts
