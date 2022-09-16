@@ -5,7 +5,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.2.2',
+    version='0.2.3',
     author='Wes Brown',
     author_email='wesbrown18@gmail.com',
     maintainer='David Marx',
@@ -22,7 +22,7 @@ setup(
         'grpcio',
         'grpcio-tools',
         'python-dotenv',
-        'python-magic',
+        'protobuf==3.20.1',
     ],
     packages=find_packages(
         where='src',
