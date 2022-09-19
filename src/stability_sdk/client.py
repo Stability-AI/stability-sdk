@@ -246,7 +246,7 @@ class StabilityInference:
 
         if not seed:
             seed = [random.randrange(0, 4294967295)]
-        else:
+        elif isinstance(seed, int):
             seed = [seed]
 
         if isinstance(prompt, str):
