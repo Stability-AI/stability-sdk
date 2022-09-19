@@ -35,9 +35,20 @@ jobs:
         git add ./src/**/*.ts
         git add ./src/**/*.proto
         git commit -m "Updated protobuf files"
-    - name: Push change
-      uses: ad-m/github-push-action@master
+    #- name: Push change
+    #  uses: ad-m/github-push-action@master
+    #  with:
+    #    github_token: ${{ secrets.GITHUB_TOKEN }}
+    #    branch: ${{ github.ref }}
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v4
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: ${{ github.ref }}
-        #force: true
+        token: ${{ secrets.GITHUB_TOKEN }}
+        add-paths: |
+          api-interfaces/**
+        base: main
+        delete-branch: true
+        branch: "actions/update-interfaces"
+        commit-message: "chore: update protobuf stubs"
+        title: "chore: update protobuf stubs"
+        body: "Update protobuf stubs from changes in ${GITHUB_SHA}"
