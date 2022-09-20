@@ -52,4 +52,4 @@ jobs:
         branch: "actions/update-interfaces"
         commit-message: "chore: update protobuf stubs"
         title: "chore: update protobuf stubs"
-        body: "Update protobuf stubs from changes in ${{GITHUB_SHA}}"
+        body: "Update protobuf stubs from changes in ${{ github.sha }}"
