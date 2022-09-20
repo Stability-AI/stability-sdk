@@ -26,15 +26,15 @@ jobs:
         cp $SRC/$KIND/${KIND}_pb_service.js ./src/js/${KIND}_pb_service.js
         cp $SRC/$KIND/${KIND}_pb.d.ts ./src/js/${KIND}_pb.d.ts
         cp $SRC/$KIND/${KIND}_pb.js ./src/js/${KIND}_pb.js
-    - name: Commit files
-      run: |
-        shopt -s globstar
-        git config --local user.name ${{ github.actor }}
-        git add ./src/**/*.py
-        git add ./src/**/*.js
-        git add ./src/**/*.ts
-        git add ./src/**/*.proto
-        git commit -m "Updated protobuf files"
+    #- name: Commit files
+    #  run: |
+    #    shopt -s globstar
+    #    git config --local user.name ${{ github.actor }}
+    #    git add ./src/**/*.py
+    #    git add ./src/**/*.js
+    #    git add ./src/**/*.ts
+    #    git add ./src/**/*.proto
+    #    git commit -m "Updated protobuf files"
     #- name: Push change
     #  uses: ad-m/github-push-action@master
     #  with:
@@ -51,4 +51,4 @@ jobs:
         branch: "actions/update-interfaces"
         commit-message: "chore: update protobuf stubs"
         title: "chore: update protobuf stubs"
-        body: "Update protobuf stubs from changes in ${GITHUB_SHA}"
+        body: "Update protobuf stubs from changes in ${{GITHUB_SHA}}"
