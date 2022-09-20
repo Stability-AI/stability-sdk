@@ -45,8 +45,8 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         add-paths: |
-          api-interfaces/**
-          src/**
+          api-interfaces/
+          src/
         base: main
         delete-branch: true
         branch: "actions/update-interfaces"
