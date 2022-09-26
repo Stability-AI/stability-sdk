@@ -11,6 +11,7 @@ import io
 import logging
 import time
 import mimetypes
+import signal
 
 import grpc
 from argparse import ArgumentParser, Namespace
@@ -305,7 +306,16 @@ class StabilityInference:
             logger.info("Sending request.")
 
         start = time.time()
-        for answer in self.stub.Generate(rq, **self.grpc_args):
+        answers = self.stub.Generate(rq, **self.grpc_args)
+
+        def cancel_request(unused_signum, unused_frame):
+            print("Cancelling")
+            answers.cancel()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, cancel_request)
+
+        for answer in answers:
             duration = time.time() - start
             if self.verbose:
                 if len(answer.artifacts) > 0:
