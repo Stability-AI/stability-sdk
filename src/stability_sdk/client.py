@@ -212,6 +212,7 @@ class StabilityInference:
         seed: Union[Sequence[int], int] = 0,
         samples: int = 1,
         safety: bool = True,
+        classifiers: Optional[generation.ClassifierParameters] = None,
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -228,10 +229,10 @@ class StabilityInference:
         :param steps: Number of steps to take.
         :param seed: Seed for the random number generator.
         :param samples: Number of samples to generate.
-        :param safety: Whether to use safety mode.
+        :param safety: DEPRECATED/UNUSED - Cannot be disabled.
+        :param classifiers: DEPRECATED/UNUSED - Has no effect on image generation.
         :return: Generator of Answer objects.
         """
-
         if (prompt is None) and (init_image is None):
             raise ValueError("prompt and/or init_image must be provided")
 
