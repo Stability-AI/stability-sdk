@@ -65,7 +65,7 @@ optional arguments:
   --engine, -e          engine to use for inference
 ```
 
-## Connecting to the API in using langauges other than python
+## Connecting to the API in using languages other than python
 
 The `src` subdirectory contains pre-compiled gRPC stubs for the following languages:
 
