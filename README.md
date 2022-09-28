@@ -72,6 +72,10 @@ The `src` subdirectory contains pre-compiled gRPC stubs for the following langua
 
 - [Javascript/Typescript](https://github.com/Stability-AI/stability-sdk/tree/main/src/js)
 
+And guides for the following languages:
+
+* [Ruby](https://github.com/Stability-AI/stability-sdk/tree/main/src/ruby/README.md)
+
 If a language you would like to connect to the API with is not listed above, you can use the following
 protobuf definition to compile stubs for your language:
 
@@ -80,6 +84,5 @@ protobuf definition to compile stubs for your language:
 
 ## Community-contributed clients
 
-### TypeScript Client
-* Stability-ts: https://github.com/jakiestfu/stability-ts
-
+* Typescript client: https://github.com/jakiestfu/stability-ts
+* Guide to building for Ruby: https://github.com/kmcphillips/stability-sdk/blob/main/src/ruby/README.md
