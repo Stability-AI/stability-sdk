@@ -1,0 +1,55 @@
+name: Update protobuf stubs
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  update_proto:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Copy files
+      run: |
+        SRC=./api-interfaces/gooseai
+        TGT=./src/stability_sdk/interfaces/gooseai
+        KIND=generation
+        cp $SRC/$KIND/${KIND}_pb2_grpc.py $TGT/$KIND/${KIND}_pb2_grpc.py
+        cp $SRC/$KIND/${KIND}_pb2.py $TGT/$KIND/${KIND}_pb2.py
+        #############################
+        # for backwards compatibility
+        #############################
+        cp ./api-interfaces/src/proto/generation.proto ./src/proto/generation.proto 
+        cp $SRC/$KIND/${KIND}_pb_service.d.ts ./src/js/${KIND}_pb_service.d.ts
+        cp $SRC/$KIND/${KIND}_pb_service.js ./src/js/${KIND}_pb_service.js
+        cp $SRC/$KIND/${KIND}_pb.d.ts ./src/js/${KIND}_pb.d.ts
+        cp $SRC/$KIND/${KIND}_pb.js ./src/js/${KIND}_pb.js
+    #- name: Commit files
+    #  run: |
+    #    shopt -s globstar
+    #    git config --local user.name ${{ github.actor }}
+    #    git add ./src/**/*.py
+    #    git add ./src/**/*.js
+    #    git add ./src/**/*.ts
+    #    git add ./src/**/*.proto
+    #    git commit -m "Updated protobuf files"
+    #- name: Push change
+    #  uses: ad-m/github-push-action@master
+    #  with:
+    #    github_token: ${{ secrets.GITHUB_TOKEN }}
+    #    branch: ${{ github.ref }}
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        add-paths: |
+          api-interfaces/
+          src/
+        base: main
+        delete-branch: true
+        branch: "actions/update-interfaces"
+        commit-message: "chore: update protobuf stubs"
+        title: "chore: update protobuf stubs"
+        body: "Update protobuf stubs from changes in ${{ github.sha }}"

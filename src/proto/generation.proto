@@ -19,6 +19,7 @@ enum ArtifactType {
   ARTIFACT_TOKENS = 4;
   ARTIFACT_EMBEDDING = 5;
   ARTIFACT_CLASSIFICATIONS = 6;
+  ARTIFACT_MASK = 7;
 }
 
 message Token {
@@ -106,9 +107,15 @@ enum Upscaler {
   UPSCALER_ESRGAN = 2;
 }
 
+message ScheduleParameters {
+  optional float start = 1;     // 0.0 to 1.0
+  optional float end = 2;       // 0.0 to 1.0
+}
+
 message StepParameter {
   float scaled_step = 1;
   optional SamplerParameters sampler = 2;
+  optional ScheduleParameters schedule = 3;
 }
 
 message TransformType {
@@ -162,6 +169,17 @@ message ClassifierParameters {
   optional Action realized_action = 3;
 }
 
+enum AssetAction {
+  ASSET_PUT = 0;
+  ASSET_GET = 1;
+  ASSET_DELETE = 2;
+}
+
+message AssetParameters {
+  AssetAction action = 1;
+  string project = 2;
+}
+
 message Request {
   string engine_id = 1;
   string request_id = 2;
@@ -169,11 +187,36 @@ message Request {
   repeated Prompt prompt = 4;
   oneof params {
     ImageParameters image = 5;
+    ClassifierParameters classifier = 7;
+    AssetParameters asset = 8;
   }
   optional ConditionerParameters conditioner = 6;
-  optional ClassifierParameters classifier = 7;
+}
+
+enum StageAction {
+  STAGE_ACTION_PASS = 0;
+  STAGE_ACTION_DISCARD = 1;
+  STAGE_ACTION_RETURN = 2;
+}
+
+message OnStatus {
+  repeated FinishReason reason = 1;
+  optional string target = 2;
+  repeated StageAction action = 3;
+}
+
+message Stage {
+  string id = 1;
+  Request request = 2;
+  repeated OnStatus on_status = 3;
+}
+
+message ChainRequest {
+  string request_id = 1;
+  repeated Stage stage = 2;
 }
 
 service GenerationService {
   rpc Generate (Request) returns (stream Answer) {};
+  rpc ChainGenerate (ChainRequest) returns (stream Answer) {};
 }

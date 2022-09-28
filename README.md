@@ -14,14 +14,15 @@ Install the PyPI package via:
 
 `client.py` is both a command line client and an API class that wraps the gRPC based API. To try the client:
 
-* Use Python venv: `python3 -m venv pyenv`
-* Set up in venv dependencies: `pyenv/bin/pip3 install -r requirements.txt`
-* `pyenv/bin/enable` to use the venv.
-* Set the `STABILITY_HOST` environment variable. This is by default set to the production endpoint `grpc.stability.ai:443`.
-* Set the `STABILITY_KEY` environment variable.
+- Use Python venv: `python3 -m venv pyenv`
+- Set up in venv dependencies: `pyenv/bin/pip3 install -e .`
+- `pyenv/bin/activate` to use the venv.
+- Set the `STABILITY_HOST` environment variable. This is by default set to the production endpoint `grpc.stability.ai:443`.
+- Set the `STABILITY_KEY` environment variable.
 
 Then to invoke:
-* `python3 client.py -W 512 -H 512 "A stunning house."`
+
+`python3 -m stability_sdk.client -W 512 -H 512 "A stunning house."`
 
 It will generate and put PNGs in your current directory.
 
@@ -30,12 +31,13 @@ It will generate and put PNGs in your current directory.
 See usage demo notebooks in ./nbs
 
 ## Command line usage
+
 ```
-usage: client.py [-h] [--height HEIGHT] [--width WIDTH]
-                 [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS]
-                 [--seed SEED] [--prefix PREFIX] [--no-store]
-                 [--num_samples NUM_SAMPLES] [--show]
-                 prompt [prompt ...]
+usage: python -m stability_sdk.client [-h] [--height HEIGHT] [--width WIDTH]
+	  								  [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS]
+									  [--seed SEED] [--prefix PREFIX] [--no-store]
+									  [--num_samples NUM_SAMPLES] [--show]
+									  prompt [prompt ...]
 
 positional arguments:
   prompt
@@ -67,13 +69,13 @@ optional arguments:
 * Stability-ts: https://github.com/jakiestfu/stability-ts
 
 
-## Connecting to the API in using langauges other than python
+## Connecting to the API in using languages other than python
 
 The `src` subdirectory contains pre-compiled gRPC stubs for the following languages:
 
-* [Javascript/Typescript](https://github.com/Stability-AI/stability-sdk/tree/main/src/js)
+- [Javascript/Typescript](https://github.com/Stability-AI/stability-sdk/tree/main/src/js)
 
 If a language you would like to connect to the API with is not listed above, you can use the following
 protobuf definition to compile stubs for your language:
 
-* [protobuf spec](https://github.com/Stability-AI/stability-sdk/tree/ecma_clients/src/proto)
+- [protobuf spec](https://github.com/Stability-AI/api-interfaces/blob/main/src/proto/)
