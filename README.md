@@ -65,9 +65,6 @@ optional arguments:
   --engine, -e          engine to use for inference
 ```
 
-# TypeScript Client
-* Stability-ts: https://github.com/jakiestfu/stability-ts
-
 
 ## Connecting to the API in using languages other than python
 
@@ -79,3 +76,10 @@ If a language you would like to connect to the API with is not listed above, you
 protobuf definition to compile stubs for your language:
 
 - [protobuf spec](https://github.com/Stability-AI/api-interfaces/blob/main/src/proto/)
+
+
+## Community-contributed clients
+
+### TypeScript Client
+* Stability-ts: https://github.com/jakiestfu/stability-ts
+
