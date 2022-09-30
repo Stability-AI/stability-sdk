@@ -75,3 +75,8 @@ If a language you would like to connect to the API with is not listed above, you
 protobuf definition to compile stubs for your language:
 
 - [protobuf spec](https://github.com/Stability-AI/api-interfaces/blob/main/src/proto/)
+
+## DreamStudio API TOS
+
+Unless otherwise specified, usage of the dreamstudio API falls under the same usage terms as the dreamstudio web interface: https://beta.dreamstudio.ai/terms-of-service
+
