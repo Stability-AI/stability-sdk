@@ -81,8 +81,13 @@ protobuf definition to compile stubs for your language:
 
 - [protobuf spec](https://github.com/Stability-AI/api-interfaces/blob/main/src/proto/)
 
-
 ## Community-contributed clients
 
 * Typescript client: https://github.com/jakiestfu/stability-ts
 * Guide to building for Ruby: https://github.com/kmcphillips/stability-sdk/blob/main/src/ruby/README.md
+
+## DreamStudio API TOS
+
+Unless otherwise specified, usage of the dreamstudio API falls under the same usage terms as the dreamstudio web interface: 
+
+* https://beta.dreamstudio.ai/terms-of-service

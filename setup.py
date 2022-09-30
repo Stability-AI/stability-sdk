@@ -5,9 +5,6 @@ from setuptools import setup, find_packages
 with open('README.md','r') as f:
     README = f.read()
 
-with open('requirements.txt', 'r') as f:
-    requirements = f.read().splitlines()
-
 setup(
     name='stability-sdk',
     version='0.2.4',
@@ -22,7 +19,13 @@ setup(
     long_description=README,
     long_description_content_type="text/markdown",
 
-    install_requires=requirements,
+    install_requires=[
+        'Pillow',
+        'grpcio',
+        'grpcio-tools',
+        'python-dotenv',
+        'protobuf>=3.20.2,<4'
+    ],
     packages=find_packages(
         where='src',
         include=['stability_sdk*'],
