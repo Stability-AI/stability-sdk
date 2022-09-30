@@ -28,6 +28,8 @@ sys.path.append(str(genPath))
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
+MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
+
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
@@ -42,6 +44,13 @@ algorithms: Dict[str, int] = {
     "k_lms": generation.SAMPLER_K_LMS,
 }
 
+def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
+    post = f"_{ts}_{idx}"
+    prompt_budget = max
+    prompt_budget -= len(prefix)
+    prompt_budget -= len(post)
+    prompt_budget -= len(ext) + 1
+    return f"{prefix}{prompt[:prompt_budget]}{post}{ext}"
 
 def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
     if init and mask:
@@ -79,6 +88,7 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
 
 def process_artifacts_from_answers(
     prefix: str,
+    prompt: str,
     answers: Union[
         Generator[generation.Answer, None, None], Sequence[generation.Answer]
     ],
@@ -89,6 +99,7 @@ def process_artifacts_from_answers(
     Process the Artifacts from the Answers.
 
     :param prefix: The prefix for the artifact filenames.
+    :param prompt: The prompt to add to the artifact filenames.
     :param answers: The Answers to process.
     :param write: Whether to write the artifacts to disk.
     :param verbose: Whether to print the artifact filenames.
@@ -98,7 +109,7 @@ def process_artifacts_from_answers(
     idx = 0
     for resp in answers:
         for artifact in resp.artifacts:
-            artifact_p = f"{prefix}-{resp.request_id}-{resp.answer_id}-{idx}"
+            artifact_start = time.time()
             if artifact.type == generation.ARTIFACT_IMAGE:
                 ext = mimetypes.guess_extension(artifact.mime)
                 contents = artifact.binary
@@ -111,7 +122,7 @@ def process_artifacts_from_answers(
             else:
                 ext = ".pb"
                 contents = artifact.SerializeToString()
-            out_p = f"{artifact_p}{ext}"
+            out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
             if write:
                 with open(out_p, "wb") as f:
                     f.write(bytes(contents))
@@ -403,7 +414,7 @@ if __name__ == "__main__":
         "--prefix",
         "-p",
         type=str,
-        default="generation",
+        default="generation_",
         help="output prefixes for artifacts",
     )
     parser.add_argument(
@@ -456,7 +467,7 @@ if __name__ == "__main__":
 
     answers = stability_api.generate(args.prompt, **request)
     artifacts = process_artifacts_from_answers(
-        args.prefix, answers, write=not args.no_store, verbose=True
+        args.prefix, args.prompt, answers, write=not args.no_store, verbose=True
     )
     if args.show:
         for artifact in open_images(artifacts, verbose=True):
