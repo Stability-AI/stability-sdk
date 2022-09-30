@@ -15,11 +15,15 @@ import mimetypes
 import grpc
 from argparse import ArgumentParser, Namespace
 from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
-from dotenv import load_dotenv
 from google.protobuf.json_format import MessageToJson
 from PIL import Image
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    pass
+else:
+    load_dotenv()
 
 thisPath = pathlib.Path(__file__).parent.resolve()
 genPath = thisPath / "interfaces/gooseai/generation"
