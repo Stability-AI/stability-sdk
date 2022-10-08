@@ -4,11 +4,14 @@
 
 Client implementations that interact with the Stability Generator API
 
-## Installation
+# Installation
 
 Install the PyPI package via:
 
 `pip install stability-sdk`
+
+# Getting an API key
+You can manage API keys in your dreamstudio account [here](https://beta.dreamstudio.ai/membership?tab=apiKeys)
 
 # Python client
 
