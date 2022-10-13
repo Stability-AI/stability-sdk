@@ -214,7 +214,7 @@ class StabilityInference:
 
     def generate(
         self,
-        prompt: Union[str, generation.Prompt, List[generation.Prompt]],
+        prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]],
         init_image: Optional[Image.Image] = None,
         mask_image: Optional[Image.Image] = None,
         height: int = 512,
