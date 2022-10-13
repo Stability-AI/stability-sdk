@@ -6,7 +6,10 @@ import generation_pb2 as generation__pb2
 
 
 class GenerationServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """
+    gRPC services
+
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -27,7 +30,10 @@ class GenerationServiceStub(object):
 
 
 class GenerationServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """
+    gRPC services
+
+    """
 
     def Generate(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -62,7 +68,10 @@ def add_GenerationServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class GenerationService(object):
-    """Missing associated documentation comment in .proto file."""
+    """
+    gRPC services
+
+    """
 
     @staticmethod
     def Generate(request,
