@@ -285,25 +285,20 @@ class StabilityInference:
                 raise TypeError("prompt must be a string or generation.Prompt object")
             prompt_.append(p)
 
+        step_parameters = dict(
+            scaled_step=0,
+            sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
+        )
+            
         if init_image is not None:
             prompt_ += [image_to_prompt(init_image, init=True)]
-            step_parameters = dict(
-                scaled_step=0,
-                sampler=generation.SamplerParameters(
-                    cfg_scale=cfg_scale,
-                ),
-                schedule=generation.ScheduleParameters(
-                    start=start_schedule,
-                    end=end_schedule,
-                ),
+            step_parameters['schedule']=generation.ScheduleParameters(
+                start=start_schedule,
+                end=end_schedule,
             )
             if mask_image is not None:
                 prompt_ += [image_to_prompt(mask_image, mask=True)]
-        else:
-            step_parameters = dict(
-                scaled_step=0,
-                sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
-            )
+
         
         if guidance_prompt:
             if isinstance(guidance_prompt, str):
