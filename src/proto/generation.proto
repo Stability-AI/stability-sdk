@@ -10,7 +10,6 @@ enum FinishReason {
   FILTER = 4;
 }
 
-
 enum ArtifactType {
   ARTIFACT_NONE = 0;
   ARTIFACT_IMAGE = 1;
@@ -22,37 +21,48 @@ enum ArtifactType {
   ARTIFACT_MASK = 7;
 }
 
+// Generally, a GPT BPE 16-bit token, paired with an optional string representation.
 message Token {
   optional string text = 1;
   uint32 id = 2;
 }
 
+// Sequence of tokens, paired with the id of the tokenizer used to generate them.
 message Tokens {
   repeated Token tokens = 1;
   optional string tokenizer_id = 2;
 }
 
+// A tangible Artifact, such as an image, video, or text that is used for input
+// or output.
 message Artifact {
   uint64 id = 1;
   ArtifactType type = 2;
-  string mime = 3;
-  optional string magic = 4;
+  string mime = 3;                // MIME type identifier, e.g. "image/png"
+  optional string magic = 4;      // Magic number, e.g. "PNG"
   oneof data {
-    bytes binary = 5;
-    string text = 6;
-    Tokens tokens = 7;
+    bytes binary = 5;             // Binary data, e.g. PNG image
+    string text = 6;              // Text data, e.g. text prompt
+    Tokens tokens = 7;            // Tokenized text data, e.g. GPT tokens
     ClassifierParameters classifier = 11;
   }
-  uint32 index = 8;
-  FinishReason finish_reason = 9;
-  uint32 seed = 10;
+  uint32 index = 8;               // Index of this artifact in input/output list
+  FinishReason finish_reason = 9; // Reason for finishing, if applicable
+  uint32 seed = 10;               // Seed used to generate this artifact
 }
 
+// A set of parameters for each individual Prompt.
 message PromptParameters {
   optional bool init = 1;
   optional float weight = 2;
 }
 
+// A Prompt is a special type of Artifact that is used to generate an output.
+// There can be multiple Prompts that affect the same output. Currently, the
+// only Prompts supported are:
+//   - Text (singular)
+//   - Init Image (singular, optional, type ARTIFACT_IMAGE, with init=true)
+//   - Mask (singular, optional, Artifact type ARTIFACT_MASK)
 message Prompt {
   optional PromptParameters parameters = 1;
   oneof prompt {
@@ -62,22 +72,8 @@ message Prompt {
   }
 }
 
-message AnswerMeta {
-  optional string gpu_id = 1;
-  optional string cpu_id = 2;
-  optional string node_id = 3;
-  optional string engine_id = 4;
-}
-
-message Answer {
-  string answer_id = 1;
-  string request_id = 2;
-  uint64 received = 3;
-  uint64 created = 4;
-  optional AnswerMeta meta = 6;
-  repeated Artifact artifacts = 7;
-}
-
+// DiffusionSampler identifies which sampler to use for Diffusion, and represents
+// the internal set of supported samplers.
 enum DiffusionSampler {
   SAMPLER_DDIM = 0;
   SAMPLER_DDPM = 1;
@@ -89,6 +85,7 @@ enum DiffusionSampler {
   SAMPLER_K_LMS = 7;
 }
 
+// Parameters that affect the behavior of the sampler, typically used for CFG.
 message SamplerParameters {
   optional float eta = 1;
   optional uint64 sampling_steps = 2;
@@ -97,31 +94,101 @@ message SamplerParameters {
   optional float cfg_scale = 5;
 }
 
+// Unused, but reserved for future use. Adjustments to the latents after
+// initialization.
 message ConditionerParameters {
   optional string vector_adjust_prior = 1;
+  optional Model conditioner = 2;
 }
 
+// Future, unimplemented.
 enum Upscaler {
   UPSCALER_RGB = 0;
   UPSCALER_GFPGAN = 1;
   UPSCALER_ESRGAN = 2;
 }
 
+// When does this schedule definition apply?
 message ScheduleParameters {
   optional float start = 1;     // 0.0 to 1.0
   optional float end = 2;       // 0.0 to 1.0
+  optional float value = 3;     // float value to apply on this schedule
 }
 
+// Parameters that apply to this block of the schedule.
 message StepParameter {
   float scaled_step = 1;
   optional SamplerParameters sampler = 2;
   optional ScheduleParameters schedule = 3;
+  optional GuidanceParameters guidance = 4;
+}
+
+// Presets for CLIP guidance.
+enum GuidancePreset {
+  GUIDANCE_PRESET_NONE = 0;
+  GUIDANCE_PRESET_SIMPLE = 1;
+  GUIDANCE_PRESET_FAST_BLUE = 2;
+  GUIDANCE_PRESET_FAST_GREEN = 3;
+  GUIDANCE_PRESET_SLOW = 4;
+  GUIDANCE_PRESET_SLOWER = 5;
+  GUIDANCE_PRESET_SLOWEST = 6;
+}
+
+enum ModelArchitecture {
+  MODEL_ARCHITECTURE_NONE = 0;
+  MODEL_ARCHITECTURE_CLIP_VIT = 1;
+  MODEL_ARCHITECTURE_CLIP_RESNET = 2;
+  MODEL_ARCHITECTURE_LDM = 3;
+}
+
+message Model {
+  ModelArchitecture architecture = 1;
+  string publisher = 2;
+  string dataset = 3;
+  float version = 4;
+  string semantic_version = 5;
+  string alias = 6;
+}
+
+message CutoutParameters {
+  repeated CutoutParameters cutouts = 1;    // Nested cutouts, unsupported
+  optional uint32 count = 2;                // 0 to n, usually 8 to 32, 0 inner
+  optional float gray = 3;                       // 0.0 to 1.0, defaults to 0.2
+  optional float blur = 4;                       // percentage of cutouts to blur
+  optional float size_power = 5;            // defaults to inner: 0.5, outer: 0.0
+}
+
+// GuidanceScheduleParameters are used to define a schedule for CLIP guidance, and
+// are used to define the behavior of the guidance over time. They are relative
+// to the total number of steps, and are scaled to the number of steps in the
+// current run.
+message GuidanceScheduleParameters {
+  float duration = 1;
+  float value = 2;
+}
+
+// Parameters that affect the behavior of the guidance, typically used for CLIP.
+// We can specify more than one model, and the guidance will be a weighted sum
+// of the models.
+message GuidanceInstanceParameters {
+  repeated Model models = 2;                // models to use for this set
+  optional float guidance_strength = 3;     // 0.0 to 1.0, usually 0.05 to 0.225
+  repeated GuidanceScheduleParameters schedule = 4; // when to apply guidance
+  optional CutoutParameters cutouts = 5;    // cutout parameters
+  optional Prompt prompt = 6;               // prompt to use for guidance
+}
+
+// Parameters that affect the behavior of the guidance, typically used for CLIP.
+// The omission of this field implies the default guidance of CFG.
+message GuidanceParameters {
+  GuidancePreset guidance_preset = 1;                // base preset for guidance
+  repeated GuidanceInstanceParameters instances = 2; // guidance instances
 }
 
 message TransformType {
   oneof type {
-      DiffusionSampler diffusion = 1;
-      Upscaler upscaler = 2;
+    DiffusionSampler diffusion = 1;
+    Upscaler upscaler = 2;
   }
 }
 
@@ -143,6 +210,10 @@ enum Action {
   ACTION_OBFUSCATE = 4;
   ACTION_DISCARD = 5;
 }
+
+//
+// Artifact classification parameters.
+//
 
 enum ClassifierMode {
   CLSFR_MODE_ZEROSHOT = 0;
@@ -169,6 +240,10 @@ message ClassifierParameters {
   optional Action realized_action = 3;
 }
 
+//
+// Asset parameters
+//
+
 enum AssetAction {
   ASSET_PUT = 0;
   ASSET_GET = 1;
@@ -177,9 +252,32 @@ enum AssetAction {
 
 message AssetParameters {
   AssetAction action = 1;
-  string project = 2;
+  uint64 project = 2;
 }
 
+// AnswerMeta is a set of metadata about an answer, usually the operating
+// environment.
+message AnswerMeta {
+  optional string gpu_id = 1;
+  optional string cpu_id = 2;
+  optional string node_id = 3;
+  optional string engine_id = 4;
+}
+
+// An Answer is a response to a Request. It is a set of Artifacts, which can be
+// of any type and forwarded to the client or the next stage.
+message Answer {
+  string answer_id = 1;
+  string request_id = 2;
+  uint64 received = 3;
+  uint64 created = 4;
+  optional AnswerMeta meta = 6;
+  repeated Artifact artifacts = 7;
+}
+
+// A Request is a set of Artifacts, which can be of any type with model or
+// transform parameters. It is sent to the server, which will respond with an
+// Answer.
 message Request {
   string engine_id = 1;
   string request_id = 2;
@@ -192,6 +290,12 @@ message Request {
   }
   optional ConditionerParameters conditioner = 6;
 }
+
+//
+// Stages
+//
+// A Stage is a single step in a pipeline. Stages are a set of Requests, which are
+// sent to the server, and a set of Answers, which are received from the server.
 
 enum StageAction {
   STAGE_ACTION_PASS = 0;
@@ -216,6 +320,9 @@ message ChainRequest {
   repeated Stage stage = 2;
 }
 
+//
+// gRPC services
+//
 service GenerationService {
   rpc Generate (Request) returns (stream Answer) {};
   rpc ChainGenerate (ChainRequest) returns (stream Answer) {};
