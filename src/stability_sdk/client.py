@@ -275,16 +275,18 @@ class StabilityInference:
         else:
             seed = list(seed)
 
-        prompt_ = []
-        if isinstance(prompt, str):
-            prompt_ = [generation.Prompt(text=prompt)]
-        elif isinstance(prompt, Sequence):
-            prompt_ = [generation.Prompt(text=p) for p in prompt]
-        else:
-            raise TypeError("prompt must be a string or a sequence")
+        prompts: List[generation.Prompt] = []
+        if not isinstance(prompt, Sequence):
+            prompt = [prompt]
+        for p in prompt:
+            if isinstance(p, str):
+                p = generation.Prompt(text=p)
+            elif not isinstance(p, generation.Prompt):
+                raise TypeError("prompt must be a string or generation.Prompt object")
+            prompts.append(p)
 
         if init_image is not None:
-            prompt_ += [image_to_prompt(init_image, init=True)]
+            prompts += [image_to_prompt(init_image, init=True)]
             parameters = (
                 generation.StepParameter(
                     scaled_step=0,
@@ -298,7 +300,7 @@ class StabilityInference:
                 ),
             )
             if mask_image is not None:
-                prompt_ += [image_to_prompt(mask_image, mask=True)]
+                prompts += [image_to_prompt(mask_image, mask=True)]
         else:
             parameters = (
                 generation.StepParameter(
