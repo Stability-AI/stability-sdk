@@ -287,27 +287,31 @@ class StabilityInference:
 
         if init_image is not None:
             prompt_ += [image_to_prompt(init_image, init=True)]
-            parameters = (
-                generation.StepParameter(
-                    scaled_step=0,
-                    sampler=generation.SamplerParameters(
-                        cfg_scale=cfg_scale,
-                    ),
-                    schedule=generation.ScheduleParameters(
-                        start=start_schedule,
-                        end=end_schedule,
-                    ),
+            step_parameters = dict(
+                scaled_step=0,
+                sampler=generation.SamplerParameters(
+                    cfg_scale=cfg_scale,
+                ),
+                schedule=generation.ScheduleParameters(
+                    start=start_schedule,
+                    end=end_schedule,
                 ),
             )
             if mask_image is not None:
                 prompt_ += [image_to_prompt(mask_image, mask=True)]
         else:
-            parameters = (
-                generation.StepParameter(
-                    scaled_step=0,
-                    sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
-                ),
+            step_parameters = dict(
+                scaled_step=0,
+                sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
             )
+        
+        if guidance_prompt:
+            if isinstance(guidance_prompt, str):
+                guidance_prompt = generation.Prompt(text=guidance_prompt)
+            elif not isinstance(guidance_prompt, generation.Prompt):
+                raise ValueError("guidance_prompt must be a string or Prompt object")
+        if guidance_strength == 0.0:
+            guidance_strength = None
 
         rq = generation.Request(
             engine_id=self.engine,
@@ -320,7 +324,7 @@ class StabilityInference:
                 seed=seed,
                 steps=steps,
                 samples=samples,
-                parameters=parameters,
+                parameters=generation.StepParameter(**step_parameters),
             ),
         )
 
