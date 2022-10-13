@@ -276,8 +276,8 @@ class StabilityInference:
             seed = list(seed)
 
         prompt_: List[generation.Prompt] = []
-        if not isinstance(prompt, generation.Prompt):
-            prompt = list(prompt)
+        if any(isinstance(prompt, t) for t in (str, generation.Prompt)):
+            prompt = [prompt]
         for p in prompt:
             if isinstance(p, str):
                 p = generation.Prompt(text=p)
