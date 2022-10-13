@@ -345,7 +345,7 @@ class StabilityInference:
                 seed=seed,
                 steps=steps,
                 samples=samples,
-                parameters=generation.StepParameter(**step_parameters),
+                parameters=[generation.StepParameter(**step_parameters)],
             ),
         )
 
