@@ -309,6 +309,31 @@ class StabilityInference:
         if guidance_strength == 0.0:
             guidance_strength = None
 
+            
+        # Build our CLIP parameters
+        if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
+            if guidance_models:
+                guiders = [generation.Model(alias=model) for model in guidance_models]
+            else:
+                guiders = None
+
+            if guidance_cuts:
+                cutouts = generation.CutoutParameters(count=guidance_cuts)
+            else:
+                cutouts = None
+
+            step_parameters["guidance"] = generation.GuidanceParameters(
+                guidance_preset=guidance_preset,
+                instances=[
+                    generation.GuidanceInstanceParameters(
+                        guidance_strength=guidance_strength,
+                        models=guiders,
+                        cutouts=cutouts,
+                        prompt=guidance_prompt,
+                    )
+                ],
+            )
+            
         rq = generation.Request(
             engine_id=self.engine,
             request_id=request_id,
