@@ -21,10 +21,10 @@ setup(
 
     install_requires=[
         'Pillow',
-        'grpcio',
-        'grpcio-tools',
+        'grpcio==1.48.1',
+        'grpcio-tools==1.48.1',
         'python-dotenv',
-        'protobuf>=3.20.2,<4'
+        'protobuf==3.19.5'
     ],
     packages=find_packages(
         where='src',
