@@ -312,6 +312,9 @@ class StabilityInference:
             
         # Build our CLIP parameters
         if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
+            # to do: make it so user can override this
+            step_parameters['sampler']=None
+
             if guidance_models:
                 guiders = [generation.Model(alias=model) for model in guidance_models]
             else:
