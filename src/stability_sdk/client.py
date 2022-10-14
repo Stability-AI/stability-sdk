@@ -288,13 +288,13 @@ class StabilityInference:
         step_parameters = dict(
             scaled_step=0,
             sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
-            schedule=generation.ScheduleParameters(
-                start=start_schedule,
-                end=end_schedule,
-            ),
         )
             
         if init_image is not None:
+            step_parameters['schedule'] = generation.ScheduleParameters(
+                start=start_schedule,
+                end=end_schedule,
+            )
             prompts += [image_to_prompt(init_image, init=True)]
 
             if mask_image is not None:
