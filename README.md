@@ -86,7 +86,7 @@ protobuf definition to compile stubs for your language:
 
 ## Community-contributed clients
 
-* Typescript client: https://github.com/jakiestfu/stability-ts
+* Typescript client: https://github.com/vpzomtrrfrt/stability-client
 * Guide to building for Ruby: https://github.com/kmcphillips/stability-sdk/blob/main/src/ruby/README.md
 
 ## DreamStudio API TOS
