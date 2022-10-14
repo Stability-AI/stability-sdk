@@ -230,7 +230,7 @@ class StabilityInference:
         classifiers: Optional[generation.ClassifierParameters] = None,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
-        guidance_strength: float = 0.0,
+        guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
     ) -> Generator[generation.Answer, None, None]:
@@ -253,7 +253,7 @@ class StabilityInference:
         :param classifiers: DEPRECATED/UNUSED - Has no effect on image generation.
         :param guidance_preset: Guidance preset to use. See generation.GuidancePreset for supported values.
         :param guidance_cuts: Number of cuts to use for guidance.
-        :param guidance_strength: Strength of the guidance.
+        :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
         :return: Generator of Answer objects.
