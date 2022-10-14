@@ -275,7 +275,7 @@ class StabilityInference:
         else:
             seed = list(seed)
 
-        prompt_: List[generation.Prompt] = []
+        prompts: List[generation.Prompt] = []
         if any(isinstance(prompt, t) for t in (str, generation.Prompt)):
             prompt = [prompt]
         for p in prompt:
@@ -283,7 +283,7 @@ class StabilityInference:
                 p = generation.Prompt(text=p)
             elif not isinstance(p, generation.Prompt):
                 raise TypeError("prompt must be a string or generation.Prompt object")
-            prompt_.append(p)
+            prompts.append(p)
 
         step_parameters = dict(
             scaled_step=0,
@@ -295,10 +295,10 @@ class StabilityInference:
         )
             
         if init_image is not None:
-            prompt_ += [image_to_prompt(init_image, init=True)]
+            prompts += [image_to_prompt(init_image, init=True)]
 
             if mask_image is not None:
-                prompt_ += [image_to_prompt(mask_image, mask=True)]
+                prompts += [image_to_prompt(mask_image, mask=True)]
 
         
         if guidance_prompt:
@@ -337,7 +337,7 @@ class StabilityInference:
         rq = generation.Request(
             engine_id=self.engine,
             request_id=request_id,
-            prompt=prompt_,
+            prompt=prompts,
             image=generation.ImageParameters(
                 transform=generation.TransformType(diffusion=sampler),
                 height=height,
