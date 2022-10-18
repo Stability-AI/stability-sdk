@@ -7,7 +7,7 @@ from stability_sdk.utils import (
 )
 
 
-@pytest.mark.parametrize("sampler_name", algorithms.keys())
+@pytest.mark.parametrize("sampler_name", SAMPLERS.keys())
 def test_get_sampler_from_str_valid(sampler_name):
     get_sampler_from_str(s=sampler_name)
     assert True
