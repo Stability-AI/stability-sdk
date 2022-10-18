@@ -36,7 +36,7 @@ from stability_sdk.client import (
     StabilityInference,
 )
 from stability_sdk.utils import (
-    algorithms,
+    SAMPLERS,
     MAX_FILENAME_SZ,
     truncate_fit,
     get_sampler_from_str,
@@ -99,7 +99,7 @@ parser.add_argument(
     "-A",
     type=str,
     default="k_lms",
-    help="[k_lms] (" + ", ".join(algorithms.keys()) + ")",
+    help="[k_lms] (" + ", ".join(SAMPLERS.keys()) + ")",
 )
 parser.add_argument(
     "--steps", "-s", type=int, default=50, help="[50] number of steps"
