@@ -266,8 +266,6 @@ class StabilityInference:
                 "If mask_image is provided, init_image must also be provided"
             )
 
-        request_id = str(uuid.uuid4())
-
         if not seed:
             seed = [random.randrange(0, 4294967295)]
         elif isinstance(seed, int):
@@ -336,22 +334,40 @@ class StabilityInference:
                     )
                 ],
             )
-            
-        rq = generation.Request(
-            engine_id=self.engine,
-            request_id=request_id,
-            prompt=prompts,
-            image=generation.ImageParameters(
-                transform=generation.TransformType(diffusion=sampler),
-                height=height,
-                width=width,
-                seed=seed,
-                steps=steps,
-                samples=samples,
-                parameters=[generation.StepParameter(**step_parameters)],
-            ),
+
+        image_parameters=generation.ImageParameters(
+            transform=generation.TransformType(diffusion=sampler),
+            height=height,
+            width=width,
+            seed=seed,
+            steps=steps,
+            samples=samples,
+            parameters=[generation.StepParameter(**step_parameters)],
         )
 
+        return self.emit_request(prompt=prompts, image_parameters)
+
+            
+    # The motivation here is to facilitate constructing requests by passing protobuf objects directly.
+    def emit_request(
+        self,
+        prompt: generation.Prompt,
+        image_parameters: generation.ImageParameters,
+        engine_id: str = None,
+        request_id: str = None,
+    ):
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        if not engine_id:
+            engine_id = self.engine_id
+        
+        rq = generation.Request(
+            engine_id=engine_id,
+            request_id=request_id,
+            prompt=prompt,
+            image=image_parameters
+        )
+        
         if self.verbose:
             logger.info("Sending request.")
 
