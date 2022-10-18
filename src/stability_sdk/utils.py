@@ -25,9 +25,7 @@ SAMPLERS: Dict[str, int] = {
     "k_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
     "k_lms": generation.SAMPLER_K_LMS,
 }
-    
-# just while we're refactoring
-algorithms=SAMPLERS
+
     
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
