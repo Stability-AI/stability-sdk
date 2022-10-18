@@ -33,7 +33,7 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
 from stability_sdk.utils import (
-    algorithms,
+    SAMPLERS,
     MAX_FILENAME_SZ,
     truncate_fit,
     get_sampler_from_str,
@@ -404,7 +404,7 @@ if __name__ == "__main__":
         "-A",
         type=str,
         default="k_lms",
-        help="[k_lms] (" + ", ".join(algorithms.keys()) + ")",
+        help="[k_lms] (" + ", ".join(SAMPLERS.keys()) + ")",
     )
     parser.add_argument(
         "--steps", "-s", type=int, default=50, help="[50] number of steps"
