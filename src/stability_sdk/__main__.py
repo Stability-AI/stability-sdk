@@ -34,6 +34,7 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as genera
 
 from stability_sdk.client import (
     MAX_FILENAME_SZ,
+    StabilityInference,
 )
 
 
