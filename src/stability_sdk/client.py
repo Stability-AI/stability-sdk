@@ -309,7 +309,7 @@ class StabilityInference:
         if not request_id:
             request_id = str(uuid.uuid4())
         if not engine_id:
-            engine_id = self.engine_id
+            engine_id = self.engine
         
         rq = generation.Request(
             engine_id=engine_id,
