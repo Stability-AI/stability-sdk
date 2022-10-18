@@ -32,29 +32,18 @@ sys.path.append(str(genPath))
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
-MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
+from stability_sdk.utils import (
+    algorithms,
+    MAX_FILENAME_SZ,
+    truncate_fit,
+    get_sampler_from_str,
+    open_images,
+)
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
-algorithms: Dict[str, int] = {
-    "ddim": generation.SAMPLER_DDIM,
-    "plms": generation.SAMPLER_DDPM,
-    "k_euler": generation.SAMPLER_K_EULER,
-    "k_euler_ancestral": generation.SAMPLER_K_EULER_ANCESTRAL,
-    "k_heun": generation.SAMPLER_K_HEUN,
-    "k_dpm_2": generation.SAMPLER_K_DPM_2,
-    "k_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
-    "k_lms": generation.SAMPLER_K_LMS,
-}
-
-def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
-    post = f"_{ts}_{idx}"
-    prompt_budget = max
-    prompt_budget -= len(prefix)
-    prompt_budget -= len(post)
-    prompt_budget -= len(ext) + 1
-    return f"{prefix}{prompt[:prompt_budget]}{post}{ext}"
 
 def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
     if init and mask:
@@ -74,20 +63,6 @@ def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Pr
         ),
         parameters=generation.PromptParameters(init=init),
     )
-
-
-def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
-    """
-    Convert a string to a DiffusionSampler enum.
-
-    :param s: The string to convert.
-    :return: The DiffusionSampler enum.
-    """
-    algorithm_key = s.lower().strip()
-    algorithm = algorithms.get(algorithm_key, None)
-    if algorithm is None:
-        raise ValueError(f"unknown sampler {s}")
-    return algorithm
 
 
 def process_artifacts_from_answers(
@@ -136,31 +111,6 @@ def process_artifacts_from_answers(
 
             yield (out_p, artifact)
             idx += 1
-
-
-def open_images(
-    images: Union[
-        Sequence[Tuple[str, generation.Artifact]],
-        Generator[Tuple[str, generation.Artifact], None, None],
-    ],
-    verbose: bool = False,
-) -> Generator[Tuple[str, generation.Artifact], None, None]:
-    """
-    Open the images from the filenames and Artifacts tuples.
-
-    :param images: The tuples of Artifacts and associated images to open.
-    :return:  A Generator of tuples of image filenames and Artifacts, intended
-     for passthrough.
-    """
-    from PIL import Image
-
-    for path, artifact in images:
-        if artifact.type == generation.ARTIFACT_IMAGE:
-            if verbose:
-                logger.info(f"opening {path}")
-            img = Image.open(io.BytesIO(artifact.binary))
-            img.show()
-        yield (path, artifact)
 
 
 class StabilityInference:
