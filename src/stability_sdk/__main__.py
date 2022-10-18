@@ -33,11 +33,15 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
 from stability_sdk.client import (
-    get_sampler_from_str,
-    MAX_FILENAME_SZ,
     StabilityInference,
 )
-
+from stability_sdk.utils import (
+    algorithms,
+    MAX_FILENAME_SZ,
+    truncate_fit,
+    get_sampler_from_str,
+    open_images,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
@@ -65,29 +69,6 @@ if not STABILITY_KEY:
     )
     sys.exit(1)
     
-    
-def open_images(
-    images: Union[
-        Sequence[Tuple[str, generation.Artifact]],
-        Generator[Tuple[str, generation.Artifact], None, None],
-    ],
-    verbose: bool = False,
-) -> Generator[Tuple[str, generation.Artifact], None, None]:
-    """
-    Open the images from the filenames and Artifacts tuples.
-    :param images: The tuples of Artifacts and associated images to open.
-    :return:  A Generator of tuples of image filenames and Artifacts, intended
-     for passthrough.
-    """
-    from PIL import Image
-
-    for path, artifact in images:
-        if artifact.type == generation.ARTIFACT_IMAGE:
-            if verbose:
-                logger.info(f"opening {path}")
-            img = Image.open(io.BytesIO(artifact.binary))
-            img.show()
-        yield (path, artifact)
     
     
 # CLI parsing
