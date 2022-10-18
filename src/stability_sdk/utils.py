@@ -15,7 +15,7 @@ from PIL import Image
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
-algorithms: Dict[str, int] = {
+SAMPLERS: Dict[str, int] = {
     "ddim": generation.SAMPLER_DDIM,
     "plms": generation.SAMPLER_DDPM,
     "k_euler": generation.SAMPLER_K_EULER,
@@ -25,7 +25,10 @@ algorithms: Dict[str, int] = {
     "k_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
     "k_lms": generation.SAMPLER_K_LMS,
 }
-
+    
+# just while we're refactoring
+algorithms=SAMPLERS
+    
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
@@ -43,7 +46,7 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
     :return: The DiffusionSampler enum.
     """
     algorithm_key = s.lower().strip()
-    algorithm = algorithms.get(algorithm_key, None)
+    algorithm = SAMPLERS.get(algorithm_key, None)
     if algorithm is None:
         raise ValueError(f"unknown sampler {s}")
     return algorithm
