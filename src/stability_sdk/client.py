@@ -295,7 +295,7 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-        return self.emit_request(prompt=prompts, image_parameters)
+        return self.emit_request(prompt=prompts, image_parameters=image_parameters)
 
             
     # The motivation here is to facilitate constructing requests by passing protobuf objects directly.
