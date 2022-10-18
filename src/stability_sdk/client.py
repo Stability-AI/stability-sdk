@@ -393,25 +393,6 @@ class StabilityInference:
             start = time.time()
 
 
-def build_request_dict(cli_args: Namespace) -> Dict[str, Any]:
-    """
-    Build a Request arguments dictionary from the CLI arguments.
-    """
-    return {
-        "height": cli_args.height,
-        "width": cli_args.width,
-        "start_schedule": cli_args.start_schedule,
-        "end_schedule": cli_args.end_schedule,
-        "cfg_scale": cli_args.cfg_scale,
-        "sampler": get_sampler_from_str(cli_args.sampler),
-        "steps": cli_args.steps,
-        "seed": cli_args.seed,
-        "samples": cli_args.num_samples,
-        "init_image": cli_args.init_image,
-        "mask_image": cli_args.mask_image,
-    }
-
-
 if __name__ == "__main__":
     # Set up logging for output to console.
     fh = logging.StreamHandler()
@@ -519,7 +500,21 @@ if __name__ == "__main__":
     if args.mask_image:
         args.mask_image = Image.open(args.mask_image)
 
-    request = build_request_dict(args)
+    request =  {
+        "height": cli_args.height,
+        "width": cli_args.width,
+        "start_schedule": cli_args.start_schedule,
+        "end_schedule": cli_args.end_schedule,
+        "cfg_scale": cli_args.cfg_scale,
+        "sampler": get_sampler_from_str(cli_args.sampler),
+        "steps": cli_args.steps,
+        "seed": cli_args.seed,
+        "samples": cli_args.num_samples,
+        "init_image": cli_args.init_image,
+        "mask_image": cli_args.mask_image,
+    }
+
+
 
     stability_api = StabilityInference(
         STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
