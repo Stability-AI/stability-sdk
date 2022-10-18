@@ -402,6 +402,15 @@ if __name__ == "__main__":
     fh.setFormatter(fh_formatter)
     logger.addHandler(fh)
 
+    logger.warning(
+        "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
+        "[Deprecation Warning] Please modify your code to call the sdk without invoking the 'client' module instead."
+        "[Deprecation Warning] rather than:"
+        "[Deprecation Warning]    $ python -m stability_sdk.client ...  "
+        "[Deprecation Warning] instead do this:"
+        "[Deprecation Warning]    $ python -m stability_sdk ...  "
+    )
+    
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
     STABILITY_KEY = os.getenv("STABILITY_KEY", "")
 
