@@ -1,7 +1,7 @@
 import pytest
 
 from stability_sdk.utils import (
-    algorithms,
+    SAMPLERS,
     get_sampler_from_str,
     truncate_fit,
 )
