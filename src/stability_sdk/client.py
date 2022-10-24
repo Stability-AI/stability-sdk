@@ -25,6 +25,7 @@ except ModuleNotFoundError:
 else:
     load_dotenv()
 
+# this is necessary because of how the auto-generated code constructs its imports
 thisPath = pathlib.Path(__file__).parent.resolve()
 genPath = thisPath / "interfaces/gooseai/generation"
 sys.path.append(str(genPath))
@@ -32,29 +33,18 @@ sys.path.append(str(genPath))
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
-MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
+from stability_sdk.utils import (
+    SAMPLERS,
+    MAX_FILENAME_SZ,
+    truncate_fit,
+    get_sampler_from_str,
+    open_images,
+)
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
-algorithms: Dict[str, int] = {
-    "ddim": generation.SAMPLER_DDIM,
-    "plms": generation.SAMPLER_DDPM,
-    "k_euler": generation.SAMPLER_K_EULER,
-    "k_euler_ancestral": generation.SAMPLER_K_EULER_ANCESTRAL,
-    "k_heun": generation.SAMPLER_K_HEUN,
-    "k_dpm_2": generation.SAMPLER_K_DPM_2,
-    "k_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
-    "k_lms": generation.SAMPLER_K_LMS,
-}
-
-def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
-    post = f"_{ts}_{idx}"
-    prompt_budget = max
-    prompt_budget -= len(prefix)
-    prompt_budget -= len(post)
-    prompt_budget -= len(ext) + 1
-    return f"{prefix}{prompt[:prompt_budget]}{post}{ext}"
 
 def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
     if init and mask:
@@ -74,20 +64,6 @@ def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Pr
         ),
         parameters=generation.PromptParameters(init=init),
     )
-
-
-def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
-    """
-    Convert a string to a DiffusionSampler enum.
-
-    :param s: The string to convert.
-    :return: The DiffusionSampler enum.
-    """
-    algorithm_key = s.lower().strip()
-    algorithm = algorithms.get(algorithm_key, None)
-    if algorithm is None:
-        raise ValueError(f"unknown sampler {s}")
-    return algorithm
 
 
 def process_artifacts_from_answers(
@@ -136,31 +112,6 @@ def process_artifacts_from_answers(
 
             yield (out_p, artifact)
             idx += 1
-
-
-def open_images(
-    images: Union[
-        Sequence[Tuple[str, generation.Artifact]],
-        Generator[Tuple[str, generation.Artifact], None, None],
-    ],
-    verbose: bool = False,
-) -> Generator[Tuple[str, generation.Artifact], None, None]:
-    """
-    Open the images from the filenames and Artifacts tuples.
-
-    :param images: The tuples of Artifacts and associated images to open.
-    :return:  A Generator of tuples of image filenames and Artifacts, intended
-     for passthrough.
-    """
-    from PIL import Image
-
-    for path, artifact in images:
-        if artifact.type == generation.ARTIFACT_IMAGE:
-            if verbose:
-                logger.info(f"opening {path}")
-            img = Image.open(io.BytesIO(artifact.binary))
-            img.show()
-        yield (path, artifact)
 
 
 class StabilityInference:
@@ -266,8 +217,6 @@ class StabilityInference:
                 "If mask_image is provided, init_image must also be provided"
             )
 
-        request_id = str(uuid.uuid4())
-
         if not seed:
             seed = [random.randrange(0, 4294967295)]
         elif isinstance(seed, int):
@@ -290,6 +239,7 @@ class StabilityInference:
             sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
         )
             
+        # NB: Specifying schedule when there's no init image causes washed out results
         if init_image is not None:
             step_parameters['schedule'] = generation.ScheduleParameters(
                 start=start_schedule,
@@ -336,22 +286,40 @@ class StabilityInference:
                     )
                 ],
             )
-            
-        rq = generation.Request(
-            engine_id=self.engine,
-            request_id=request_id,
-            prompt=prompts,
-            image=generation.ImageParameters(
-                transform=generation.TransformType(diffusion=sampler),
-                height=height,
-                width=width,
-                seed=seed,
-                steps=steps,
-                samples=samples,
-                parameters=[generation.StepParameter(**step_parameters)],
-            ),
+
+        image_parameters=generation.ImageParameters(
+            transform=generation.TransformType(diffusion=sampler),
+            height=height,
+            width=width,
+            seed=seed,
+            steps=steps,
+            samples=samples,
+            parameters=[generation.StepParameter(**step_parameters)],
         )
 
+        return self.emit_request(prompt=prompts, image_parameters=image_parameters)
+
+            
+    # The motivation here is to facilitate constructing requests by passing protobuf objects directly.
+    def emit_request(
+        self,
+        prompt: generation.Prompt,
+        image_parameters: generation.ImageParameters,
+        engine_id: str = None,
+        request_id: str = None,
+    ):
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        if not engine_id:
+            engine_id = self.engine
+        
+        rq = generation.Request(
+            engine_id=engine_id,
+            request_id=request_id,
+            prompt=prompt,
+            image=image_parameters
+        )
+        
         if self.verbose:
             logger.info("Sending request.")
 
@@ -377,25 +345,6 @@ class StabilityInference:
             start = time.time()
 
 
-def build_request_dict(cli_args: Namespace) -> Dict[str, Any]:
-    """
-    Build a Request arguments dictionary from the CLI arguments.
-    """
-    return {
-        "height": cli_args.height,
-        "width": cli_args.width,
-        "start_schedule": cli_args.start_schedule,
-        "end_schedule": cli_args.end_schedule,
-        "cfg_scale": cli_args.cfg_scale,
-        "sampler": get_sampler_from_str(cli_args.sampler),
-        "steps": cli_args.steps,
-        "seed": cli_args.seed,
-        "samples": cli_args.num_samples,
-        "init_image": cli_args.init_image,
-        "mask_image": cli_args.mask_image,
-    }
-
-
 if __name__ == "__main__":
     # Set up logging for output to console.
     fh = logging.StreamHandler()
@@ -405,6 +354,15 @@ if __name__ == "__main__":
     fh.setFormatter(fh_formatter)
     logger.addHandler(fh)
 
+    logger.warning(
+        "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
+        "[Deprecation Warning] Please modify your code to call the sdk without invoking the 'client' module instead."
+        "[Deprecation Warning] rather than:"
+        "[Deprecation Warning]    $ python -m stability_sdk.client ...  "
+        "[Deprecation Warning] instead do this:"
+        "[Deprecation Warning]    $ python -m stability_sdk ...  "
+    )
+    
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
     STABILITY_KEY = os.getenv("STABILITY_KEY", "")
 
@@ -448,7 +406,7 @@ if __name__ == "__main__":
         "-A",
         type=str,
         default="k_lms",
-        help="[k_lms] (" + ", ".join(algorithms.keys()) + ")",
+        help="[k_lms] (" + ", ".join(SAMPLERS.keys()) + ")",
     )
     parser.add_argument(
         "--steps", "-s", type=int, default=50, help="[50] number of steps"
@@ -503,7 +461,21 @@ if __name__ == "__main__":
     if args.mask_image:
         args.mask_image = Image.open(args.mask_image)
 
-    request = build_request_dict(args)
+    request =  {
+        "height": cli_args.height,
+        "width": cli_args.width,
+        "start_schedule": cli_args.start_schedule,
+        "end_schedule": cli_args.end_schedule,
+        "cfg_scale": cli_args.cfg_scale,
+        "sampler": get_sampler_from_str(cli_args.sampler),
+        "steps": cli_args.steps,
+        "seed": cli_args.seed,
+        "samples": cli_args.num_samples,
+        "init_image": cli_args.init_image,
+        "mask_image": cli_args.mask_image,
+    }
+
+
 
     stability_api = StabilityInference(
         STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
