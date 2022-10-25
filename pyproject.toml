@@ -3,4 +3,4 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
-log_cli = True
+log_cli = true
