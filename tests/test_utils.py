@@ -13,7 +13,7 @@ def test_get_sampler_from_str_valid(sampler_name):
     assert True
 
 def test_get_sampler_from_str_invalid():
-    with pytest.raises(ValueError, match="unknown sampler")
+    with pytest.raises(ValueError, match="unknown sampler"):
         get_sampler_from_str(s='not a real sampler')
 
 
