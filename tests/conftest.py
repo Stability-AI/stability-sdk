@@ -13,6 +13,7 @@ import pytest
 #import stability_sdk
 
 import pathlib
+import sys
 
 # uh... let's try this
 # this is necessary because of how the auto-generated code constructs its imports
