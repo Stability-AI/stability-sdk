@@ -32,7 +32,7 @@ logger.critical(genPath)
 sys.path.append(str(genPath))
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+#import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
 _TEST_GRPC_PORT = (
     '127.0.0.1:50031', '127.0.0.1:50032', '127.0.0.1:50033', '127.0.0.1:50034')
