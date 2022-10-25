@@ -27,10 +27,10 @@ setup(
         'protobuf==3.19.5'
     ],
     extras_require={
-    'dev': [
-        'pytest',
-        'grpcio-testing'
-    ]
+        'dev': [
+            'pytest',
+            'grpcio-testing'
+    ]},
     packages=find_packages(
         where='src',
         include=['stability_sdk*'],
