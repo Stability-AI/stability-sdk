@@ -12,6 +12,8 @@ import pytest
 # hopefully this add anything to the PATH we might need?
 #import stability_sdk
 
+import pathlib
+
 # uh... let's try this
 # this is necessary because of how the auto-generated code constructs its imports
 #thisPath = pathlib.Path(__file__).parent.resolve()
