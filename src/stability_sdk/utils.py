@@ -30,6 +30,14 @@ SAMPLERS: Dict[str, int] = {
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
+    """
+    Constructs an output filename from a collection of required fields.
+    
+    Given an over-budget threshold of `max`, trims the prompt string to satisfy the budget.
+    NB: As implemented, 'max' is the smallest filename length that will trigger truncation.
+    It is presumed that the sum of the lengths of the other filename fields is smaller than `max`.
+    If they exceed `max`, this function will just always construct a filename with no prompt component.
+    """
     post = f"_{ts}_{idx}"
     prompt_budget = max
     prompt_budget -= len(prefix)
