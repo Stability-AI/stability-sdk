@@ -49,3 +49,10 @@ def test_image_to_prompt_init_mask():
         assert False
     except ValueError:
         assert True
+
+##############################
+
+# let's get dangerous
+
+def test_server_mocking(grpc_server, grpc_addr):
+    print(grpc_addr)
