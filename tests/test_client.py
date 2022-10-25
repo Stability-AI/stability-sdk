@@ -5,6 +5,9 @@ from stability_sdk import client
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
+import grpc
+import grpc_testing
+
 def test_client_import():
     from stability_sdk import client
     assert True
