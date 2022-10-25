@@ -21,7 +21,9 @@ import sys
 #thisPath = pathlib.Path(__file__).parent.resolve()
 #genPath = thisPath / "interfaces/gooseai/generation"
 thisPath = pathlib.Path(__file__).parent.parent.resolve()
-genPath = thisPath / "api-interfaces/gooseai/generation"
+#genPath = thisPath / "api-interfaces/gooseai/generation" # this path does not exist, probably need to --recurse-submodules
+genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation" # this path does not exist, probably need to --recurse-submodules
+
 
 logger = logging.getLogger(__name__)
 print(thisPath)
