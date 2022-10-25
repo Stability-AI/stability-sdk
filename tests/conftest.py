@@ -24,14 +24,9 @@ thisPath = pathlib.Path(__file__).parent.parent.resolve()
 genPath = thisPath / "api-interfaces/gooseai/generation"
 
 logger = logging.getLogger(__name__)
-#logger.setLevel(level=logging.INFO)
-#logger.setLevel(level=logging.DEBUG)
 print(thisPath)
 print(genPath)
-#print("tommy can you hear me?")
-#logger.critical("can you feel me near you?")
-#logger.critical(thisPath)
-#logger.critical(genPath)
+print(genPath.exists())
 sys.path.append(str(genPath))
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
