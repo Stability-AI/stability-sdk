@@ -10,7 +10,17 @@ import pytest
 #import rpc
 
 # hopefully this add anything to the PATH we might need?
-import stability_sdk
+#import stability_sdk
+
+# uh... let's try this
+# this is necessary because of how the auto-generated code constructs its imports
+#thisPath = pathlib.Path(__file__).parent.resolve()
+#genPath = thisPath / "interfaces/gooseai/generation"
+thisPath = pathlib.Path(__file__).parent.parent.resolve()
+genPath = thisPath / "api-interfaces/gooseai/generation"
+print(thisPath)
+print(genPath)
+sys.path.append(str(genPath))
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
