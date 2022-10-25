@@ -25,8 +25,11 @@ genPath = thisPath / "api-interfaces/gooseai/generation"
 
 logger = logging.getLogger(__name__)
 #logger.setLevel(level=logging.INFO)
-#print(thisPath)
-#print(genPath)
+#logger.setLevel(level=logging.DEBUG)
+print(thisPath)
+print(genPath)
+print("tommy can you hear me?")
+logger.critical("can you feel me near you?")
 logger.critical(thisPath)
 logger.critical(genPath)
 sys.path.append(str(genPath))
