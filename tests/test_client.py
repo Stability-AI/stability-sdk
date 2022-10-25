@@ -55,4 +55,8 @@ def test_image_to_prompt_init_mask():
 # let's get dangerous
 
 def test_server_mocking(grpc_server, grpc_addr):
-    print(grpc_addr)
+    #print(grpc_addr)
+    class_instance = client.StabilityInference(host=grpc_addr[0])
+    # fuck it, let's see what happens.
+    response = class_instance.generate(prompt="foo bar"
+    print(response)
