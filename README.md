@@ -69,7 +69,7 @@ optional arguments:
 ```
 
 
-## Connecting to the API in using languages other than python
+## Connecting to the API using languages other than Python
 
 The `src` subdirectory contains pre-compiled gRPC stubs for the following languages:
 
