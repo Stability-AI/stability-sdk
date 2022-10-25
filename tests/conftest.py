@@ -24,11 +24,11 @@ thisPath = pathlib.Path(__file__).parent.parent.resolve()
 genPath = thisPath / "api-interfaces/gooseai/generation"
 
 logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.INFO)
+#logger.setLevel(level=logging.INFO)
 #print(thisPath)
 #print(genPath)
-logger.info(thisPath)
-logger.info(genPath)
+logger.critical(thisPath)
+logger.critical(genPath)
 sys.path.append(str(genPath))
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
