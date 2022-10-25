@@ -462,17 +462,17 @@ if __name__ == "__main__":
         args.mask_image = Image.open(args.mask_image)
 
     request =  {
-        "height": cli_args.height,
-        "width": cli_args.width,
-        "start_schedule": cli_args.start_schedule,
-        "end_schedule": cli_args.end_schedule,
-        "cfg_scale": cli_args.cfg_scale,
-        "sampler": get_sampler_from_str(cli_args.sampler),
-        "steps": cli_args.steps,
-        "seed": cli_args.seed,
-        "samples": cli_args.num_samples,
-        "init_image": cli_args.init_image,
-        "mask_image": cli_args.mask_image,
+        "height": args.height,
+        "width": args.width,
+        "start_schedule": args.start_schedule,
+        "end_schedule": args.end_schedule,
+        "cfg_scale": args.cfg_scale,
+        "sampler": get_sampler_from_str(args.sampler),
+        "steps": args.steps,
+        "seed": args.seed,
+        "samples": args.num_samples,
+        "init_image": args.init_image,
+        "mask_image": args.mask_image,
     }
 
 
