@@ -22,7 +22,7 @@ import sys
 #genPath = thisPath / "interfaces/gooseai/generation"
 thisPath = pathlib.Path(__file__).parent.parent.resolve()
 #genPath = thisPath / "api-interfaces/gooseai/generation" # this path does not exist, probably need to --recurse-submodules
-genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation" # this path does not exist, probably need to --recurse-submodules
+genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation" # this path exists
 
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ print(genPath.exists())
 sys.path.append(str(genPath))
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-#import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
 _TEST_GRPC_PORT = (
     '127.0.0.1:50031', '127.0.0.1:50032', '127.0.0.1:50033', '127.0.0.1:50034')
