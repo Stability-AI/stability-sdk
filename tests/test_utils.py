@@ -19,13 +19,27 @@ def test_get_sampler_from_str_invalid():
     except ValueError:
         assert True
 
-def test_truncate_fit():
-    truncate_fit(
-        prefix='foo', 
+
+####################################
+# to do: pytest.mark.paramaterized #
+
+def test_truncate_fit0():
+    outv = truncate_fit(
+        prefix='foo_', 
         prompt='bar', 
         ext='.baz', 
-        ts=0,
+        ts=12345678,
         idx=0, 
         max=99)
-    assert True
+    assert outv == 'foo_bar_12345678_0.baz'
+ 
+def test_truncate_fit1():
+    outv = truncate_fit(
+        prefix='foo_', 
+        prompt='bar', 
+        ext='.baz', 
+        ts=12345678,
+        idx=0, 
+        max=22)
+    assert outv == 'foo_ba_12345678_0.baz'
  
