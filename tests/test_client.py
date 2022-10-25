@@ -8,6 +8,8 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as genera
 import grpc
 import grpc_testing
 
+from typing import Generator
+
 def test_client_import():
     from stability_sdk import client
     assert True
@@ -60,3 +62,5 @@ def test_server_mocking(grpc_server, grpc_addr):
     # fuck it, let's see what happens.
     response = class_instance.generate(prompt="foo bar")
     print(response)
+    # might need this link later: https://stackoverflow.com/questions/54541338/calling-function-that-yields-from-a-pytest-fixture
+    assert isinstance(response, Generator)
