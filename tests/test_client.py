@@ -5,6 +5,11 @@ from stability_sdk import client
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
+import grpc
+import grpc_testing
+
+from typing import Generator
+
 def test_client_import():
     from stability_sdk import client
     assert True
@@ -46,3 +51,16 @@ def test_image_to_prompt_init_mask():
         assert False
     except ValueError:
         assert True
+
+##############################
+
+# let's get dangerous
+
+def test_server_mocking(grpc_server, grpc_addr):
+    #print(grpc_addr)
+    class_instance = client.StabilityInference(host=grpc_addr[0])
+    # fuck it, let's see what happens.
+    response = class_instance.generate(prompt="foo bar")
+    print(response)
+    # might need this link later: https://stackoverflow.com/questions/54541338/calling-function-that-yields-from-a-pytest-fixture
+    assert isinstance(response, Generator)
