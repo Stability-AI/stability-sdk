@@ -7,7 +7,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.2.6',
+    version='0.2.7',
     author='Wes Brown',
     author_email='wesbrown18@gmail.com',
     maintainer='David Marx',
@@ -26,6 +26,11 @@ setup(
         'python-dotenv',
         'protobuf==3.19.5'
     ],
+    extras_require={
+        'dev': [
+            'pytest',
+            'grpcio-testing'
+    ]},
     packages=find_packages(
         where='src',
         include=['stability_sdk*'],
