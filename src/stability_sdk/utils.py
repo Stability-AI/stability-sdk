@@ -38,21 +38,14 @@ SAMPLERS: Dict[str, int] = {
 }
 
 GUIDANCE_PRESETS: Dict[str, int] = {
-        "None": generation.GUIDANCE_PRESET_NONE,
-        "Simple": generation.GUIDANCE_PRESET_SIMPLE,
-        "FastBlue": generation.GUIDANCE_PRESET_FAST_BLUE,
-        "FastGreen": generation.GUIDANCE_PRESET_FAST_GREEN,
+        "none": generation.GUIDANCE_PRESET_NONE,
+        "simple": generation.GUIDANCE_PRESET_SIMPLE,
+        "fastblue": generation.GUIDANCE_PRESET_FAST_BLUE,
+        "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
     }
 
-def guidance_from_string(s: str) -> generation.GuidancePreset:
-    repr = GUIDANCE_PRESETS.get(s, None)
-    if repr is None:
-        raise ValueError("invalid guider provided")
-    return repr
-
-    
-    
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
+
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
@@ -70,6 +63,15 @@ def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int
     prompt_budget -= len(ext) + 1
     return f"{prefix}{prompt[:prompt_budget]}{post}{ext}"
 
+
+def guidance_from_string(s: str) -> generation.GuidancePreset:
+    algorithm_key = s.lower().strip()
+    repr = GUIDANCE_PRESETS.get(algorithm_key)
+    if repr is None:
+        raise ValueError(f"invalid guider preset: {s}")
+    return repr
+
+
 def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
     """
     Convert a string to a DiffusionSampler enum.
@@ -77,10 +79,10 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
     :return: The DiffusionSampler enum.
     """
     algorithm_key = s.lower().strip()
-    algorithm = SAMPLERS.get(algorithm_key, None)
-    if algorithm is None:
-        raise ValueError(f"unknown sampler {s}")
-    return algorithm
+    repr = SAMPLERS.get(algorithm_key)
+    if repr is None:
+        raise ValueError(f"invalid sampler: {s}")
+    return repr
 
 
 #def sampler_from_string(str: str) -> generation.DiffusionSampler:
