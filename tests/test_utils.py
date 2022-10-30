@@ -28,7 +28,7 @@ def test_get_sampler_from_str_valid(sampler_name):
     assert True
 
 def test_get_sampler_from_str_invalid():
-    with pytest.raises(ValueError, match="unknown sampler"):
+    with pytest.raises(ValueError, match="invalid sampler"):
         get_sampler_from_str(s='not a real sampler')
 
 
@@ -39,7 +39,7 @@ def test_guidance_from_string_valid(preset_name):
     assert True
 
 def test_guidance_from_string_invalid():
-    with pytest.raises(ValueError, match="invalid guider provided"):
+    with pytest.raises(ValueError, match="invalid guidance preset"):
         guidance_from_string(s='not a real preset')
 
         
