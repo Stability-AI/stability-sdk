@@ -19,7 +19,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             **/setup.py
-      - setup opencv for anim
+      - name: setup opencv for anim
         uses: Dovyski/setup-opencv-action@v1
         with:
           opencv-version: '4.6.0'
