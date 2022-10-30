@@ -8,8 +8,18 @@ import logging
 import time
 from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 import mimetypes
+import warnings
 
-
+try:
+    import numpy as np
+    import pandas as pd
+    #import cv2 # to do: add this as an installation dependency
+except ImportError:
+    warnings.warn(
+        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
+        "   pip install --upgrade stability_sdk[anim]"
+    )
+    
 from PIL import Image
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
