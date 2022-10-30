@@ -35,15 +35,6 @@ SAMPLERS: Dict[str, int] = {
     "k_dpm_2": generation.SAMPLER_K_DPM_2,
     "k_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
     "k_lms": generation.SAMPLER_K_LMS,
-    #########
-    "DDIM": generation.SAMPLER_DDIM,
-    "PLMS": generation.SAMPLER_DDPM,
-    "K_euler": generation.SAMPLER_K_EULER,
-    "K_euler_ancestral": generation.SAMPLER_K_EULER_ANCESTRAL,
-    "K_heun": generation.SAMPLER_K_HEUN,
-    "K_dpm_2": generation.SAMPLER_K_DPM_2,
-    "K_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
-    "K_lms": generation.SAMPLER_K_LMS,
 }
 
 GUIDANCE_PRESETS: Dict[str, int] = {
