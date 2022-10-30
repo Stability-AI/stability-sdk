@@ -33,8 +33,8 @@ GUIDANCE_PRESETS: Dict[str, int] = {
         "FastGreen": generation.GUIDANCE_PRESET_FAST_GREEN,
     }
 
-def guidance_from_string(str: str) -> generation.GuidancePreset:
-    repr = GUIDANCE_PRESETS.get(str, None)
+def guidance_from_string(s: str) -> generation.GuidancePreset:
+    repr = GUIDANCE_PRESETS.get(s, None)
     if repr is None:
         raise Exception("invalid guider provided")
     return repr
