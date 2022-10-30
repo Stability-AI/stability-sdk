@@ -24,6 +24,15 @@ SAMPLERS: Dict[str, int] = {
     "k_dpm_2": generation.SAMPLER_K_DPM_2,
     "k_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
     "k_lms": generation.SAMPLER_K_LMS,
+    #########
+    "DDIM": generation.SAMPLER_DDIM,
+    "PLMS": generation.SAMPLER_DDPM,
+    "K_euler": generation.SAMPLER_K_EULER,
+    "K_euler_ancestral": generation.SAMPLER_K_EULER_ANCESTRAL,
+    "K_heun": generation.SAMPLER_K_HEUN,
+    "K_dpm_2": generation.SAMPLER_K_DPM_2,
+    "K_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
+    "K_lms": generation.SAMPLER_K_LMS,
 }
 
 GUIDANCE_PRESETS: Dict[str, int] = {
@@ -70,6 +79,16 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
     if algorithm is None:
         raise ValueError(f"unknown sampler {s}")
     return algorithm
+
+
+#def sampler_from_string(str: str) -> generation.DiffusionSampler:
+#    repr = SAMPLERS.get(str, None)
+#    if not repr:
+#        raise ValueError("invalid sampler provided")
+#    return repr
+sampler_from_string = get_sampler_from_str
+
+#########################
 
 def open_images(
     images: Union[
@@ -180,22 +199,7 @@ def key_frame_parse(string, prompt_parser=None):
         raise RuntimeError('Key Frame string not correctly formatted')
     return frames
 
-SAMPLERS = {
-        "DDIM": generation.SAMPLER_DDIM,
-        "PLMS": generation.SAMPLER_DDPM,
-        "K_euler": generation.SAMPLER_K_EULER,
-        "K_euler_ancestral": generation.SAMPLER_K_EULER_ANCESTRAL,
-        "K_heun": generation.SAMPLER_K_HEUN,
-        "K_dpm_2": generation.SAMPLER_K_DPM_2,
-        "K_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
-        "K_lms": generation.SAMPLER_K_LMS,
-    }
 
-def sampler_from_string(str: str) -> generation.DiffusionSampler:
-    repr = SAMPLERS.get(str, None)
-    if not repr:
-        raise ValueError("invalid sampler provided")
-    return repr
 
 
 #####################################################################
