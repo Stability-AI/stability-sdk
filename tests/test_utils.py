@@ -6,6 +6,19 @@ from stability_sdk.utils import (
     truncate_fit,
     guidance_from_string,
     GUIDANCE_PRESETS,
+    ########
+    image_mix,
+    image_to_jpg_bytes,
+    image_to_png_bytes,
+    image_to_prompt,
+    image_to_prompt_mask,
+    image_xform,
+    #########
+    key_frame_inbetweens,
+    key_frame_parse,
+    #########
+    warp2d_op,
+    warp3d_op,
 )
 
 
