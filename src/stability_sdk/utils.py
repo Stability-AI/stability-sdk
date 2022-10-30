@@ -68,7 +68,7 @@ def guidance_from_string(s: str) -> generation.GuidancePreset:
     algorithm_key = s.lower().strip()
     repr = GUIDANCE_PRESETS.get(algorithm_key)
     if repr is None:
-        raise ValueError(f"invalid guider preset: {s}")
+        raise ValueError(f"invalid guidance preset: {s}")
     return repr
 
 
