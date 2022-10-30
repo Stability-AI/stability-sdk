@@ -143,3 +143,56 @@ def image_xform(
                 nparr = np.frombuffer(artifact.binary, np.uint8)
                 mask = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     return images, mask
+
+##############################################
+
+
+def key_frame_inbetweens(key_frames, max_frames, integer=False, interp_method='Linear'):
+    key_frame_series = pd.Series([np.nan for a in range(max_frames)])
+
+    for i, value in key_frames.items():
+        key_frame_series[i] = value
+    key_frame_series = key_frame_series.astype(float)
+    
+    if interp_method == 'Cubic' and len(key_frames.items()) <= 3:
+      interp_method = 'Quadratic'    
+    if interp_method == 'Quadratic' and len(key_frames.items()) <= 2:
+      interp_method = 'Linear'
+          
+    key_frame_series[0] = key_frame_series[key_frame_series.first_valid_index()]
+    key_frame_series[max_frames-1] = key_frame_series[key_frame_series.last_valid_index()]
+    key_frame_series = key_frame_series.interpolate(method=interp_method.lower(), limit_direction='both')
+    if integer:
+        return key_frame_series.astype(int)
+    return key_frame_series
+
+def key_frame_parse(string, prompt_parser=None):
+    pattern = r'((?P<frame>[0-9]+):[\s]*[\(](?P<param>[\S\s]*?)[\)])'
+    frames = dict()
+    for match_object in re.finditer(pattern, string):
+        frame = int(match_object.groupdict()['frame'])
+        param = match_object.groupdict()['param']
+        if prompt_parser:
+            frames[frame] = prompt_parser(param)
+        else:
+            frames[frame] = param
+    if frames == {} and len(string) != 0:
+        raise RuntimeError('Key Frame string not correctly formatted')
+    return frames
+
+SAMPLERS = {
+        "DDIM": generation.SAMPLER_DDIM,
+        "PLMS": generation.SAMPLER_DDPM,
+        "K_euler": generation.SAMPLER_K_EULER,
+        "K_euler_ancestral": generation.SAMPLER_K_EULER_ANCESTRAL,
+        "K_heun": generation.SAMPLER_K_HEUN,
+        "K_dpm_2": generation.SAMPLER_K_DPM_2,
+        "K_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
+        "K_lms": generation.SAMPLER_K_LMS,
+    }
+
+def sampler_from_string(str: str) -> generation.DiffusionSampler:
+    repr = SAMPLERS.get(str, None)
+    if not repr:
+        raise ValueError("invalid sampler provided")
+    return repr
