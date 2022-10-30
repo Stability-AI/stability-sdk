@@ -4,6 +4,8 @@ from stability_sdk.utils import (
     SAMPLERS,
     get_sampler_from_str,
     truncate_fit,
+    guidance_from_string,
+    GUIDANCE_PRESETS,
 )
 
 
@@ -17,6 +19,17 @@ def test_get_sampler_from_str_invalid():
         get_sampler_from_str(s='not a real sampler')
 
 
+
+@pytest.mark.parametrize("preset_name", GUIDANCE_PRESETS.keys())
+def test_guidance_from_string_valid(preset_name):
+    guidance_from_string(s=preset_name)
+    assert True
+
+def test_guidance_from_string_invalid():
+    with pytest.raises(ValueError, match="invalid guider provided"):
+        guidance_from_string(s='not a real preset')
+
+        
 ####################################
 # to do: pytest.mark.paramaterized #
 
