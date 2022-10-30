@@ -2,21 +2,33 @@
 
 # fmt: off
 
-import pathlib
-import sys
-import os
-import uuid
-import random
+from argparse import ArgumentParser, Namespace
 import io
 import logging
-import time
 import mimetypes
-
-import grpc
-from argparse import ArgumentParser, Namespace
+import os
+import pathlib
+import random
+import sys
+import time
 from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
+import uuid
+import warnings
+
 from google.protobuf.json_format import MessageToJson
+import grpc
 from PIL import Image
+
+try:
+    import numpy as np
+    import pandas as pd
+    #import cv2 # to do: add this as an installation dependency?
+except ImportError:
+    warnings.warn(
+        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
+        "   pip install --upgrade stability_sdk[anim]"
+    )
+
 
 try:
     from dotenv import load_dotenv
@@ -46,14 +58,19 @@ logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
 
-
 def image_gen(
     stub:generation_grpc.GenerationServiceStub, 
-    width:int, height:int, 
-    prompts:List[str], weights:List[str], 
-    steps:int, seed:int, cfg_scale:float, 
+    width:int, 
+    height:int, 
+    prompts:List[str], 
+    weights:List[str], 
+    steps:int, 
+    seed:int, 
+    cfg_scale:float, 
     sampler: generation.DiffusionSampler,
-    init_image:np.ndarray, init_strength:float,
+    init_image:np.ndarray, # to do: this should accept PIL and fpath
+    init_strength:float,
+    ###############################
     init_noise_scale: float = 1.0,
     guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
     guidance_cuts: int = 0,
