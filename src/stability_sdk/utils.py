@@ -138,31 +138,6 @@ def image_to_prompt_mask(image: np.ndarray) -> generation.Prompt:
     mask.artifact.type = generation.ARTIFACT_MASK
     return mask
 
-def image_xform(
-    stub:generation_grpc.GenerationServiceStub, 
-    images:List[np.ndarray], 
-    ops:List[generation.TransformOperation]
-) -> Tuple[List[np.ndarray], np.ndarray]:
-    assert(len(images))
-    transforms = generation.TransformSequence(operations=ops)
-    p = [image_to_prompt(image) for image in images]
-    rq = generation.Request(
-        engine_id=TRANSFORM_ENGINE_ID,
-        prompt=p,
-        image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
-    )
-
-    images, mask = [], None
-    for resp in stub.Generate(rq, wait_for_ready=True):
-        for artifact in resp.artifacts:
-            if artifact.type == generation.ARTIFACT_IMAGE:
-                nparr = np.frombuffer(artifact.binary, np.uint8)
-                images.append(cv2.imdecode(nparr, cv2.IMREAD_COLOR))
-            elif artifact.type == generation.ARTIFACT_MASK:
-                nparr = np.frombuffer(artifact.binary, np.uint8)
-                mask = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    return images, mask
-
 ##############################################
 
 
@@ -204,6 +179,42 @@ def key_frame_parse(string, prompt_parser=None):
 
 #####################################################################
 
+def image_xform():
+    raise NotImplementedError
+
+def warp2d_op():
+    raise NotImplementedError
+
+def warp3d_op():
+    raise NotImplementedError
+
+    
+"""
+def image_xform(
+    stub:generation_grpc.GenerationServiceStub, 
+    images:List[np.ndarray], 
+    ops:List[generation.TransformOperation]
+) -> Tuple[List[np.ndarray], np.ndarray]:
+    assert(len(images))
+    transforms = generation.TransformSequence(operations=ops)
+    p = [image_to_prompt(image) for image in images]
+    rq = generation.Request(
+        engine_id=TRANSFORM_ENGINE_ID,
+        prompt=p,
+        image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
+    )
+
+    images, mask = [], None
+    for resp in stub.Generate(rq, wait_for_ready=True):
+        for artifact in resp.artifacts:
+            if artifact.type == generation.ARTIFACT_IMAGE:
+                nparr = np.frombuffer(artifact.binary, np.uint8)
+                images.append(cv2.imdecode(nparr, cv2.IMREAD_COLOR))
+            elif artifact.type == generation.ARTIFACT_MASK:
+                nparr = np.frombuffer(artifact.binary, np.uint8)
+                mask = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    return images, mask
+
 
 def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
     warp2d = generation.TransformWarp2d()
@@ -241,3 +252,4 @@ def warp3d_op(
     warp3d.far_plane = far
     warp3d.fov = fov
     return generation.TransformOperation(warp3d=warp3d)
+"""
