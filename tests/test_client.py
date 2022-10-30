@@ -2,6 +2,10 @@ import pytest
 from PIL import Image
 
 from stability_sdk import client
+from stability_sdk.client import (
+    image_gen,
+    image_inpaint,
+)
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 

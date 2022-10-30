@@ -2,21 +2,33 @@
 
 # fmt: off
 
-import pathlib
-import sys
-import os
-import uuid
-import random
+from argparse import ArgumentParser, Namespace
 import io
 import logging
-import time
 import mimetypes
-
-import grpc
-from argparse import ArgumentParser, Namespace
+import os
+import pathlib
+import random
+import sys
+import time
 from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
+import uuid
+import warnings
+
 from google.protobuf.json_format import MessageToJson
+import grpc
 from PIL import Image
+
+try:
+    import numpy as np
+    import pandas as pd
+    #import cv2 # to do: add this as an installation dependency?
+except ImportError:
+    warnings.warn(
+        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
+        "   pip install --upgrade stability_sdk[anim]"
+    )
+
 
 try:
     from dotenv import load_dotenv
@@ -44,6 +56,112 @@ from stability_sdk.utils import (
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
+
+
+def image_gen(
+    stub:generation_grpc.GenerationServiceStub, 
+    width:int, 
+    height:int, 
+    prompts:List[str], 
+    weights:List[str], 
+    steps:int, 
+    seed:int, 
+    cfg_scale:float, 
+    sampler: generation.DiffusionSampler,
+    init_image:np.ndarray, # to do: this should accept PIL and fpath
+    init_strength:float,
+    ###############################
+    init_noise_scale: float = 1.0,
+    guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
+    guidance_cuts: int = 0,
+    guidance_strength: float = 0.0,
+) -> np.ndarray:
+
+    p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
+    if init_image is not None:
+        p.append(image_to_prompt(init_image))
+
+    step_parameters = {
+        "scaled_step": 0,
+        "sampler": generation.SamplerParameters(cfg_scale=cfg_scale, init_noise_scale=init_noise_scale),
+    }
+
+    begin_schedule = 1.0 if init_image is None else 1.0-init_strength
+    if begin_schedule != 1.0:
+        step_parameters["schedule"] = generation.ScheduleParameters(
+            start=begin_schedule
+        )
+
+    if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
+        guidance_prompt = None
+        guiders = None
+        if guidance_cuts:
+            cutouts = generation.CutoutParameters(count=guidance_cuts)
+        else:
+            cutouts = None
+        step_parameters["guidance"] = generation.GuidanceParameters(
+            guidance_preset=guidance_preset,
+            instances=[
+                generation.GuidanceInstanceParameters(
+                    guidance_strength=guidance_strength,
+                    models=guiders,
+                    cutouts=cutouts,
+                    prompt=guidance_prompt,
+                )
+            ],
+        )
+
+    imageParams = {
+        "height": height,
+        "width": width,
+        "seed": [seed],
+        "steps": steps,
+        "parameters": [generation.StepParameter(**step_parameters)],
+    }
+    rq = generation.Request(
+        engine_id=GENERATE_ENGINE_ID,
+        prompt=p,
+        image=generation.ImageParameters(**imageParams)
+    )        
+    rq.image.transform.diffusion = sampler
+
+    for resp in stub.Generate(rq, wait_for_ready=True):
+        for artifact in resp.artifacts:
+            if artifact.type == generation.ARTIFACT_IMAGE:
+                nparr = np.frombuffer(artifact.binary, np.uint8)
+                return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+def image_inpaint(
+    stub:generation_grpc.GenerationServiceStub, image:np.ndarray, mask:np.ndarray,
+    prompts:List[str], weights:List[float], steps:int, seed:int, cfg_scale:float,
+    blur_ks:int = 11
+) -> np.ndarray:
+    width, height = image.shape[1], image.shape[0]
+    mask = cv2.GaussianBlur(mask, (blur_ks,blur_ks), 0)
+
+    p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
+    p.extend([
+        image_to_prompt(image),
+        image_to_prompt_mask(mask)
+    ])
+    rq = generation.Request(
+        engine_id=GENERATE_ENGINE_ID,
+        prompt=p,
+        image=generation.ImageParameters(height=height, width=width, steps=steps, seed=[seed])
+    )
+    rq.image.parameters.append(
+        generation.StepParameter(
+            schedule=generation.ScheduleParameters(start=0.99),
+            sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
+        )
+    )
+    for resp in stub.Generate(rq, wait_for_ready=True):
+        for artifact in resp.artifacts:
+            if artifact.type == generation.ARTIFACT_IMAGE:
+                nparr = np.frombuffer(artifact.binary, np.uint8)
+                return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
+    raise Exception(f"no image artifact returned from inpaint request")
 
 
 def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
