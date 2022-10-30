@@ -36,7 +36,7 @@ GUIDANCE_PRESETS: Dict[str, int] = {
 def guidance_from_string(s: str) -> generation.GuidancePreset:
     repr = GUIDANCE_PRESETS.get(s, None)
     if repr is None:
-        raise Exception("invalid guider provided")
+        raise ValueError("invalid guider provided")
     return repr
 
     
