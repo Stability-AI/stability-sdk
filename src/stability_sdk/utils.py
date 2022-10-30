@@ -91,3 +91,55 @@ def open_images(
             img = Image.open(io.BytesIO(artifact.binary))
             img.show()
         yield (path, artifact)
+
+        
+import numpy as np
+import cv2
+
+
+def image_mix(img_a: np.ndarray, img_b: np.ndarray, tween: float) -> np.ndarray:
+    assert(img_a.shape == img_b.shape)
+    return (img_a.astype(float)*(1.0-tween) + img_b.astype(float)*tween).astype(img_a.dtype)
+
+def image_to_jpg_bytes(image: np.ndarray, quality: int=90):
+    return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
+
+def image_to_png_bytes(image: np.ndarray):
+    return cv2.imencode('.png', image)[1].tobytes()
+
+def image_to_prompt(image: np.ndarray) -> generation.Prompt:
+    return generation.Prompt(
+        parameters=generation.PromptParameters(init=True),
+        artifact=generation.Artifact(
+            type=generation.ARTIFACT_IMAGE,
+            binary=image_to_png_bytes(image)))
+
+def image_to_prompt_mask(image: np.ndarray) -> generation.Prompt:
+    mask = image_to_prompt(image)
+    mask.artifact.type = generation.ARTIFACT_MASK
+    return mask
+
+def image_xform(
+    stub:generation_grpc.GenerationServiceStub, 
+    images:List[np.ndarray], 
+    ops:List[generation.TransformOperation]
+) -> Tuple[List[np.ndarray], np.ndarray]:
+    assert(len(images))
+    transforms = generation.TransformSequence(operations=ops)
+    p = [image_to_prompt(image) for image in images]
+    rq = generation.Request(
+        engine_id=TRANSFORM_ENGINE_ID,
+        prompt=p,
+        image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
+    )
+
+    images, mask = [], None
+    for resp in stub.Generate(rq, wait_for_ready=True):
+        for artifact in resp.artifacts:
+            if artifact.type == generation.ARTIFACT_IMAGE:
+                nparr = np.frombuffer(artifact.binary, np.uint8)
+                images.append(cv2.imdecode(nparr, cv2.IMREAD_COLOR))
+            elif artifact.type == generation.ARTIFACT_MASK:
+                nparr = np.frombuffer(artifact.binary, np.uint8)
+                mask = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    return images, mask
