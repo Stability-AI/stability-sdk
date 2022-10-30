@@ -26,6 +26,20 @@ SAMPLERS: Dict[str, int] = {
     "k_lms": generation.SAMPLER_K_LMS,
 }
 
+GUIDANCE_PRESETS: Dict[str, int] = {
+        "None": generation.GUIDANCE_PRESET_NONE,
+        "Simple": generation.GUIDANCE_PRESET_SIMPLE,
+        "FastBlue": generation.GUIDANCE_PRESET_FAST_BLUE,
+        "FastGreen": generation.GUIDANCE_PRESET_FAST_GREEN,
+    }
+
+def guidance_from_string(str: str) -> generation.GuidancePreset:
+    repr = GUIDANCE_PRESETS.get(str, None)
+    if repr is None:
+        raise Exception("invalid guider provided")
+    return repr
+
+    
     
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
