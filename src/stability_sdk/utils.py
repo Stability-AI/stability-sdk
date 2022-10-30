@@ -196,3 +196,44 @@ def sampler_from_string(str: str) -> generation.DiffusionSampler:
     if not repr:
         raise ValueError("invalid sampler provided")
     return repr
+
+
+#####################################################################
+
+
+def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
+    warp2d = generation.TransformWarp2d()
+
+    if border == 'replicate': warp2d.border_mode = generation.BORDER_REPLICATE
+    elif border == 'reflect': warp2d.border_mode = generation.BORDER_REFLECT
+    elif border == 'wrap': warp2d.border_mode = generation.BORDER_WRAP
+    elif border == 'zero': warp2d.border_mode = generation.BORDER_ZERO
+    else: raise Exception(f"invalid 2d border mode {border}")
+
+    warp2d.rotate = rotate
+    warp2d.scale = scale
+    warp2d.translate_x = dx
+    warp2d.translate_y = dy
+    return generation.TransformOperation(warp2d=warp2d)
+
+def warp3d_op(
+    dx:float, dy:float, dz:float, rx:float, ry:float, rz:float,
+    near:float, far:float, fov:float, border:str
+) -> generation.TransformOperation:
+    warp3d = generation.TransformWarp3d()
+
+    if border == 'replicate': warp3d.border_mode = generation.BORDER_REPLICATE
+    elif border == 'reflect': warp3d.border_mode = generation.BORDER_REFLECT
+    elif border == 'zero': warp3d.border_mode = generation.BORDER_ZERO
+    else: raise Exception(f"invalid 3d border mode {border}")
+
+    warp3d.translate_x = dx
+    warp3d.translate_y = dy
+    warp3d.translate_z = dz
+    warp3d.rotate_x = rx
+    warp3d.rotate_y = ry
+    warp3d.rotate_z = rz
+    warp3d.near_plane = near
+    warp3d.far_plane = far
+    warp3d.fov = fov
+    return generation.TransformOperation(warp3d=warp3d)
