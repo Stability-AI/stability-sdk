@@ -24,13 +24,18 @@ setup(
         'grpcio==1.48.1',
         'grpcio-tools==1.48.1',
         'python-dotenv',
-        'protobuf==3.19.5'
+        'protobuf==3.19.5',        
     ],
     extras_require={
         'dev': [
             'pytest',
             'grpcio-testing'
-    ]},
+        ],
+        'anim': [
+            'numpy',
+            'pandas'
+        ]
+    },
     packages=find_packages(
         where='src',
         include=['stability_sdk*'],
