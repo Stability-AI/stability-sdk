@@ -203,16 +203,6 @@ def get_animation_prompts_weights():
 
 #####################################################################
 
-"""
-def image_xform():
-    raise NotImplementedError
-
-def warp2d_op():
-    raise NotImplementedError
-
-def warp3d_op():
-    raise NotImplementedError
-"""
 
 def image_xform(
     stub:generation_grpc.GenerationServiceStub, 
