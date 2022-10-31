@@ -15,6 +15,10 @@ genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation" # this pa
 logger = logging.getLogger(__name__)
 sys.path.append(str(genPath))
 
+import stability_sdk.interfaces
+import stability_sdk.interfaces.gooseai
+import stability_sdk.interfaces.gooseai.generation
+
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
