@@ -50,7 +50,8 @@ setup(
     packages=find_packages(
         where='src',
         include=['stability_sdk*'],
-    ) + find_namespace_packages(
+    ),
+    namespace_packages=find_namespace_packages(
         where='src',
         include=['stability_sdk.interfaces*'],
     ),
