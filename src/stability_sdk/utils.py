@@ -184,6 +184,8 @@ def key_frame_parse(string, prompt_parser=None):
     return frames
 
 
+# Needs to be modified to take `animation_prompts` as an argument
+"""
 def get_animation_prompts_weights(frame_idx: int, key_frame_values: List[int], interp: bool) -> Tuple[List[str], List[float]]:
     idx = bisect.bisect_right(key_frame_values, frame_idx)
     prev, next = idx - 1, idx
@@ -194,10 +196,14 @@ def get_animation_prompts_weights(frame_idx: int, key_frame_values: List[int], i
     else:
         tween = (frame_idx - key_frame_values[prev]) / (key_frame_values[next] - key_frame_values[prev])
         return [animation_prompts[key_frame_values[prev]], animation_prompts[key_frame_values[next]]], [1.0 - tween, tween]
+"""
 
+def get_animation_prompts_weights():
+    raise NotImplementedError
 
 #####################################################################
 
+"""
 def image_xform():
     raise NotImplementedError
 
@@ -206,9 +212,8 @@ def warp2d_op():
 
 def warp3d_op():
     raise NotImplementedError
-
-    
 """
+
 def image_xform(
     stub:generation_grpc.GenerationServiceStub, 
     images:List[np.ndarray], 
@@ -271,4 +276,4 @@ def warp3d_op(
     warp3d.far_plane = far
     warp3d.fov = fov
     return generation.TransformOperation(warp3d=warp3d)
-"""
+
