@@ -22,7 +22,7 @@ from PIL import Image
 try:
     import numpy as np
     import pandas as pd
-    #import cv2 # to do: add this as an installation dependency?
+    import cv2 # to do: add this as an installation dependency?
 except ImportError:
     warnings.warn(
         "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
@@ -232,6 +232,22 @@ def process_artifacts_from_answers(
             idx += 1
 
 
+def open_channel(host: str, api_key: str = None) -> generation_grpc.GenerationServiceStub:
+    print(f"Opening channel {host}")
+    if host.endswith(":443"):
+        call_credentials = [grpc.access_token_call_credentials(api_key)]
+        channel_credentials = grpc.composite_channel_credentials(
+            grpc.ssl_channel_credentials(), *call_credentials
+        )
+        channel = grpc.secure_channel(host, channel_credentials)
+    else:
+        channel = grpc.insecure_channel(host)
+    return generation_grpc.GenerationServiceStub(channel)
+
+
+
+
+
 class StabilityInference:
     def __init__(
         self,
@@ -259,27 +275,48 @@ class StabilityInference:
         if verbose:
             logger.info(f"Opening channel to {host}")
 
-        call_credentials = []
+        # call_credentials = []
 
-        if host.endswith("443"):
-            if key:
-                call_credentials.append(grpc.access_token_call_credentials(f"{key}"))
-            else:
-                raise ValueError(f"key is required for {host}")
-            channel_credentials = grpc.composite_channel_credentials(
-                grpc.ssl_channel_credentials(), *call_credentials
-            )
-            channel = grpc.secure_channel(host, channel_credentials)
-        else:
-            if key:
-                logger.warning(
-                    "Not using authentication token due to non-secure transport"
-                )
-            channel = grpc.insecure_channel(host)
+        # if host.endswith("443"):
+        #     if key:
+        #         call_credentials.append(grpc.access_token_call_credentials(f"{key}"))
+        #     else:
+        #         raise ValueError(f"key is required for {host}")
+        #     channel_credentials = grpc.composite_channel_credentials(
+        #         grpc.ssl_channel_credentials(), *call_credentials
+        #     )
+        #     channel = grpc.secure_channel(host, channel_credentials)
+        # else:
+        #     if key:
+        #         logger.warning(
+        #             "Not using authentication token due to non-secure transport"
+        #         )
+        #     channel = grpc.insecure_channel(host)
 
-        if verbose:
-            logger.info(f"Channel opened to {host}")
-        self.stub = generation_grpc.GenerationServiceStub(channel)
+        # if verbose:
+        #     logger.info(f"Channel opened to {host}")
+        # self.stub = generation_grpc.GenerationServiceStub(channel)
+        self.stub = open_channel(host=host, api_key=key)
+
+# def image_gen(
+#         stub:generation_grpc.GenerationServiceStub, 
+#     width:int, 
+#     height:int, 
+#         prompts:List[str], 
+#         weights:List[str], 
+#     steps:int, 
+#     seed:int, 
+#     cfg_scale:float, 
+#     sampler: generation.DiffusionSampler,
+#     init_image:np.ndarray, # to do: this should accept PIL and fpath
+#         init_strength:float,
+#     ###############################
+#         init_noise_scale: float = 1.0,
+#     guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
+#     guidance_cuts: int = 0,
+#     guidance_strength: float = 0.0,
+# ) -> np.ndarray:
+
 
     def generate(
         self,
