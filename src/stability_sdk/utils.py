@@ -49,7 +49,19 @@ GUIDANCE_PRESETS: Dict[str, int] = {
         "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
     }
 
+COLOR_SPACES =  {
+        "HSV": generation.COLOR_MATCH_HSV,
+        "LAB": generation.COLOR_MATCH_LAB,
+        "RGB": generation.COLOR_MATCH_RGB,
+    }
+
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
+
+def color_match_from_string(s: str) -> generation.ColorMatchMode:
+    repr = COLOR_SPACES.get(s)
+    if repr is None:
+        raise ValueError(f"invalid color space: {s}")
+    return repr
 
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
