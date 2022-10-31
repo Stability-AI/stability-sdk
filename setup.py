@@ -6,13 +6,6 @@ from setuptools import (
     find_namespace_packages,
 )
 
-print(
-find_namespace_packages(
-        where='src',
-        include=['stability_sdk.interfaces*'],
-    )
-)
-
 with open('README.md','r') as f:
     README = f.read()
 
@@ -25,11 +18,9 @@ setup(
     maintainer_email='david@stability.ai',
     url='https://beta.dreamstudio.ai/',
     download_url='https://github.com/Stability-AI/stability-sdk/',
-
     description='Python SDK for interacting with stability.ai APIs',
     long_description=README,
     long_description_content_type="text/markdown",
-
     install_requires=[
         'Pillow',
         'grpcio==1.48.1',
@@ -51,12 +42,7 @@ setup(
         where='src',
         include=['stability_sdk*'],
     ),
-#    namespace_packages=find_namespace_packages(
-#        where='src',
-#        include=['stability_sdk.interfaces*'],
-#    ),
     package_dir = {"": "src"},
-
     classifiers=[
         'Intended Audience :: Developers',
         'Intended Audience :: Education',
