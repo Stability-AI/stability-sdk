@@ -4,12 +4,17 @@ import logging
 import mimetypes
 import os
 import pathlib
+import re
 import random
 import sys
 import time
 from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 import uuid
 import warnings
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(level=logging.INFO)
 
 try:
     import numpy as np
