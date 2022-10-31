@@ -1,6 +1,10 @@
 # fmt: off
 
-from setuptools import setup, find_packages
+from setuptools import (
+    setup,
+    find_packages,
+    find_namespace_packages,
+)
 
 with open('README.md','r') as f:
     README = f.read()
@@ -39,6 +43,9 @@ setup(
     packages=find_packages(
         where='src',
         include=['stability_sdk*'],
+    ) + find_namespace_packages(
+        where='src',
+        include=['stability_sdk.interfaces*'],
     ),
     package_dir = {"": "src"},
 
