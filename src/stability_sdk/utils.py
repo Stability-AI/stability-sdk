@@ -19,7 +19,7 @@ logger.setLevel(level=logging.INFO)
 try:
     import numpy as np
     import pandas as pd
-    #import cv2 # to do: add this as an installation dependency
+    import cv2 # to do: add this as an installation dependency
 except ImportError:
     warnings.warn(
         "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
@@ -90,11 +90,6 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
     return repr
 
 
-#def sampler_from_string(str: str) -> generation.DiffusionSampler:
-#    repr = SAMPLERS.get(str, None)
-#    if not repr:
-#        raise ValueError("invalid sampler provided")
-#    return repr
 sampler_from_string = get_sampler_from_str
 
 #########################
