@@ -6,6 +6,13 @@ from setuptools import (
     find_namespace_packages,
 )
 
+print(
+find_namespace_packages(
+        where='src',
+        include=['stability_sdk.interfaces*'],
+    )
+)
+
 with open('README.md','r') as f:
     README = f.read()
 
