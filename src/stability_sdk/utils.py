@@ -214,13 +214,14 @@ def get_animation_prompts_weights():
 def image_xform(
     stub:generation_grpc.GenerationServiceStub, 
     images:List[np.ndarray], 
-    ops:List[generation.TransformOperation]
+    ops:List[generation.TransformOperation],
+    engine_id: str = 'transform-server-v1'
 ) -> Tuple[List[np.ndarray], np.ndarray]:
     assert(len(images))
     transforms = generation.TransformSequence(operations=ops)
     p = [image_to_prompt(image) for image in images]
     rq = generation.Request(
-        engine_id=TRANSFORM_ENGINE_ID,
+        engine_id=engine_id,
         prompt=p,
         image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
     )
