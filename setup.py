@@ -51,10 +51,10 @@ setup(
         where='src',
         include=['stability_sdk*'],
     ),
-    namespace_packages=find_namespace_packages(
-        where='src',
-        include=['stability_sdk.interfaces*'],
-    ),
+#    namespace_packages=find_namespace_packages(
+#        where='src',
+#        include=['stability_sdk.interfaces*'],
+#    ),
     package_dir = {"": "src"},
 
     classifiers=[
