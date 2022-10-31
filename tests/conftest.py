@@ -15,6 +15,9 @@ genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation" # this pa
 logger = logging.getLogger(__name__)
 sys.path.append(str(genPath))
 
+# i kinda hope this doesn't work
+import stability_sdk.gooseai
+
 import stability_sdk.interfaces
 import stability_sdk.interfaces.gooseai
 import stability_sdk.interfaces.gooseai.generation
