@@ -49,7 +49,7 @@ from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
     truncate_fit,
-    sampler_from_str,
+    sampler_from_string,
     open_images,
     image_to_prompt,
 )
@@ -365,7 +365,7 @@ class StabilityInference:
             prompts += [image_to_prompt(init_image)]
 
             if mask_image is not None:
-                prompts += [image_to_prompt_mask(mask_image, is_mask=True)]
+                prompts += [image_to_prompt(mask_image, is_mask=True)]
 
         
         if guidance_prompt:
@@ -584,7 +584,7 @@ if __name__ == "__main__":
         "start_schedule": args.start_schedule,
         "end_schedule": args.end_schedule,
         "cfg_scale": args.cfg_scale,
-        "sampler": sampler_from_str(args.sampler),
+        "sampler": sampler_from_string(args.sampler),
         "steps": args.steps,
         "seed": args.seed,
         "samples": args.num_samples,
