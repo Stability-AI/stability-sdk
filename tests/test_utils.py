@@ -12,7 +12,7 @@ from stability_sdk.utils import (
     border_mode_from_str_2d,
     border_mode_from_str_3d,
     color_match_from_string,
-    get_sampler_from_str,
+    sampler_from_str,
     guidance_from_string,
     truncate_fit,
     ########
@@ -51,13 +51,13 @@ def test_border_mode_from_str_3d_invalid():
 
 
 @pytest.mark.parametrize("sampler_name", SAMPLERS.keys())
-def test_get_sampler_from_str_valid(sampler_name):
-    get_sampler_from_str(s=sampler_name)
+def test_sampler_from_str_valid(sampler_name):
+    sampler_from_str(s=sampler_name)
     assert True
 
-def test_get_sampler_from_str_invalid():
+def test_sampler_from_str_invalid():
     with pytest.raises(ValueError, match="invalid sampler"):
-        get_sampler_from_str(s='not a real sampler')
+        sampler_from_str(s='not a real sampler')
 
 @pytest.mark.parametrize("preset_name", GUIDANCE_PRESETS.keys())
 def test_guidance_from_string_valid(preset_name):

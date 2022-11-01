@@ -49,7 +49,7 @@ from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
     truncate_fit,
-    get_sampler_from_str,
+    sampler_from_str,
     open_images,
     image_to_prompt,
 )
@@ -584,7 +584,7 @@ if __name__ == "__main__":
         "start_schedule": args.start_schedule,
         "end_schedule": args.end_schedule,
         "cfg_scale": args.cfg_scale,
-        "sampler": get_sampler_from_str(args.sampler),
+        "sampler": sampler_from_str(args.sampler),
         "steps": args.steps,
         "seed": args.seed,
         "samples": args.num_samples,

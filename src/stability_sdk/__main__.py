@@ -37,10 +37,8 @@ from stability_sdk.client import (
 )
 from stability_sdk.utils import (
     SAMPLERS,
-    MAX_FILENAME_SZ,
-    truncate_fit,
-    get_sampler_from_str,
     open_images,
+    sampler_from_str,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,7 +158,7 @@ request =  {
     "start_schedule": cli_args.start_schedule,
     "end_schedule": cli_args.end_schedule,
     "cfg_scale": cli_args.cfg_scale,
-    "sampler": get_sampler_from_str(cli_args.sampler),
+    "sampler": sampler_from_str(cli_args.sampler),
     "steps": cli_args.steps,
     "seed": cli_args.seed,
     "samples": cli_args.num_samples,
