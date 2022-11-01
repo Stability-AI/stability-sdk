@@ -4,11 +4,13 @@ import pytest
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk.utils import (
-    BORDER_MODES,
+    BORDER_MODES_2D,
+    BORDER_MODES_3D,
     COLOR_SPACES,
     GUIDANCE_PRESETS,
     SAMPLERS,
-    border_mode_from_str,
+    border_mode_from_str_2d,
+    border_mode_from_str_3d,
     color_match_from_string,
     get_sampler_from_str,
     guidance_from_string,
