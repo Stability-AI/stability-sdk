@@ -1,6 +1,6 @@
 *.pyc
 *.egg-info
-*.png
+#*.png
 dist/
 pyenv/
 .venv/
