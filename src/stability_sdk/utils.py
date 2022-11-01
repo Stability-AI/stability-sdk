@@ -154,10 +154,6 @@ def open_images(
             img.show()
         yield (path, artifact)
 
-        
-import numpy as np
-import cv2
-
 
 def image_mix(img_a: np.ndarray, img_b: np.ndarray, tween: float) -> np.ndarray:
     assert(img_a.shape == img_b.shape)
