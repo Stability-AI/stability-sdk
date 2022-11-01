@@ -166,7 +166,7 @@ def image_to_png_bytes(image: np.ndarray):
 
 def pil_image_to_png_bytes(image: Image.Image):
     buf = io.BytesIO()
-    im.save(buf, format="PNG")
+    image.save(buf, format="PNG")
     buf.seek(0)
     return buf.getvalue()
 
