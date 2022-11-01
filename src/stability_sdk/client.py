@@ -52,7 +52,6 @@ from stability_sdk.utils import (
     get_sampler_from_str,
     open_images,
     image_to_prompt,
-    #image_to_prompt_mask,
 )
 
 
@@ -153,7 +152,6 @@ def image_inpaint(
     p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
     p.extend([
         image_to_prompt(image),
-        #image_to_prompt_mask(mask)
         image_to_prompt(mask, is_mask=True)
     ])
     rq = generation.Request(
@@ -174,27 +172,6 @@ def image_inpaint(
                 return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     
     raise Exception(f"no image artifact returned from inpaint request")
-
-"""
-def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
-    if init and mask:
-        raise ValueError("init and mask cannot both be True")
-    buf = io.BytesIO()
-    im.save(buf, format="PNG")
-    buf.seek(0)
-    if mask:
-        return generation.Prompt(
-            artifact=generation.Artifact(
-                type=generation.ARTIFACT_MASK, binary=buf.getvalue()
-            )
-        )
-    return generation.Prompt(
-        artifact=generation.Artifact(
-            type=generation.ARTIFACT_IMAGE, binary=buf.getvalue()
-        ),
-        parameters=generation.PromptParameters(init=init),
-    )
-"""
 
 def process_artifacts_from_answers(
     prefix: str,
@@ -385,12 +362,9 @@ class StabilityInference:
                 start=start_schedule,
                 end=end_schedule,
             )
-            #prompts += [image_to_prompt(init_image, init=True)]
             prompts += [image_to_prompt(init_image)]
 
             if mask_image is not None:
-                #prompts += [image_to_prompt(mask_image, mask=True)]
-                #prompts += [image_to_prompt_mask(mask_image)]
                 prompts += [image_to_prompt_mask(mask_image, is_mask=True)]
 
         

@@ -187,12 +187,6 @@ def image_to_prompt(
             type=generation.ARTIFACT_MASK if is_mask else generation.ARTIFACT_IMAGE,
             binary=image))
 
-"""
-def image_to_prompt_mask(image: np.ndarray) -> generation.Prompt:
-    mask = image_to_prompt(image)
-    mask.artifact.type = generation.ARTIFACT_MASK
-    return mask
-""" 
 
 ##############################################
 
