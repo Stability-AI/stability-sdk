@@ -1,5 +1,7 @@
 import pytest
 
+from typing import ByteString
+
 from stability_sdk.utils import (
     COLOR_SPACES,
     GUIDANCE_PRESETS,
@@ -78,3 +80,7 @@ def test_image_mix(np_image):
     )
     assert isinstance(outv, type(np_image))
     assert outv.shape == np_image.shape
+
+def test_image_to_jpg_bytes(np_image):
+    outv=image_to_jpg_bytes(image=np_image)
+    assert isinstance(outv, ByteString)
