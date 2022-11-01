@@ -24,13 +24,6 @@ def test_StabilityInference_init():
     class_instance = client.StabilityInference(key='thisIsNotARealKey')
     assert True
 
-def test_StabilityInference_init_nokey_error():
-    try:
-        class_instance = client.StabilityInference()
-        assert False
-    except ValueError:
-        assert True
-
 def test_StabilityInference_init_nokey_insecure_host():
     class_instance = client.StabilityInference(host='foo.bar.baz')
     assert True
