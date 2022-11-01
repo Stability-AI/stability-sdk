@@ -84,3 +84,8 @@ def test_image_mix(np_image):
 def test_image_to_jpg_bytes(np_image):
     outv=image_to_jpg_bytes(image=np_image)
     assert isinstance(outv, ByteString)
+
+def test_image_to_png_bytes(np_image):
+    outv=image_to_png_bytes(image=np_image)
+    assert isinstance(outv, ByteString)
+
