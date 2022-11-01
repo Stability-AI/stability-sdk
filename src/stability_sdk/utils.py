@@ -55,7 +55,22 @@ COLOR_SPACES =  {
         "RGB": generation.COLOR_MATCH_RGB,
     }
 
+BORDER_MODES = {
+    'replicate': generation.BORDER_REPLICATE,
+    'reflect': generation.BORDER_REFLECT,
+    'wrap': generation.BORDER_WRAP,
+    'zero': generation.BORDER_ZERO,
+}
+
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
+
+
+def border_mode_from_str(s: str) -> generation.BorderMode:
+    repr = BORDER_MODES.get(s)
+    if repr is None:
+        raise ValueError(f"invalid 2d border mode {border}")
+    return repr
+
 
 def color_match_from_string(s: str) -> generation.ColorMatchMode:
     repr = COLOR_SPACES.get(s)
@@ -253,13 +268,7 @@ def image_xform(
 
 def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
     warp2d = generation.TransformWarp2d()
-
-    if border == 'replicate': warp2d.border_mode = generation.BORDER_REPLICATE
-    elif border == 'reflect': warp2d.border_mode = generation.BORDER_REFLECT
-    elif border == 'wrap': warp2d.border_mode = generation.BORDER_WRAP
-    elif border == 'zero': warp2d.border_mode = generation.BORDER_ZERO
-    else: raise Exception(f"invalid 2d border mode {border}")
-
+    warp2d.border_mode = border_mode_from_str(border)
     warp2d.rotate = rotate
     warp2d.scale = scale
     warp2d.translate_x = dx
