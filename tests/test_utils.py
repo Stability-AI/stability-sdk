@@ -1,7 +1,8 @@
-import pytest
-
 from typing import ByteString
 
+import pytest
+
+import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk.utils import (
     COLOR_SPACES,
     GUIDANCE_PRESETS,
@@ -33,8 +34,6 @@ def test_get_sampler_from_str_valid(sampler_name):
 def test_get_sampler_from_str_invalid():
     with pytest.raises(ValueError, match="invalid sampler"):
         get_sampler_from_str(s='not a real sampler')
-
-
 
 @pytest.mark.parametrize("preset_name", GUIDANCE_PRESETS.keys())
 def test_guidance_from_string_valid(preset_name):
@@ -89,3 +88,6 @@ def test_image_to_png_bytes(np_image):
     outv=image_to_png_bytes(image=np_image)
     assert isinstance(outv, ByteString)
 
+def test_image_to_prompt(np_image):
+    outv = image_to_prompt(np_image)
+    assert isinstance(outv, generation.Prompt)
