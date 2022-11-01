@@ -57,7 +57,7 @@ from stability_sdk.utils import (
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
-
+# these probably don't all need to be mandatory positional args
 def image_gen(
     stub:generation_grpc.GenerationServiceStub, 
     width:int, 
@@ -75,6 +75,7 @@ def image_gen(
     guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
     guidance_cuts: int = 0,
     guidance_strength: float = 0.0,
+    engine_id='stable-diffusion-v1-5',
 ) -> np.ndarray:
 
     p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
@@ -119,7 +120,7 @@ def image_gen(
         "parameters": [generation.StepParameter(**step_parameters)],
     }
     rq = generation.Request(
-        engine_id=GENERATE_ENGINE_ID,
+        engine_id=engine_id,
         prompt=p,
         image=generation.ImageParameters(**imageParams)
     )        
@@ -131,10 +132,18 @@ def image_gen(
                 nparr = np.frombuffer(artifact.binary, np.uint8)
                 return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
+# these probably don't all need to be mandatory positional args
 def image_inpaint(
-    stub:generation_grpc.GenerationServiceStub, image:np.ndarray, mask:np.ndarray,
-    prompts:List[str], weights:List[float], steps:int, seed:int, cfg_scale:float,
-    blur_ks:int = 11
+    stub:generation_grpc.GenerationServiceStub,
+    image:np.ndarray,
+    mask:np.ndarray,
+    prompts:List[str],
+    weights:List[float],
+    steps:int,
+    seed:int,
+    cfg_scale:float,
+    blur_ks:int = 11,
+    engine_id='stable-diffusion-v1-5',
 ) -> np.ndarray:
     width, height = image.shape[1], image.shape[0]
     mask = cv2.GaussianBlur(mask, (blur_ks,blur_ks), 0)
@@ -145,7 +154,7 @@ def image_inpaint(
         image_to_prompt_mask(mask)
     ])
     rq = generation.Request(
-        engine_id=GENERATE_ENGINE_ID,
+        engine_id=engine_id,
         prompt=p,
         image=generation.ImageParameters(height=height, width=width, steps=steps, seed=[seed])
     )
