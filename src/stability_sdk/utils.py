@@ -303,16 +303,12 @@ def warp3d_op(
     dx:float, dy:float, dz:float, rx:float, ry:float, rz:float,
     near:float, far:float, fov:float, border:str
 ) -> generation.TransformOperation:
-    try:
-        assert near < far
-    except AssertionError:
+    if not (near < far):
         raise ValueError(
             "Invalid camera volume: must satisfy near < far, "
             f"got near={near}, far={far}"
         )
-    try:
-        assert fov > 0
-    except AssertionError:
+    if not (fov > 0):
         raise ValueError(
             "Invalid camera volume: fov must be greater than 0, "
             f"got fov={fov}"
