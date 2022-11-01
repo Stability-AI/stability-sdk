@@ -91,3 +91,7 @@ def test_image_to_png_bytes(np_image):
 def test_image_to_prompt(np_image):
     outv = image_to_prompt(np_image)
     assert isinstance(outv, generation.Prompt)
+
+def test_image_to_prompt_mask(np_image):
+    outv = image_to_prompt_mask(np_image)
+    assert isinstance(outv, generation.Prompt)
