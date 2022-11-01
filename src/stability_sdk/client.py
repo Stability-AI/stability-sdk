@@ -51,6 +51,8 @@ from stability_sdk.utils import (
     truncate_fit,
     get_sampler_from_str,
     open_images,
+    image_to_prompt,
+    image_to_prompt_mask,
 )
 
 
@@ -172,7 +174,7 @@ def image_inpaint(
     
     raise Exception(f"no image artifact returned from inpaint request")
 
-
+"""
 def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
     if init and mask:
         raise ValueError("init and mask cannot both be True")
@@ -191,7 +193,7 @@ def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Pr
         ),
         parameters=generation.PromptParameters(init=init),
     )
-
+"""
 
 def process_artifacts_from_answers(
     prefix: str,
