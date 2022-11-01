@@ -286,6 +286,20 @@ def warp3d_op(
     dx:float, dy:float, dz:float, rx:float, ry:float, rz:float,
     near:float, far:float, fov:float, border:str
 ) -> generation.TransformOperation:
+    try:
+        assert near < far
+    except AssertionError:
+        raise ValueError(
+            "Invalid camera volume: must satisfy near < far, "
+            f"got near={near}, far={far}"
+        )
+    try:
+        assert fov > 0
+    except AssertionError:
+        raise ValueError(
+            "Invalid camera volume: fov must be greater than 0, "
+            f"got fov={fov}"
+        )
     warp3d = generation.TransformWarp3d()
     warp3d.border_mode = border_mode_from_str_3d(border)
     warp3d.translate_x = dx
