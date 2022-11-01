@@ -1,6 +1,7 @@
 from concurrent import futures
 
 import grpc
+import numpy as np
 import pytest
 from PIL import Image
 
