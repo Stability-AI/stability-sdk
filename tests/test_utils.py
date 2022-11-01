@@ -4,9 +4,11 @@ import pytest
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk.utils import (
+    BORDER_MODES,
     COLOR_SPACES,
     GUIDANCE_PRESETS,
     SAMPLERS,
+    border_mode_from_str,
     color_match_from_string,
     get_sampler_from_str,
     guidance_from_string,
@@ -25,6 +27,15 @@ from stability_sdk.utils import (
     warp2d_op,
     warp3d_op,
 )
+
+@pytest.mark.parametrize("border", BORDER_MODES.keys())
+def test_border_mode_from_str_valid(border):
+    border_mode_from_str(s=border)
+    assert True
+
+def test_border_mode_from_str_invalid():
+    with pytest.raises(ValueError, match="invalid 2d border mode"):
+        border_mode_from_str(s='not a real border mode')
 
 
 @pytest.mark.parametrize("sampler_name", SAMPLERS.keys())
