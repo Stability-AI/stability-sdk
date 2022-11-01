@@ -51,9 +51,9 @@ GUIDANCE_PRESETS: Dict[str, int] = {
     }
 
 COLOR_SPACES =  {
-        "HSV": generation.COLOR_MATCH_HSV,
-        "LAB": generation.COLOR_MATCH_LAB,
-        "RGB": generation.COLOR_MATCH_RGB,
+        "hsv": generation.COLOR_MATCH_HSV,
+        "lab": generation.COLOR_MATCH_LAB,
+        "rgb": generation.COLOR_MATCH_RGB,
     }
 
 BORDER_MODES_2D = {
@@ -73,19 +73,19 @@ MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 
 def border_mode_from_str_2d(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES_2D.get(s)
+    repr = BORDER_MODES_2D.get(s.lower().strip())
     if repr is None:
         raise ValueError(f"invalid 2d border mode {s}")
     return repr
 
 def border_mode_from_str_3d(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES_3D.get(s)
+    repr = BORDER_MODES_3D.get(s.lower().strip())
     if repr is None:
         raise ValueError(f"invalid 3d border mode {s}")
     return repr
 
 def color_match_from_string(s: str) -> generation.ColorMatchMode:
-    repr = COLOR_SPACES.get(s)
+    repr = COLOR_SPACES.get(s.lower().strip())
     if repr is None:
         raise ValueError(f"invalid color space: {s}")
     return repr
@@ -109,8 +109,7 @@ def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int
 
 
 def guidance_from_string(s: str) -> generation.GuidancePreset:
-    algorithm_key = s.lower().strip()
-    repr = GUIDANCE_PRESETS.get(algorithm_key)
+    repr = GUIDANCE_PRESETS.get(s.lower().strip())
     if repr is None:
         raise ValueError(f"invalid guidance preset: {s}")
     return repr
