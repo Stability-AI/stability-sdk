@@ -276,12 +276,17 @@ def image_xform(
     images, mask = [], None
     for resp in stub.Generate(rq, wait_for_ready=True):
         for artifact in resp.artifacts:
-            if artifact.type == generation.ARTIFACT_IMAGE:
+            if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
                 nparr = np.frombuffer(artifact.binary, np.uint8)
-                images.append(cv2.imdecode(nparr, cv2.IMREAD_COLOR))
-            elif artifact.type == generation.ARTIFACT_MASK:
-                nparr = np.frombuffer(artifact.binary, np.uint8)
-                mask = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if artifact.type == generation.ARTIFACT_IMAGE:
+                    images.append(im)
+                elif artifact.type == generation.ARTIFACT_MASK:
+                    if mask is not None:
+                        raise Exception(
+                            "multiple masks returned in response, cliend implementaion currently assumes no more than one mask returned"
+                        )
+                    mask = im
     return images, mask
 
 
