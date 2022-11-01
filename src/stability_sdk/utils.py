@@ -208,6 +208,19 @@ def get_animation_prompts_weights(frame_idx: int, key_frame_values: List[int], i
 def get_animation_prompts_weights():
     raise NotImplementedError
 
+
+def curve_to_series(curve: str) -> List[float]:
+    """expand key frame curves to per-frame values
+
+    Args:
+        curve (str): keyframe curve prompt syntax
+
+    Returns:
+        List[float]: per-frame values
+    """
+    return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)        
+
+
 #####################################################################
 
 
