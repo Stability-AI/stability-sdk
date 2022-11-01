@@ -20,7 +20,7 @@ from stability_sdk.utils import (
     image_to_jpg_bytes,
     image_to_png_bytes,
     image_to_prompt,
-    image_to_prompt_mask,
+    #image_to_prompt_mask,
     image_xform,
     #########
     key_frame_inbetweens,
@@ -124,7 +124,9 @@ def test_image_to_png_bytes(np_image):
 def test_image_to_prompt(np_image):
     outv = image_to_prompt(np_image)
     assert isinstance(outv, generation.Prompt)
+    assert outv.artifact.type == generation.ARTIFACT_IMAGE
 
 def test_image_to_prompt_mask(np_image):
-    outv = image_to_prompt_mask(np_image)
+    outv = image_to_prompt(np_image, is_mask=True)
     assert isinstance(outv, generation.Prompt)
+    assert outv.artifact.type == generation.ARTIFACT_MASK
