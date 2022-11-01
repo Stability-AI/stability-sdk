@@ -41,7 +41,7 @@ def grpc_server(grpc_addr):
 @pytest.fixture(scope='module')
 def pil_image():
     #impath = "tests\assets\4166726513_giant__rainbow_sequoia__tree_by_hayao_miyazaki___earth_tones__a_row_of_western_cedar_nurse_trees_che.png"
-    im_path = next(pathlib.Path('.').glob('**/tests/assets/*.png'))
+    impath = next(pathlib.Path('.').glob('**/tests/assets/*.png'))
     im = Image.open(impath)
     return im
 
