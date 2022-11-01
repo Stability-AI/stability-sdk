@@ -7,6 +7,7 @@ from stability_sdk.utils import (
     COLOR_SPACES,
     GUIDANCE_PRESETS,
     SAMPLERS,
+    color_match_from_string,
     get_sampler_from_str,
     guidance_from_string,
     truncate_fit,
@@ -44,7 +45,16 @@ def test_guidance_from_string_invalid():
     with pytest.raises(ValueError, match="invalid guidance preset"):
         guidance_from_string(s='not a real preset')
 
-        
+@pytest.mark.parametrize("color_space_name", COLOR_SPACES.keys())
+def test_color_match_from_string_valid(color_space_name):
+    color_match_from_string(s=color_space_name)
+    assert True
+
+def test_color_match_from_string_invalid():
+    with pytest.raises(ValueError, match="invalid color space"):
+        color_match_from_string(s='not a real colorspace')
+
+
 ####################################
 # to do: pytest.mark.paramaterized #
 
