@@ -71,6 +71,7 @@ BORDER_MODES_3D = {
 
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
+# note: we need to decide on a convention between _str and _string
 
 def border_mode_from_str_2d(s: str) -> generation.BorderMode:
     repr = BORDER_MODES_2D.get(s.lower().strip())
@@ -90,6 +91,26 @@ def color_match_from_string(s: str) -> generation.ColorMatchMode:
         raise ValueError(f"invalid color space: {s}")
     return repr
 
+def guidance_from_string(s: str) -> generation.GuidancePreset:
+    repr = GUIDANCE_PRESETS.get(s.lower().strip())
+    if repr is None:
+        raise ValueError(f"invalid guidance preset: {s}")
+    return repr
+
+def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
+    """
+    Convert a string to a DiffusionSampler enum.
+    :param s: The string to convert.
+    :return: The DiffusionSampler enum.
+    """
+    algorithm_key = s.lower().strip()
+    repr = SAMPLERS.get(algorithm_key)
+    if repr is None:
+        raise ValueError(f"invalid sampler: {s}")
+    return repr
+
+sampler_from_string = get_sampler_from_str
+
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
@@ -107,28 +128,6 @@ def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int
     prompt_budget -= len(ext) + 1
     return f"{prefix}{prompt[:prompt_budget]}{post}{ext}"
 
-
-def guidance_from_string(s: str) -> generation.GuidancePreset:
-    repr = GUIDANCE_PRESETS.get(s.lower().strip())
-    if repr is None:
-        raise ValueError(f"invalid guidance preset: {s}")
-    return repr
-
-
-def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
-    """
-    Convert a string to a DiffusionSampler enum.
-    :param s: The string to convert.
-    :return: The DiffusionSampler enum.
-    """
-    algorithm_key = s.lower().strip()
-    repr = SAMPLERS.get(algorithm_key)
-    if repr is None:
-        raise ValueError(f"invalid sampler: {s}")
-    return repr
-
-
-sampler_from_string = get_sampler_from_str
 
 #########################
 
