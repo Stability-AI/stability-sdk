@@ -68,7 +68,7 @@ MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 def border_mode_from_str(s: str) -> generation.BorderMode:
     repr = BORDER_MODES.get(s)
     if repr is None:
-        raise ValueError(f"invalid 2d border mode {border}")
+        raise ValueError(f"invalid 2d border mode {s}")
     return repr
 
 
