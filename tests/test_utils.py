@@ -1,11 +1,12 @@
 import pytest
 
 from stability_sdk.utils import (
+    COLOR_SPACES,
+    GUIDANCE_PRESETS,
     SAMPLERS,
     get_sampler_from_str,
-    truncate_fit,
     guidance_from_string,
-    GUIDANCE_PRESETS,
+    truncate_fit,
     ########
     image_mix,
     image_to_jpg_bytes,
@@ -66,3 +67,14 @@ def test_truncate_fit1():
         max=22)
     assert outv == 'foo_ba_12345678_0.baz'
  
+####################3
+
+# to do: this should fail for lerp values outside [0,1]
+def test_image_mix(np_image):
+    outv = image_mix(
+        img_a=np_image,
+        img_b=np_image,
+        tween=0.5
+    )
+    assert isinstance(outv, type(np_image))
+    assert outv.shape == np_image.shape

@@ -245,9 +245,6 @@ def open_channel(host: str, api_key: str = None) -> generation_grpc.GenerationSe
     return generation_grpc.GenerationServiceStub(channel)
 
 
-
-
-
 class StabilityInference:
     def __init__(
         self,
@@ -269,33 +266,9 @@ class StabilityInference:
         """
         self.verbose = verbose
         self.engine = engine
-
         self.grpc_args = {"wait_for_ready": wait_for_ready}
-
         if verbose:
             logger.info(f"Opening channel to {host}")
-
-        # call_credentials = []
-
-        # if host.endswith("443"):
-        #     if key:
-        #         call_credentials.append(grpc.access_token_call_credentials(f"{key}"))
-        #     else:
-        #         raise ValueError(f"key is required for {host}")
-        #     channel_credentials = grpc.composite_channel_credentials(
-        #         grpc.ssl_channel_credentials(), *call_credentials
-        #     )
-        #     channel = grpc.secure_channel(host, channel_credentials)
-        # else:
-        #     if key:
-        #         logger.warning(
-        #             "Not using authentication token due to non-secure transport"
-        #         )
-        #     channel = grpc.insecure_channel(host)
-
-        # if verbose:
-        #     logger.info(f"Channel opened to {host}")
-        # self.stub = generation_grpc.GenerationServiceStub(channel)
         self.stub = open_channel(host=host, api_key=key)
 
 # def image_gen(
