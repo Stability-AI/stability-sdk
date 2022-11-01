@@ -52,7 +52,7 @@ from stability_sdk.utils import (
     get_sampler_from_str,
     open_images,
     image_to_prompt,
-    image_to_prompt_mask,
+    #image_to_prompt_mask,
 )
 
 
@@ -153,7 +153,8 @@ def image_inpaint(
     p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
     p.extend([
         image_to_prompt(image),
-        image_to_prompt_mask(mask)
+        #image_to_prompt_mask(mask)
+        image_to_prompt(mask, is_mask=True)
     ])
     rq = generation.Request(
         engine_id=engine_id,
@@ -384,10 +385,13 @@ class StabilityInference:
                 start=start_schedule,
                 end=end_schedule,
             )
-            prompts += [image_to_prompt(init_image, init=True)]
+            #prompts += [image_to_prompt(init_image, init=True)]
+            prompts += [image_to_prompt(init_image)]
 
             if mask_image is not None:
-                prompts += [image_to_prompt(mask_image, mask=True)]
+                #prompts += [image_to_prompt(mask_image, mask=True)]
+                #prompts += [image_to_prompt_mask(mask_image)]
+                prompts += [image_to_prompt_mask(mask_image, is_mask=True)]
 
         
         if guidance_prompt:

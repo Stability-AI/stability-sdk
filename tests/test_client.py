@@ -28,28 +28,32 @@ def test_StabilityInference_init_nokey_insecure_host():
     class_instance = client.StabilityInference(host='foo.bar.baz')
     assert True
 
-def test_image_to_prompt():
-    im = Image.new('RGB',(1,1))
-    prompt = client.image_to_prompt(im, init=False, mask=False)
-    assert isinstance(prompt, generation.Prompt)
+# what's the situation where we want init=False for a non-mask? inpainting?
+# Or maybe this was the use case Jim was looking for?
+#def test_image_to_prompt():
+#    im = Image.new('RGB',(1,1))
+#    prompt = client.image_to_prompt(im, init=False, mask=False)
+#    assert isinstance(prompt, generation.Prompt)
 
 def test_image_to_prompt_init():
     im = Image.new('RGB',(1,1))
-    prompt = client.image_to_prompt(im, init=True, mask=False)
+    #prompt = client.image_to_prompt(im, init=True, mask=False)
+    prompt = client.image_to_prompt(im)
     assert isinstance(prompt, generation.Prompt)
 
 def test_image_to_prompt_mask():
     im = Image.new('RGB',(1,1))
-    prompt = client.image_to_prompt(im, init=False, mask=True)
+    #prompt = client.image_to_prompt(im, init=False, mask=True)
+    prompt = client.image_to_prompt(im, is_mask=True)
     assert isinstance(prompt, generation.Prompt)
 
-def test_image_to_prompt_init_mask():
-    im = Image.new('RGB',(1,1))
-    try:
-        prompt = client.image_to_prompt(im, init=True, mask=True)
-        assert False
-    except ValueError:
-        assert True
+# def test_image_to_prompt_init_mask():
+#     im = Image.new('RGB',(1,1))
+#     try:
+#         prompt = client.image_to_prompt(im, init=True, mask=True)
+#         assert False
+#     except ValueError:
+#         assert True
 
 
 def test_server_mocking(grpc_server, grpc_addr):

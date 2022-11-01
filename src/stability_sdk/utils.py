@@ -164,17 +164,35 @@ def image_to_jpg_bytes(image: np.ndarray, quality: int=90):
 def image_to_png_bytes(image: np.ndarray):
     return cv2.imencode('.png', image)[1].tobytes()
 
-def image_to_prompt(image: np.ndarray) -> generation.Prompt:
-    return generation.Prompt(
-        parameters=generation.PromptParameters(init=True),
-        artifact=generation.Artifact(
-            type=generation.ARTIFACT_IMAGE,
-            binary=image_to_png_bytes(image)))
+def pil_image_to_png_bytes(image: Image.Image):
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.getvalue()
 
+def image_to_prompt(
+        image: Union[np.ndarray, Image.Image],
+        is_mask=False,
+    ) -> generation.Prompt:
+    if isinstance(image, np.ndarray):
+        image = image_to_png_bytes(image)
+    elif isinstance(image, Image.Image):
+        image = pil_image_to_png_bytes(image)
+    else:
+        raise NotImplementedError
+    
+    return generation.Prompt(
+        parameters=generation.PromptParameters(init=not is_mask), # is this right?
+        artifact=generation.Artifact(
+            type=generation.ARTIFACT_MASK if is_mask else generation.ARTIFACT_IMAGE,
+            binary=image))
+
+"""
 def image_to_prompt_mask(image: np.ndarray) -> generation.Prompt:
     mask = image_to_prompt(image)
     mask.artifact.type = generation.ARTIFACT_MASK
     return mask
+""" 
 
 ##############################################
 
