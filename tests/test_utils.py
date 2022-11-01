@@ -28,14 +28,24 @@ from stability_sdk.utils import (
     warp3d_op,
 )
 
-@pytest.mark.parametrize("border", BORDER_MODES.keys())
-def test_border_mode_from_str_valid(border):
-    border_mode_from_str(s=border)
+@pytest.mark.parametrize("border", BORDER_MODES_2D.keys())
+def test_border_mode_from_str_2d_valid(border):
+    border_mode_from_str_2d(s=border)
     assert True
 
-def test_border_mode_from_str_invalid():
+def test_border_mode_from_str_2d_invalid():
     with pytest.raises(ValueError, match="invalid 2d border mode"):
-        border_mode_from_str(s='not a real border mode')
+        border_mode_from_str_2d(s='not a real border mode')
+
+
+@pytest.mark.parametrize("border", BORDER_MODES_3D.keys())
+def test_border_mode_from_str_3d_valid(border):
+    border_mode_from_str_3d(s=border)
+    assert True
+
+def test_border_mode_from_str_3d_invalid():
+    with pytest.raises(ValueError, match="invalid 3d border mode"):
+        border_mode_from_str_3d(s='not a real border mode')
 
 
 @pytest.mark.parametrize("sampler_name", SAMPLERS.keys())

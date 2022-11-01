@@ -1,4 +1,5 @@
 import bisect
+import copy
 import io
 import logging
 import mimetypes
@@ -55,22 +56,33 @@ COLOR_SPACES =  {
         "RGB": generation.COLOR_MATCH_RGB,
     }
 
-BORDER_MODES = {
+BORDER_MODES_2D = {
     'replicate': generation.BORDER_REPLICATE,
     'reflect': generation.BORDER_REFLECT,
     'wrap': generation.BORDER_WRAP,
     'zero': generation.BORDER_ZERO,
 }
 
+_2d_only_modes = ['wrap']
+BORDER_MODES_3D = {
+    k:v for k,v in BORDER_MODES_2D.items() 
+    if k not in _2d_only_modes
+    }
+
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 
-def border_mode_from_str(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES.get(s)
+def border_mode_from_str_2d(s: str) -> generation.BorderMode:
+    repr = BORDER_MODES_2D.get(s)
     if repr is None:
         raise ValueError(f"invalid 2d border mode {s}")
     return repr
 
+def border_mode_from_str_3d(s: str) -> generation.BorderMode:
+    repr = BORDER_MODES_3D.get(s)
+    if repr is None:
+        raise ValueError(f"invalid 3d border mode {s}")
+    return repr
 
 def color_match_from_string(s: str) -> generation.ColorMatchMode:
     repr = COLOR_SPACES.get(s)
@@ -268,7 +280,7 @@ def image_xform(
 
 def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
     warp2d = generation.TransformWarp2d()
-    warp2d.border_mode = border_mode_from_str(border)
+    warp2d.border_mode = border_mode_from_str_2d(border)
     warp2d.rotate = rotate
     warp2d.scale = scale
     warp2d.translate_x = dx
@@ -280,12 +292,7 @@ def warp3d_op(
     near:float, far:float, fov:float, border:str
 ) -> generation.TransformOperation:
     warp3d = generation.TransformWarp3d()
-
-    if border == 'replicate': warp3d.border_mode = generation.BORDER_REPLICATE
-    elif border == 'reflect': warp3d.border_mode = generation.BORDER_REFLECT
-    elif border == 'zero': warp3d.border_mode = generation.BORDER_ZERO
-    else: raise Exception(f"invalid 3d border mode {border}")
-
+    warp3d.border_mode = border_mode_from_str_3d(border)
     warp3d.translate_x = dx
     warp3d.translate_y = dy
     warp3d.translate_z = dz
