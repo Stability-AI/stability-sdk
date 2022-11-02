@@ -274,6 +274,8 @@ def image_xform(
         image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
     )
 
+    # there's an input above named "images", which has nothing to do with anything below this comment.
+    # this is super confusing. 
     images, mask = [], None
     for resp in stub.Generate(rq, wait_for_ready=True):
         for artifact in resp.artifacts:
