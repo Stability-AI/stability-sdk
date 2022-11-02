@@ -1,7 +1,11 @@
 *.pyc
 *.egg-info
 #*.png
+build/
 dist/
 pyenv/
 .venv/
 generation-*.pb.json
+*settings.txt
+
+Pipfile*
