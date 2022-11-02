@@ -274,6 +274,8 @@ def image_xform(
         image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
     )
 
+    # This whole bottom portion looks like something that should be handled by "process response" or some evolved version of that
+    ######################
     # there's an input above named "images", which has nothing to do with anything below this comment.
     # this is super confusing. 
     images, mask = [], None
