@@ -287,7 +287,7 @@ def image_xform(
                 elif artifact.type == generation.ARTIFACT_MASK:
                     if mask is not None:
                         raise Exception(
-                            "multiple masks returned in response, cliend implementaion currently assumes no more than one mask returned"
+                            "multiple masks returned in response, client implementaion currently assumes no more than one mask returned"
                         )
                     mask = im
     return images, mask
