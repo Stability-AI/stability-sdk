@@ -65,8 +65,9 @@ class Animator:
         args=None,
         out_dir='.',
         animation_prompts={0:'a tasty cheeseburger'},
-        negative_prompt=None,
-        negative_prompt_weight=None
+        negative_prompt='',
+        negative_prompt_weight=0.0,
+        transform_engine_id='transform-server-v1',
     ):
         #if args is None:
         #    args = SimpleNamespace(**asdict(AnimationArgs()))
@@ -75,6 +76,7 @@ class Animator:
         self.animation_prompts = animation_prompts
         self.negative_prompt = negative_prompt
         self.negative_prompt_weight = negative_prompt_weight
+        self.transform_engine_id = transform_engine_id
 
         self.video_prev_frame = None
         self.setup_animation()
@@ -161,13 +163,13 @@ class Animator:
         # load input video
         self.video_reader = cv2.VideoCapture(video_in)
         #video_extract_nth = args.extract_nth_frame
-        video_prev_frame = None
         if self.video_reader is not None:
             success, image = self.video_reader.read()
             if not success:
                 raise Exception(f"Failed to read first frame from {video_in}")
-            self.video_prev_frame = cv2.resize(image, (self.args.W, self.args.H), interpolation=cv2.INTER_LANCZOS4)
+            video_prev_frame = cv2.resize(image, (self.args.W, self.args.H), interpolation=cv2.INTER_LANCZOS4)
             self.prior_frames = [video_prev_frame, video_prev_frame]
+            self.video_prev_frame = video_prev_frame
 
     def build_prior_frame_transforms(
         self,
@@ -231,10 +233,16 @@ class Animator:
                     ))
                 video_prev_frame = video_next_frame
                 color_match_image = video_next_frame
+        self.video_prev_frame = video_prev_frame
 
         return ops, color_match_image, video_prev_frame
 
-    def render_animation(self, args=None, out_dir=None):
+    def render_animation(
+        self,
+        stub,
+        args=None,
+        out_dir=None
+    ):
 
         if not args:
             args = self.args
@@ -272,7 +280,7 @@ class Animator:
                 )
 
             if len(ops):
-                prior_frames, mask = image_xform(stub, prior_frames, ops, TRANSFORM_ENGINE_ID)
+                prior_frames, mask = image_xform(stub, prior_frames, ops, self.transform_engine_id)
                 inpaint_mask = mask if args.inpaint_border else None
 
                 depth_map = prior_frames.pop(0) if len(prior_frames) == 3 else None

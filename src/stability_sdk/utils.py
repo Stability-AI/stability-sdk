@@ -178,6 +178,7 @@ def image_to_prompt(
     elif isinstance(image, Image.Image):
         image = pil_image_to_png_bytes(image)
     else:
+        print(type(image))
         raise NotImplementedError
     
     return generation.Prompt(
