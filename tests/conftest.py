@@ -55,7 +55,7 @@ def np_image(pil_image):
 
 @pytest.fixture(scope='module')
 def vidpath():
-    return next(pathlib.Path('.').glob('**/tests/assets/*.mp4'))
+    return str(next(pathlib.Path('.').glob('**/tests/assets/*.mp4')))
 
 @pytest.fixture(scope='module')
 def default_anim_args():

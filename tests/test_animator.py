@@ -24,3 +24,9 @@ def test_get_weights(default_anim_args):
         key_frame_values=[0],
         interp=False
     )
+
+def test_load_video(default_anim_args, vidpath):
+    artist = Animator(args=default_anim_args)
+    artist.load_video(video_in=vidpath)
+    assert len(artist.prior_frames) > 0
+    assert artist.video_prev_frame is not None

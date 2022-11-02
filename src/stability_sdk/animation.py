@@ -69,6 +69,8 @@ class Animator:
         self.animation_prompts = animation_prompts
         self.negative_prompt = negative_prompt
         self.negative_prompt_weight = negative_prompt_weight
+
+        self.video_prev_frame = None
         self.setup_animation()
 
     def get_animation_prompts_weights(
@@ -103,7 +105,6 @@ class Animator:
 
     def setup_animation(self):
         args = self.args
-        out_dir = self.out_dir
 
         # change request for random seed into explicit value so it is saved to settings
         if args.seed <= 0:
@@ -159,7 +160,7 @@ class Animator:
             success, image = self.video_reader.read()
             if not success:
                 raise Exception(f"Failed to read first frame from {video_in}")
-            self.video_prev_frame = cv2.resize(image, (args.W, args.H), interpolation=cv2.INTER_LANCZOS4)
+            self.video_prev_frame = cv2.resize(image, (self.args.W, self.args.H), interpolation=cv2.INTER_LANCZOS4)
             self.prior_frames = [video_prev_frame, video_prev_frame]
 
     def build_prior_frame_transforms(
@@ -175,8 +176,6 @@ class Animator:
         border,
         near_plane, far_plane
     ):
-        video_extract_nth = extract_nth_frame
-        video_prev_frame = self.video_prev_frame
 
         ops = []
         if save_depth_maps or animation_mode == '3D':
@@ -218,6 +217,8 @@ class Animator:
             ops.append(op)
 
         elif animation_mode == 'Video Input':
+            video_extract_nth = extract_nth_frame
+            video_prev_frame = self.video_prev_frame
             for i in range(video_extract_nth):
                 success, video_next_frame = self.video_reader.read()
             if success:
