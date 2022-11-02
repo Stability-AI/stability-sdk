@@ -20,6 +20,12 @@ from tqdm import tqdm
 from types import SimpleNamespace
 from typing import List, Tuple
 
+from stability_sdk.client import (
+    image_gen,
+    image_inpaint,
+    generation,
+    generation_grpc
+)
 
 from stability_sdk.utils import (
     color_match_from_string,
@@ -167,57 +173,50 @@ class Animator:
         self,
         frame_idx,
         color_match_image,
-        #video_prev_frame,
-        #args,
-        save_depth_maps,
-        extract_nth_frame,
-        animation_mode,
-        ##########
-        border,
-        near_plane, far_plane
     ):
-
+        args = self.args
+        video_prev_frame=None
         ops = []
-        if save_depth_maps or animation_mode == '3D':
+        if args.save_depth_maps or args.animation_mode == '3D':
             ops.append(generation.TransformOperation(                    
                 depth_calc=generation.TransformDepthCalc(
                     blend_weight=args.midas_weight,
-                    export=save_depth_maps
+                    export=args.save_depth_maps
                 )
             ))
-        if animation_mode == '2D':
+        if args.animation_mode == '2D':
             ops.append(warp2d_op(
                 self.frame_args.translation_x_series[frame_idx], 
                 self.frame_args.translation_y_series[frame_idx], 
                 self.frame_args.angle_series[frame_idx], 
                 self.frame_args.zoom_series[frame_idx], 
-                border,
+                args.border,
             ))
-        elif animation_mode == '3D':
+        elif args.animation_mode == '3D':
 
-            if not (near_plane < far_plane):
+            if not (args.near_plane < args.far_plane):
                 raise ValueError(
                 "Invalid camera volume: must satisfy near < far, "
-                f"got near={near_plane}, far={far_plane}"
+                f"got near={args.near_plane}, far={args.far_plane}"
             )
 
             op = generation.TransformOperation(
                 warp3d=generation.TransformWarp3d(
-                    border_mode = border_mode_from_str_3d(border),
+                    border_mode = border_mode_from_str_3d(args.border),
                     translate_x = self.frame_args.translation_x_series[frame_idx],
                     translate_y = self.frame_args.translation_y_series[frame_idx],
                     translate_z = self.frame_args.translation_z_series[frame_idx],
                     rotate_x = self.frame_args.rotation_x_series[frame_idx],
                     rotate_y = self.frame_args.rotation_y_series[frame_idx],
                     rotate_z = self.frame_args.rotation_z_series[frame_idx],
-                    near_plane = near_plane,
-                    far_plane = far_plane,
+                    near_plane = args.near_plane,
+                    far_plane = args.far_plane,
                     fov = self.frame_args.fov_series[frame_idx],
                 ))
             ops.append(op)
 
-        elif animation_mode == 'Video Input':
-            video_extract_nth = extract_nth_frame
+        elif args.animation_mode == 'Video Input':
+            video_extract_nth = args.extract_nth_frame
             video_prev_frame = self.video_prev_frame
             for i in range(video_extract_nth):
                 success, video_next_frame = self.video_reader.read()
@@ -270,16 +269,6 @@ class Animator:
                 (ops, color_match_image, video_prev_frame) = self.build_prior_frame_transforms(
                     frame_idx=frame_idx,
                     color_match_image=color_match_image,
-                    #video_prev_frame=video_prev_frame, 
-                    #args, 
-                    save_depth_maps=args.save_depth_maps,
-                    extract_nth_frame=args.extract_nth_frame,
-                    animation_mode=args.animation_mode,
-                    ##############
-                    border=args.border,
-                    near_plane=args.near_plane, 
-                    far_plane=args.far_plane,
-                    fov=None if not 'fov' in args else args.fov,
                 )
 
             if len(ops):

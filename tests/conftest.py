@@ -58,7 +58,7 @@ def vidpath():
     return str(next(pathlib.Path('.').glob('**/tests/assets/*.mp4')))
 
 @pytest.fixture(scope='module')
-def default_anim_args():
+def default_anim_args(vidpath):
 
     #@markdown ####**Settings:**
     W = 512 #@param
@@ -106,7 +106,8 @@ def default_anim_args():
     save_depth_maps = False #@param {type:"boolean"}
 
     #@markdown ####**Video Input:**
-    video_init_path = '/content/video_in.mp4' #@param {type:"string"}
+    #video_init_path = '/content/video_in.mp4' #@param {type:"string"}
+    video_init_path = vidpath
     extract_nth_frame = 4 #@param {type:"number"}
     video_mix_in_curve = "0:(0.02)" #@param {type:"string"}
     video_flow_warp = True #@param {type:"boolean"}
