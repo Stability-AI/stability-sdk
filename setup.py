@@ -35,7 +35,10 @@ setup(
         ],
         'anim': [
             'numpy',
-            'pandas'
+            'pandas',
+            'opencv-python-headless',
+            'tqdm',
+            'IPython' # maybe separate set of nb deps?
         ]
     },
     packages=find_packages(

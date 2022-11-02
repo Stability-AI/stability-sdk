@@ -178,6 +178,7 @@ def image_to_prompt(
     elif isinstance(image, Image.Image):
         image = pil_image_to_png_bytes(image)
     else:
+        print(type(image))
         raise NotImplementedError
     
     return generation.Prompt(
@@ -274,6 +275,10 @@ def image_xform(
         image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
     )
 
+    # This whole bottom portion looks like something that should be handled by "process response" or some evolved version of that
+    ######################
+    # there's an input above named "images", which has nothing to do with anything below this comment.
+    # this is super confusing. 
     images, mask = [], None
     for resp in stub.Generate(rq, wait_for_ready=True):
         for artifact in resp.artifacts:
@@ -285,20 +290,21 @@ def image_xform(
                 elif artifact.type == generation.ARTIFACT_MASK:
                     if mask is not None:
                         raise Exception(
-                            "multiple masks returned in response, cliend implementaion currently assumes no more than one mask returned"
+                            "multiple masks returned in response, client implementaion currently assumes no more than one mask returned"
                         )
                     mask = im
     return images, mask
 
 
 def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
-    warp2d = generation.TransformWarp2d()
-    warp2d.border_mode = border_mode_from_str_2d(border)
-    warp2d.rotate = rotate
-    warp2d.scale = scale
-    warp2d.translate_x = dx
-    warp2d.translate_y = dy
-    return generation.TransformOperation(warp2d=warp2d)
+    return generation.TransformOperation(
+        warp2d=generation.TransformWarp2d(
+            border_mode = border_mode_from_str_2d(border),
+            rotate = rotate,
+            scale = scale,
+            translate_x = dx,
+            translate_y = dy,
+        ))
 
 def warp3d_op(
     dx:float, dy:float, dz:float, rx:float, ry:float, rz:float,
@@ -314,16 +320,18 @@ def warp3d_op(
             "Invalid camera volume: fov must be greater than 0, "
             f"got fov={fov}"
         )
-    warp3d = generation.TransformWarp3d()
-    warp3d.border_mode = border_mode_from_str_3d(border)
-    warp3d.translate_x = dx
-    warp3d.translate_y = dy
-    warp3d.translate_z = dz
-    warp3d.rotate_x = rx
-    warp3d.rotate_y = ry
-    warp3d.rotate_z = rz
-    warp3d.near_plane = near
-    warp3d.far_plane = far
-    warp3d.fov = fov
-    return generation.TransformOperation(warp3d=warp3d)
+    return generation.TransformOperation(
+        warp3d=generation.TransformWarp3d(
+            border_mode = border_mode_from_str_3d(border),
+            translate_x = dx,
+            translate_y = dy,
+            translate_z = dz,
+            rotate_x = rx,
+            rotate_y = ry,
+            rotate_z = rz,
+            near_plane = near,
+            far_plane = far,
+            fov = fov,
+            ))
+    
 
