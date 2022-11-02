@@ -326,7 +326,7 @@ class Animator:
                     if noise > 0:
                         ops.append(generation.TransformOperation(add_noise=generation.TransformAddNoise(amount=noise, seed=seed)))
                     if len(ops):
-                        init_image = image_xform(stub, [init_image], ops, TRANSFORM_ENGINE_ID)[0][0]
+                        init_image = image_xform(stub, [init_image], ops, self.transform_engine_id)[0][0]
 
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
