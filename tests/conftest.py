@@ -40,12 +40,19 @@ def grpc_server(grpc_addr):
     server.stop(0)
 
 @pytest.fixture(scope='module')
-def pil_image():
+def impath():
     #impath = "tests\assets\4166726513_giant__rainbow_sequoia__tree_by_hayao_miyazaki___earth_tones__a_row_of_western_cedar_nurse_trees_che.png"
-    impath = next(pathlib.Path('.').glob('**/tests/assets/*.png'))
-    im = Image.open(impath)
-    return im
+    return next(pathlib.Path('.').glob('**/tests/assets/*.png'))
+
+@pytest.fixture(scope='module')
+def pil_image(impath):
+    return Image.open(impath)
 
 @pytest.fixture(scope='module')
 def np_image(pil_image):
     return np.array(pil_image)
+
+@pytest.fixture(scope='module')
+def vidpath():
+    return next(pathlib.Path('.').glob('**/tests/assets/*.mp4'))
+

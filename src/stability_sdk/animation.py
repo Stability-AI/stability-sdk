@@ -20,19 +20,99 @@ from tqdm import tqdm
 from types import SimpleNamespace
 from typing import List, Tuple
 
+
+from stability_sdk.utils import (
+    color_match_from_string,
+    sampler_from_string,
+    key_frame_inbetweens,
+    key_frame_parse,
+    guidance_from_string,
+    #curve_to_series,
+    image_mix,
+    image_to_jpg_bytes,
+    image_to_png_bytes,
+    image_to_prompt,
+    image_xform,
+    warp2d_op,
+    warp3d_op,
+    border_mode_from_str_2d,
+    border_mode_from_str_3d,
+
+)
+
+
 def display_frame(image: np.ndarray):
     display.clear_output(wait=True)
     display.display(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
 
+
+from dataclasses import dataclass
+
+@dataclass
+class AnimationArgs:
+    #@markdown ####**Settings:**
+    W = 512 #@param
+    H = 512 #@param
+    W, H = map(lambda x: x - x % 64, (W, H))  # resize to integer multiple of 64
+    sampler = 'K_euler_ancestral' #@param ["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms"]
+    seed = -1 #@param
+    cfg_scale = 7 #@param {type:"number"}
+    clip_guidance = 'FastBlue' #@param ["None", "Simple", "FastBlue", "FastGreen"]
+
+    #@markdown ####**Animation Settings:**
+    animation_mode = '3D' #@param ['2D', '3D', 'Video Input'] {type:'string'}
+    max_frames = 60 #@param {type:"number"}
+    border = 'replicate' #@param ['reflect', 'replicate', 'wrap', 'zero'] {type:'string'}
+    inpaint_border = False #@param {type:"boolean"}
+    interpolate_prompts = False #@param {type:"boolean"}
+    locked_seed = False #@param {type:"boolean"}
+
+    #@markdown ####**Key framed value curves:**
+    angle = "0:(1)" #@param {type:"string"}
+    zoom = "0:(1.05)" #@param {type:"string"}
+    translation_x = "0:(0)" #@param {type:"string"}
+    translation_y = "0:(0)" #@param {type:"string"}
+    translation_z = "0:(5)" #@param {type:"string"}
+    rotation_x = "0:(0)" #@param {type:"string"}
+    rotation_y = "0:(0)" #@param {type:"string"}
+    rotation_z = "0:(1)" #@param {type:"string"}
+    brightness_curve = "0: (1.0)" #@param {type:"string"}
+    contrast_curve = "0: (1.0)" #@param {type:"string"}
+    noise_curve = "0:(0.0)" # likely to be removed, still hidden here for potential experiments
+    noise_scale_curve = "0:(1.02)" #@param {type:"string"}
+    steps_curve = "0:(50)" #@param {type:"string"}
+    strength_curve = "0:(0.65)" #@param {type:"string"}
+
+    #@markdown ####**Coherence:**
+    color_coherence = 'LAB' #@param ['None', 'HSV', 'LAB', 'RGB'] {type:'string'}
+    diffusion_cadence_curve = "0:(4)" #@param {type:"string"}
+
+    #@markdown ####**3D Depth Warping:**
+    #use_depth_warping = True #@param {type:"boolean"}
+    midas_weight = 0.3 #@param {type:"number"}
+    near_plane = 200
+    far_plane = 10000
+    fov_curve = "0:(25)" #@param {type:"string"}
+    save_depth_maps = False #@param {type:"boolean"}
+
+    #@markdown ####**Video Input:**
+    video_init_path = '/content/video_in.mp4' #@param {type:"string"}
+    extract_nth_frame = 4 #@param {type:"number"}
+    video_mix_in_curve = "0:(0.02)" #@param {type:"string"}
+    video_flow_warp = True #@param {type:"boolean"}
+
+
 class Animator:
     def __init__(
         self,
-        args,
-        out_dir,
-        animation_prompts,
-        negative_prompt,
-        negative_prompt_weight
+        args=None,
+        out_dir='.',
+        animation_prompts=None,
+        negative_prompt=None,
+        negative_prompt_weight=None
     ):
+        if args is None:
+            args = AnimationArgs()
         self.args = args
         self.out_dir = out_dir
         self.animation_prompts = animation_prompts
