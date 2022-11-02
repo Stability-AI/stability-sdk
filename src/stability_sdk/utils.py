@@ -317,16 +317,18 @@ def warp3d_op(
             "Invalid camera volume: fov must be greater than 0, "
             f"got fov={fov}"
         )
-    warp3d = generation.TransformWarp3d()
-    warp3d.border_mode = border_mode_from_str_3d(border)
-    warp3d.translate_x = dx
-    warp3d.translate_y = dy
-    warp3d.translate_z = dz
-    warp3d.rotate_x = rx
-    warp3d.rotate_y = ry
-    warp3d.rotate_z = rz
-    warp3d.near_plane = near
-    warp3d.far_plane = far
-    warp3d.fov = fov
-    return generation.TransformOperation(warp3d=warp3d)
+    return generation.TransformOperation(
+        warp3d=generation.TransformWarp3d(
+            border_mode = border_mode_from_str_3d(border),
+            translate_x = dx,
+            translate_y = dy,
+            translate_z = dz,
+            rotate_x = rx,
+            rotate_y = ry,
+            rotate_z = rz,
+            near_plane = near,
+            far_plane = far,
+            fov = fov,
+            ))
+    
 
