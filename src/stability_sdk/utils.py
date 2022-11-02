@@ -294,13 +294,14 @@ def image_xform(
 
 
 def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
-    warp2d = generation.TransformWarp2d()
-    warp2d.border_mode = border_mode_from_str_2d(border)
-    warp2d.rotate = rotate
-    warp2d.scale = scale
-    warp2d.translate_x = dx
-    warp2d.translate_y = dy
-    return generation.TransformOperation(warp2d=warp2d)
+    return generation.TransformOperation(
+        warp2d=generation.TransformWarp2d(
+            border_mode = border_mode_from_str_2d(border),
+            rotate = rotate,
+            scale = scale,
+            translate_x = dx,
+            translate_y = dy,
+        ))
 
 def warp3d_op(
     dx:float, dy:float, dz:float, rx:float, ry:float, rz:float,
