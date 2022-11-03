@@ -158,14 +158,15 @@ def test_warp2d_op_valid(border_mode):
 
 @pytest.mark.parametrize("border_mode", ['not a border mode'])
 def test_warp2d_op_invalid(border_mode):
-    op = warp2d_op(
-        border_mode = border_mode,
-        rotate = 0,
-        scale = 0,
-        translate_x = 0,
-        translate_y = 0,
-    )
-    assert isinstance(op, generation.TransformOperation)
+    with pytest.raises(ValueError, match="invalid 2d border mode"):
+        op = warp2d_op(
+            border_mode = border_mode,
+            rotate = 0,
+            scale = 0,
+            translate_x = 0,
+            translate_y = 0,
+        )
+
 
 @pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
 def test_warp3d_op_valid(border_mode):
@@ -182,3 +183,19 @@ def test_warp3d_op_valid(border_mode):
         fov=0, 
     )
     assert isinstance(op, generation.TransformOperation)
+
+@pytest.mark.parametrize("border_mode", ['not a border mode'] + _2d_only_modes)
+def test_warp3d_op_invalid(border_mode):
+    with pytest.raises(ValueError, match="invalid 3d border mode"):
+        op = warp3d_op(
+            border_mode=border_mode,
+            translate_x=0,
+            translate_y=0,
+            translate_z=0,
+            rotate_x=0,
+            rotate_y=0,
+            rotate_z=0,
+            near_plane=0,
+            far_plane=0,
+            fov=0, 
+        )
