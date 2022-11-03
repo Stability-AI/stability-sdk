@@ -225,38 +225,6 @@ def key_frame_parse(string, prompt_parser=None):
     return frames
 
 
-# Needs to be modified to take `animation_prompts` as an argument
-"""
-def get_animation_prompts_weights(frame_idx: int, key_frame_values: List[int], interp: bool) -> Tuple[List[str], List[float]]:
-    idx = bisect.bisect_right(key_frame_values, frame_idx)
-    prev, next = idx - 1, idx
-    if not interp:
-        return [animation_prompts[key_frame_values[min(len(key_frame_values)-1, prev)]]], [1.0]
-    elif next == len(key_frame_values):
-        return [animation_prompts[key_frame_values[-1]]], [1.0]
-    else:
-        tween = (frame_idx - key_frame_values[prev]) / (key_frame_values[next] - key_frame_values[prev])
-        return [animation_prompts[key_frame_values[prev]], animation_prompts[key_frame_values[next]]], [1.0 - tween, tween]
-"""
-
-def get_animation_prompts_weights():
-    raise NotImplementedError
-
-
-
-
-# def curve_to_series(curve: str) -> List[float]:
-#     """expand key frame curves to per-frame values
-
-#     Args:
-#         curve (str): keyframe curve prompt syntax
-
-#     Returns:
-#         List[float]: per-frame values
-#     """
-#     return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)        
-
-
 #####################################################################
 
 
