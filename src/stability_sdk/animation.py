@@ -299,8 +299,8 @@ class Animator:
                     ops = [] # if we previously populated ops before, looks like we're going to overwrite it here. is that on purpose? guessing it's not... I think maybe this should have a different name to distinguish it as init_image specific ops.
                     if args.color_coherence != 'None' and color_match_image is not None:                    
                         op = colormatch_op(
+                            palette_image=color_match_image,
                             color_mode=args.color_coherence,
-                            image=color_match_image,
                         )
                         ops.append(op)
                     if mix_in > 0 and video_prev_frame is not None:
