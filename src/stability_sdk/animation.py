@@ -85,12 +85,31 @@ class AnimationSettings(param.Parameterized):
 class KeyframedSettings(param.Parameterized):
     """
     See disco/deforum keyframing syntax, originally developed by Chigozie Nri
+    General syntax: "<frameId>:(<valueAtFrame>), f2:(v2),f3:(v3)...." 
+    Values between intermediate keyframes will be linearly interpolated by default to produce smooth transitions.
+    For abrupt transitions, specify values at adjacent keyframes.
     """
-    pass
+    angle = param.String(default="0:(1)")
+    zoom = param.String(default="0:(1)")
+    translation_x = param.String(default="0:(0)")
+    translation_y = param.String(default="0:(0)")
+    translation_z = param.String(default="0:(1)")
+    rotation_x = param.String(default="0:(0)")
+    rotation_y = param.String(default="0:(0)")
+    rotation_z = param.String(default="0:(0)")
+    brightness_curve = param.String(default="0:(1.0)")
+    contrast_curve = param.String(default="0:(1.0)")
+    noise_curve = param.String(default="0:(0.0)")
+    noise_scale_curve = param.String(default="0:(1.02)")
+    steps_curve = param.String(default="0:(50)")
+    strength_curve = param.String(default="0:(0.65)")
 
 
+# should diffusion cadence be moved up to the keyframed settings?
+# if not, maybe stuff like steps and strength should be moved elsewhere?
 class CoherenceSettings(param.Parameterized):
-    pass
+    color_coherence = param.ObjectSelector(default='LAB', objects=['None', 'HSV', 'LAB', 'RGB'], doc="Color space that will be used for inter-frame color adjustments.")
+    diffusion_cadence_curve = param.String(default="0:(4)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
 
 
 class DepthwarpSettings(param.Parameterized):
