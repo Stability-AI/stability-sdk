@@ -295,6 +295,10 @@ def image_xform(
                     mask = im
     return images, mask
 
+#################################
+# transform ops helpers
+#  - move to their own submodule
+#  - add doc strings giving details on parameters
 
 def warp2d_op(
     border_mode:str,
@@ -351,7 +355,7 @@ def warp3d_op(
 def colormatch_op(
     palette_image,
     color_mode='LAB',
-):
+) -> generation.TransformOperation:
     im = generation.Artifact(
         type=generation.ARTIFACT_IMAGE, 
         binary=image_to_jpg_bytes(palette_image),
@@ -364,10 +368,10 @@ def colormatch_op(
 def depthcalc_op(
     blend_weight:float,
     export:bool,
-):
+) -> generation.TransformOperation:
     return generation.TransformOperation(                    
         depth_calc=generation.TransformDepthCalc(
-            blend_weight=args.midas_weight,
-            export=args.save_depth_maps
+            blend_weight=blend_weight,
+            export=export
         )
     )
