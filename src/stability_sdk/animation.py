@@ -68,7 +68,8 @@ class BasicSettings(param.Parameterized):
     seed    = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
-
+    ####
+    # missing param: n_samples = param.Integer(1, bounds=(1,9))
 
 class AnimationSettings(param.Parameterized):
     animation_mode = param.ObjectSelector(default='3D', objects=['2D', '3D', 'Video Input'])
@@ -82,6 +83,8 @@ class AnimationSettings(param.Parameterized):
 
 # TO DO: ability to specify backfill/interpolation method for each parameter
 # TO DO: ability to provide a function that returns a parameter value given some frame index
+# TO DO: inherit from param.String to add validation to these things
+# TO DO: should defaults be noop or opinionated? Maybe a separate object for opinionated defaults?
 class KeyframedSettings(param.Parameterized):
     """
     See disco/deforum keyframing syntax, originally developed by Chigozie Nri
@@ -94,15 +97,15 @@ class KeyframedSettings(param.Parameterized):
     translation_x = param.String(default="0:(0)")
     translation_y = param.String(default="0:(0)")
     translation_z = param.String(default="0:(1)")
-    rotation_x = param.String(default="0:(0)")
-    rotation_y = param.String(default="0:(0)")
-    rotation_z = param.String(default="0:(0)")
+    rotation_x = param.String(default="0:(0)", doc="Euler angle in radians")
+    rotation_y = param.String(default="0:(0)", doc="Euler angle in radians")
+    rotation_z = param.String(default="0:(0)", doc="Euler angle in radians")
     brightness_curve = param.String(default="0:(1.0)")
     contrast_curve = param.String(default="0:(1.0)")
     noise_curve = param.String(default="0:(0.0)")
     noise_scale_curve = param.String(default="0:(1.02)")
-    steps_curve = param.String(default="0:(50)")
-    strength_curve = param.String(default="0:(0.65)")
+    steps_curve = param.String(default="0:(50)", doc="Diffusion steps")
+    strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
 
 
 # should diffusion cadence be moved up to the keyframed settings?
@@ -112,11 +115,23 @@ class CoherenceSettings(param.Parameterized):
     diffusion_cadence_curve = param.String(default="0:(4)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
 
 
+# TO DO: change to a generic `depth_weight` rather than specifying model name in the parameter
 class DepthwarpSettings(param.Parameterized):
-    pass
+    #use_depth_warping = True #@param {type:"boolean"}
+    midas_weight = param.Number(default=0.3, softbounds=(0,1), doc="Strength of depth model influence.")
+    # do these camera parameters need to be integer valued?
+    near_plane = param.Number(default=200, doc="Distance to nearest plane of camera view volume.")
+    far_plane = param.Number(default=10000, doc="Distance to furthest plane of camera view volume.")
+    fov_curve = param.String(default="0:(25)", bounds=(0,360), inclusive_bounds=(False, True) doc="FOV angle of camera volume in degrees")
+    save_depth_maps = param.Boolean(default=False)
+
 
 class VideoInputSettings(param.Parameterized):
-    pass
+    video_init_path = param.String(default="./videi_in.mp4", doc="Path to video input")
+    extract_nth_frame = param.Integer(default=1, bounds=(1,None), doc="Only use every Nth frame of the video")
+    video_mix_in_curve = param.String(default="0:(0.02)")
+    video_flow_warp = param.Boolean(default=True, doc="Whether or not to transfer the optical flow from the video to the generated animation as a warp effect.")
+
 
 class AnimationArgs(
     BasicSettings,
