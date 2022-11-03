@@ -199,3 +199,18 @@ def test_warp3d_op_invalid(border_mode):
             far_plane=0,
             fov=0, 
         )
+
+@pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
+def test_colormatch_op_valid(np_image, color_mode):
+    op = colormatch_op(
+        palette_image=np_image,
+        color_mode=color_mode
+    )
+    assert isinstance(op, generation.TransformOperation)
+
+def test_colormatch_op_invalid(np_image):
+    with pytest.raises(ValueError, match="invalid color space"):
+        op = colormatch_op(
+        palette_image=np_image,
+        color_mode="not a real color mode",
+    )
