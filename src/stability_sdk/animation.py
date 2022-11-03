@@ -192,12 +192,6 @@ class Animator:
             ops.append(op)
         elif args.animation_mode == '3D':
 
-            if not (args.near_plane < args.far_plane):
-                raise ValueError(
-                "Invalid camera volume: must satisfy near < far, "
-                f"got near={args.near_plane}, far={args.far_plane}"
-            )
-
             op = warp3d_op(
                     border_mode = args.border,
                     translate_x = frame_args.translation_x_series[frame_idx],
