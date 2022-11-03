@@ -21,7 +21,7 @@ def test_init_animator(default_anim_args):
     )
 
 def test_init_animator_prompts_notoptional(default_anim_args):
-    with pytest.raises(TypeError, match="*__init__() missing 1 required positional argument: 'animation_prompts'"):
+    with pytest.raises(TypeError, match=".*__init__() missing 1 required positional argument: 'animation_prompts'"):
         Animator(
             args=default_anim_args,
         )
