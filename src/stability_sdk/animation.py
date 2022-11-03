@@ -37,6 +37,9 @@ from stability_sdk.utils import (
     warpflow_op,
 )
 
+logger = logging.getLogger(__name__)
+logger.setLevel(level=logging.INFO)
+
 
 def display_frame(image: np.ndarray):
     display.clear_output(wait=True)
@@ -58,8 +61,6 @@ class Animator:
         negative_prompt_weight=0.0,
         transform_engine_id='transform-server-v1',
     ):
-        #if args is None:
-        #    args = SimpleNamespace(**asdict(AnimationArgs()))
         self.args = args
         self.out_dir = out_dir
         self.animation_prompts = animation_prompts
