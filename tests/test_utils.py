@@ -4,6 +4,7 @@ import pytest
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk.utils import (
+    _2d_only_modes,
     BORDER_MODES_2D,
     BORDER_MODES_3D,
     COLOR_SPACES,
@@ -27,6 +28,9 @@ from stability_sdk.utils import (
     #########
     warp2d_op,
     warp3d_op,
+    colormatch_op,
+    depthcalc_op,
+    warpflow_op,
 )
 
 @pytest.mark.parametrize("border", BORDER_MODES_2D.keys())
@@ -129,3 +133,33 @@ def test_image_to_prompt_mask(np_image):
     outv = image_to_prompt(np_image, is_mask=True)
     assert isinstance(outv, generation.Prompt)
     assert outv.artifact.type == generation.ARTIFACT_MASK
+
+########################################
+
+    # warp2d_op,
+    # warp3d_op,
+    # colormatch_op,
+    # depthcalc_op,
+    # warpflow_op,
+
+@pytest.mark.parametrize("border_mode", BORDER_MODES_2D.keys())
+def test_warp2d_op_valid(border_mode):
+    op = warp2d_op(
+        border_mode = border_mode_from_str_2d(border_mode),
+        rotate = rotate,
+        scale = scale,
+        translate_x = translate_x,
+        translate_y = translate_y,
+    )
+    assert isinstance(op, generation.TransformOperation)
+
+@pytest.mark.parametrize("border_mode", ['not a border mode'])
+def test_warp2d_op_invalid(border_mode):
+    op = warp2d_op(
+        border_mode = border_mode_from_str_2d(border_mode),
+        rotate = rotate,
+        scale = scale,
+        translate_x = translate_x,
+        translate_y = translate_y,
+    )
+    assert isinstance(op, generation.TransformOperation)
