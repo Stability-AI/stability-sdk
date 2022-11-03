@@ -313,7 +313,7 @@ class Animator:
                             target=video_prev_frame)
                         ops.append(op)
                     if brightness != 1.0 or contrast != 1.0:
-                        ops=contrast_op(
+                        op=contrast_op(
                             brightness:float,
                             contrast:float,
                         )
