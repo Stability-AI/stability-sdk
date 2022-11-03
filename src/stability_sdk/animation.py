@@ -3,15 +3,15 @@ import cv2
 import datetime
 import json
 import logging
-import numpy as np
 import os
-import pandas as pd
 import random
 
 from base64 import b64encode
 from collections import OrderedDict
-from IPython import display
+from IPython import display # this should be conditional on notebook env
+import numpy as np
 import param
+import pandas as pd
 from PIL import Image
 from tqdm import tqdm
 from types import SimpleNamespace
@@ -59,7 +59,7 @@ docstring_bordermode = (
 # to do: these defaults and bounds should be configured in a language agnostic way so they can be 
 # shared across client libraries, front end, etc.
 # https://param.holoviz.org/user_guide/index.html
-
+# TO DO: "prompt" argument has a bit of a logical collision with animation prompts
 class BasicSettings(param.Parameterized):
     prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
     height  = param.Integer(default=512, bounds=(256, 1024), doc="Output image dimensions. Will be resized to a multiple of 64.")
@@ -144,6 +144,26 @@ class AnimationArgs(
     pass
 
 
+def args2dict(args):
+    """
+    Converts arguments object to an OrderedDict
+    """
+    f = None
+    if isinstance(args, param.Parameterized):
+        f = args2dict_param
+    if isinstance(args, SimpleNamespace):
+        f = args2dict_simplenamespace
+    if f is None:
+        raise NotImplementedError(f"Unsupported arguments object type: {type(args)}")
+    return f(args)
+
+def args2dict_simplenamespace(args):
+    return OrderedDict(vars(args))
+
+def args2dict_param(args):
+    return OrderedDict(args.get_param_values())
+
+
 class Animator:
     def __init__(
         self,
@@ -193,7 +213,7 @@ class Animator:
             timestring = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
             settings_filename = os.path.join(self.out_dir, f"{timestring}_settings.txt")
             with open(settings_filename, "w+", encoding="utf-8") as f:
-                save_dict = OrderedDict(vars(self.args))
+                save_dict = args2dict(self.args)
                 for k in ['angle', 'zoom', 'translation_x', 'translation_y', 'translation_z', 'rotation_x', 'rotation_y', 'rotation_z']:
                     save_dict.move_to_end(k, last=True)
                 save_dict['animation_prompts'] = self.animation_prompts
