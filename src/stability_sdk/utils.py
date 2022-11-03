@@ -357,3 +357,17 @@ def warpflow_op(
             next_frame=im_next,
         )
     )
+
+def blend_op(
+    amount:float,
+    target:np.ndarray,
+):
+    im=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(target),
+    )
+    return generation.TransformOperation(
+        blend=generation.TransformBlend(
+        amount=amount, 
+        target=im,
+    ))

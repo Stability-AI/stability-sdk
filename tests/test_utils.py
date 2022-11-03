@@ -31,6 +31,7 @@ from stability_sdk.utils import (
     colormatch_op,
     depthcalc_op,
     warpflow_op,
+    blend_op,
 )
 
 @pytest.mark.parametrize("border", BORDER_MODES_2D.keys())

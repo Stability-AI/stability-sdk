@@ -35,6 +35,7 @@ from stability_sdk.utils import (
     colormatch_op,
     depthcalc_op,
     warpflow_op,
+    blend_op,
 )
 
 logger = logging.getLogger(__name__)
@@ -304,10 +305,10 @@ class Animator:
                         )
                         ops.append(op)
                     if mix_in > 0 and video_prev_frame is not None:
-                        ops.append(generation.TransformOperation(blend=generation.TransformBlend(
+                        op = blend_op(
                             amount=mix_in, 
-                            target=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(video_prev_frame))
-                        )))
+                            target=video_prev_frame)
+                        ops.append(op)
                     if brightness != 1.0 or contrast != 1.0:
                         ops.append(generation.TransformOperation(contrast=generation.TransformContrast(
                             brightness=brightness, contrast=contrast
