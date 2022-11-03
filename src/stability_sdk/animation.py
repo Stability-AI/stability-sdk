@@ -146,6 +146,7 @@ class Animator:
 
         self.prior_frames = []
         self.video_reader = None
+        self.video_prev_frame = None
         video_in = args.video_init_path if args.animation_mode == 'Video Input' else None
         if video_in:
             self.load_video(video_in)
@@ -173,7 +174,6 @@ class Animator:
     ):
         args = self.args
         frame_args = self.frame_args
-        video_prev_frame=None
         ops = []
         if args.save_depth_maps or args.animation_mode == '3D':
             op=depthcalc_op(
@@ -181,6 +181,7 @@ class Animator:
                 export=args.save_depth_maps,
                 )
             ops.append(op)
+
         if args.animation_mode == '2D':
             op = warp2d_op(
                 border_mode=args.border,
@@ -191,7 +192,6 @@ class Animator:
             )
             ops.append(op)
         elif args.animation_mode == '3D':
-
             op = warp3d_op(
                     border_mode = args.border,
                     translate_x = frame_args.translation_x_series[frame_idx],
@@ -208,22 +208,20 @@ class Animator:
 
         elif args.animation_mode == 'Video Input':
             video_extract_nth = args.extract_nth_frame
-            video_prev_frame = self.video_prev_frame
             for i in range(video_extract_nth):
                 success, video_next_frame = self.video_reader.read()
             if success:
                 video_next_frame = cv2.resize(video_next_frame, (args.W, args.H), interpolation=cv2.INTER_LANCZOS4)
                 if args.video_flow_warp:
                     op = warpflow_op(
-                        prev_frame=video_prev_frame,
+                        prev_frame=self.video_prev_frame,
                         next_frame=video_next_frame,
                     )
                     ops.append(op)
-                video_prev_frame = video_next_frame
+                self.video_prev_frame = video_next_frame
                 color_match_image = video_next_frame
-        self.video_prev_frame = video_prev_frame
 
-        return ops, color_match_image, video_prev_frame
+        return ops, color_match_image
 
     def render_animation(
         self,
@@ -244,7 +242,6 @@ class Animator:
 
         #video_reader = self.video_reader
         prior_frames = self.prior_frames
-        #video_prev_frame = self.video_prev_frame
         
         # to facilitate resuming, we need some sort of self.generate_frame(frame_idx) function that gets looped over here
         for frame_idx in tqdm(range(args.max_frames)):
@@ -261,7 +258,7 @@ class Animator:
 
             ops=[]
             if len(prior_frames):
-                (ops, color_match_image, video_prev_frame) = self.build_prior_frame_transforms(
+                (ops, color_match_image) = self.build_prior_frame_transforms(
                     frame_idx=frame_idx,
                     color_match_image=color_match_image,
                 )
@@ -327,10 +324,10 @@ class Animator:
                             color_mode=args.color_coherence,
                         )
                         ops.append(op)
-                    if mix_in > 0 and video_prev_frame is not None:
+                    if mix_in > 0 and self.video_prev_frame is not None:
                         op = blend_op(
                             amount=mix_in, 
-                            target=video_prev_frame)
+                            target=self.video_prev_frame)
                         ops.append(op)
                     if brightness != 1.0 or contrast != 1.0:
                         op=contrast_op(
