@@ -41,6 +41,7 @@ from stability_sdk.utils import (
     image_xform,
     warp2d_op,
     warp3d_op,
+    colormatch_op,
     border_mode_from_str_2d,
     border_mode_from_str_3d,
 
@@ -310,10 +311,11 @@ class Animator:
                     mix_in = self.frame_args.video_mix_in_series[frame_idx]
                     ops = [] # if we previously populated ops before, looks like we're going to overwrite it here. is that on purpose? guessing it's not... I think maybe this should have a different name to distinguish it as init_image specific ops.
                     if args.color_coherence != 'None' and color_match_image is not None:                    
-                        ops.append(generation.TransformOperation(color_match=generation.TransformColorMatch(
-                            color_mode=color_match_from_string(args.color_coherence),
-                            image=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(color_match_image))
-                        )))
+                        op = colormatch_op(
+                            color_mode=args.color_coherence,
+                            image=color_match_image,
+                        )
+                        ops.append(op)
                     if mix_in > 0 and video_prev_frame is not None:
                         ops.append(generation.TransformOperation(blend=generation.TransformBlend(
                             amount=mix_in, 

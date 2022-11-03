@@ -334,4 +334,16 @@ def warp3d_op(
             fov = fov,
             ))
     
+def colormatch_op(
+    palette_image,
+    color_mode='LAB',
+):
+    im = generation.Artifact(
+        type=generation.ARTIFACT_IMAGE, 
+        binary=image_to_jpg_bytes(palette_image),
+    )
+    return generation.TransformOperation(
+        color_match=generation.TransformColorMatch(
+            color_mode=color_match_from_string(color_mode),
+            image= im))
 
