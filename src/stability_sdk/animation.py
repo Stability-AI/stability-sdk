@@ -59,7 +59,8 @@ docstring_bordermode = (
 # to do: these defaults and bounds should be configured in a language agnostic way so they can be 
 # shared across client libraries, front end, etc.
 # https://param.holoviz.org/user_guide/index.html
-class AnimationArgs(param.Parameterized):
+
+class BasicSettings(param.Parameterized):
     prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
     height  = param.Integer(default=512, bounds=(256, 1024), doc="Output image dimensions. Will be resized to a multiple of 64.")
     width   = param.Integer(default=512, bounds=(256, 1024), doc="Output image dimensions. Will be resized to a multiple of 64.")
@@ -67,12 +68,46 @@ class AnimationArgs(param.Parameterized):
     seed    = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
+
+
+class AnimationSettings(param.Parameterized):
     animation_mode = param.ObjectSelector(default='3D', objects=['2D', '3D', 'Video Input'])
     max_frames = param.Integer(default=60, doc="Force stop of animation job after this many frames are generated.")
     border = param.ObjectSelector(default='replicate', objects=['reflect', 'replicate', 'wrap', 'zero'], doc=docstring_bordermode)
+    # this should really be a border mode
+    inpaint_border = param.Boolean(default=False, doc="Use diffusion inpainting to backfill empty border regions. Overrides `border`, defaults to False")
+    interpolate_prompts = param.Boolean(default=False)
+    locked_seed = param.Boolean(default=False)
 
 
+# TO DO: ability to specify backfill/interpolation method for each parameter
+# TO DO: ability to provide a function that returns a parameter value given some frame index
+class KeyframedSettings(param.Parameterized):
+    """
+    See disco/deforum keyframing syntax, originally developed by Chigozie Nri
+    """
+    pass
 
+
+class CoherenceSettings(param.Parameterized):
+    pass
+
+
+class DepthwarpSettings(param.Parameterized):
+    pass
+
+class VideoInputSettings(param.Parameterized):
+    pass
+
+class AnimationArgs(
+    BasicSettings,
+    AnimationSettings,
+    KeyframedSettings,
+    CoherenceSettings,
+    DepthwarpSettings,
+    VideoInputSettings,
+):
+    pass
 
 
 class Animator:
