@@ -300,6 +300,8 @@ def image_xform(
 #  - move to their own submodule
 #  - add doc strings giving details on parameters
 
+# is call signature of generation.TransformWarp_d inconsistent? 
+# or did I ust shuffle them here?
 def warp2d_op(
     border_mode:str,
     rotate:float,
