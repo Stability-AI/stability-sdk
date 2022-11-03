@@ -61,7 +61,7 @@ docstring_bordermode = (
 # https://param.holoviz.org/user_guide/index.html
 # TO DO: "prompt" argument has a bit of a logical collision with animation prompts
 class BasicSettings(param.Parameterized):
-    prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
+    #prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
     height  = param.Integer(default=512, bounds=(256, 1024), doc="Output image dimensions. Will be resized to a multiple of 64.")
     width   = param.Integer(default=512, bounds=(256, 1024), doc="Output image dimensions. Will be resized to a multiple of 64.")
     sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms"])
