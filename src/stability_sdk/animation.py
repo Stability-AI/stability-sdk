@@ -42,8 +42,6 @@ def display_frame(image: np.ndarray):
     display.display(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
 
 
-from dataclasses import dataclass, asdict
-
 class AnimationArgs:
     def __init__(self, *args, **kwargs):
         raise NotImplementedError
