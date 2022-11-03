@@ -297,6 +297,7 @@ class Animator:
                     brightness = self.frame_args.brightness_series[frame_idx]
                     contrast = self.frame_args.contrast_series[frame_idx]
                     mix_in = self.frame_args.video_mix_in_series[frame_idx]
+                    
                     ops = [] # if we previously populated ops before, looks like we're going to overwrite it here. is that on purpose? guessing it's not... I think maybe this should have a different name to distinguish it as init_image specific ops.
                     if args.color_coherence != 'None' and color_match_image is not None:                    
                         op = colormatch_op(
@@ -310,9 +311,11 @@ class Animator:
                             target=video_prev_frame)
                         ops.append(op)
                     if brightness != 1.0 or contrast != 1.0:
-                        ops.append(generation.TransformOperation(contrast=generation.TransformContrast(
-                            brightness=brightness, contrast=contrast
-                        )))
+                        ops=contrast_op(
+                            brightness:float,
+                            contrast:float,
+                        )
+                        ops.append(op)
                     if noise > 0:
                         ops.append(generation.TransformOperation(add_noise=generation.TransformAddNoise(amount=noise, seed=seed)))
                     if len(ops):
