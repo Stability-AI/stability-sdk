@@ -28,7 +28,6 @@ from stability_sdk.utils import (
     key_frame_parse,
     guidance_from_string,
     image_mix,
-    image_to_jpg_bytes,
     image_xform,
     warp2d_op,
     warp3d_op,
