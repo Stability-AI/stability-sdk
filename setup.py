@@ -27,6 +27,7 @@ setup(
         'grpcio-tools==1.48.1',
         'python-dotenv',
         'protobuf==3.19.5',        
+        'param',
     ],
     extras_require={
         'dev': [
