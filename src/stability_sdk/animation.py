@@ -122,7 +122,7 @@ class DepthwarpSettings(param.Parameterized):
     # do these camera parameters need to be integer valued?
     near_plane = param.Number(default=200, doc="Distance to nearest plane of camera view volume.")
     far_plane = param.Number(default=10000, doc="Distance to furthest plane of camera view volume.")
-    fov_curve = param.String(default="0:(25)", bounds=(0,360), inclusive_bounds=(False, True) doc="FOV angle of camera volume in degrees")
+    fov_curve = param.String(default="0:(25)", doc="FOV angle of camera volume in degrees.")
     save_depth_maps = param.Boolean(default=False)
 
 
