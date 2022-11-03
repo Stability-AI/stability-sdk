@@ -55,18 +55,21 @@ class AnimationArgs:
 class Animator:
     def __init__(
         self,
+        animation_prompts,
         args=None,
         out_dir='.',
-        animation_prompts={0:'a tasty cheeseburger'},
+        #####
+        # we shouldn't be treating these special. to do: more generic prompt input
         negative_prompt='',
         negative_prompt_weight=0.0,
+        #####
         transform_engine_id='transform-server-v1',
         inpaint_engine_id='stable-diffusion-v1-5',
         generate_engine_id='stable-diffusion-v1-5',
     ):
+        self.animation_prompts = animation_prompts
         self.args = args
         self.out_dir = out_dir
-        self.animation_prompts = animation_prompts
         self.negative_prompt = negative_prompt
         self.negative_prompt_weight = negative_prompt_weight
         self.transform_engine_id = transform_engine_id
