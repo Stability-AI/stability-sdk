@@ -248,7 +248,6 @@ class Animator:
         if not out_dir:
             out_dir = self.out_dir
         key_frame_values = self.keyframe_values
-        video_extract_nth = args.extract_nth_frame
         seed = args.seed
         color_match_image = None # optional target for color matching
         inpaint_mask = None      # optional mask of revealed areas
