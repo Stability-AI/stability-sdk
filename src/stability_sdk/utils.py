@@ -377,3 +377,20 @@ def depthcalc_op(
             export=export
         )
     )
+
+def warpflow_op(
+    prev_frame:np.ndarray,
+    next_frame:np.ndarray,
+):
+    im_prev=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(prev_frame))
+    im_next=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(next_frame))
+    return generation.TransformOperation(
+        warp_flow=generation.TransformWarpFlow(
+            prev_frame=im_prev,
+            next_frame=im_next,
+        )
+    )

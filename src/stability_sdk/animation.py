@@ -34,6 +34,7 @@ from stability_sdk.utils import (
     warp3d_op,
     colormatch_op,
     depthcalc_op,
+    warpflow_op,
 )
 
 
@@ -213,12 +214,11 @@ class Animator:
             if success:
                 video_next_frame = cv2.resize(video_next_frame, (args.W, args.H), interpolation=cv2.INTER_LANCZOS4)
                 if args.video_flow_warp:
-                    ops.append(generation.TransformOperation(
-                        warp_flow=generation.TransformWarpFlow(
-                            prev_frame=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(video_prev_frame)),
-                            next_frame=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(video_next_frame)),
-                        )
-                    ))
+                    op = warpflow_op(
+                        prev_frame=video_prev_frame,
+                        next_frame=video_next_frame,
+                    )
+                    ops.append(op)
                 video_prev_frame = video_next_frame
                 color_match_image = video_next_frame
         self.video_prev_frame = video_prev_frame
