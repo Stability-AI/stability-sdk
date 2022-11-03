@@ -148,7 +148,7 @@ def test_image_to_prompt_mask(np_image):
 @pytest.mark.parametrize("border_mode", BORDER_MODES_2D.keys())
 def test_warp2d_op_valid(border_mode):
     op = warp2d_op(
-        border_mode = border_mode_from_str_2d(border_mode),
+        border_mode = border_mode,
         rotate = 0,
         scale = 0,
         translate_x = 0,
@@ -228,9 +228,9 @@ def test_warp3d_op_invalid(border_mode):
             rotate_x=0,
             rotate_y=0,
             rotate_z=0,
-            near_plane=0,
-            far_plane=0,
-            fov=0, 
+            near_plane=200,
+            far_plane=10000,
+            fov=30, 
         )
 
 @pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
