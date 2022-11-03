@@ -42,9 +42,7 @@ from stability_sdk.utils import (
     warp2d_op,
     warp3d_op,
     colormatch_op,
-    border_mode_from_str_2d,
-    border_mode_from_str_3d,
-
+    depthcalc_op,
 )
 
 
@@ -182,12 +180,10 @@ class Animator:
         video_prev_frame=None
         ops = []
         if args.save_depth_maps or args.animation_mode == '3D':
-            op=generation.TransformOperation(                    
-                depth_calc=generation.TransformDepthCalc(
-                    blend_weight=args.midas_weight,
-                    export=args.save_depth_maps
+            op=depthcalc_op(
+                blend_weight=args.midas_weight,
+                export=args.save_depth_maps,
                 )
-            )
             ops.append(op)
         if args.animation_mode == '2D':
             op = warp2d_op(

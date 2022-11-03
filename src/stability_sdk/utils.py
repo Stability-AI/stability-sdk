@@ -361,3 +361,13 @@ def colormatch_op(
             color_mode=color_match_from_string(color_mode),
             image= im))
 
+def depthcalc_op(
+    blend_weight:float,
+    export:bool,
+):
+    return generation.TransformOperation(                    
+        depth_calc=generation.TransformDepthCalc(
+            blend_weight=args.midas_weight,
+            export=args.save_depth_maps
+        )
+    )
