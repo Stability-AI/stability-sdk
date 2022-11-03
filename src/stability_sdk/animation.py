@@ -61,6 +61,8 @@ class Animator:
         negative_prompt='',
         negative_prompt_weight=0.0,
         transform_engine_id='transform-server-v1',
+        inpaint_engine_id='stable-diffusion-v1-5',
+        generate_engine_id='stable-diffusion-v1-5',
     ):
         self.args = args
         self.out_dir = out_dir
@@ -68,6 +70,8 @@ class Animator:
         self.negative_prompt = negative_prompt
         self.negative_prompt_weight = negative_prompt_weight
         self.transform_engine_id = transform_engine_id
+        self.inpaint_engine_id = inpaint_engine_id
+        self.generate_engine_id = generate_engine_id
 
         self.video_prev_frame = None
         self.setup_animation()
@@ -278,7 +282,18 @@ class Animator:
 
                 if inpaint_mask is not None:
                     for i in range(len(prior_frames)):
-                        prior_frames[i] = image_inpaint(stub, prior_frames[i], inpaint_mask, prompts, weights, steps//2, seed, args.cfg_scale)
+                        prior_frames[i] = image_inpaint(
+                            stub=stub,
+                            image=prior_frames[i],
+                            mask=inpaint_mask,
+                            prompts=prompts,
+                            weights=weights,
+                            steps=steps//2,
+                            seed=seed,
+                            cfg_scale=args.cfg_scale,
+                            #blur_ks=...,
+                            engine_id=self.inpaint_engine_id,
+                        )
                     inpaint_mask = None
 
             # either run diffusion or emit an inbetween frame
@@ -288,7 +303,18 @@ class Animator:
                 # TO DO: add a color match op after each inpaint step.
                 # maybe this just needs to be a subprocedure of image_inpaint?
                 if inpaint_mask is not None:
-                    prior_frames[-1] = image_inpaint(stub, prior_frames[-1], inpaint_mask, prompts, weights, steps//2, seed, args.cfg_scale)
+                    prior_frames[-1] = image_inpaint(
+                        stub=stub,
+                        image=prior_frames[-1],
+                        mask=inpaint_mask,
+                        prompts=prompts,
+                        weights=weights,
+                        steps=steps//2,
+                        seed=seed,
+                        cfg_scale=args.cfg_scale,
+                        #blur_ks=...,
+                        engine_id=self.inpaint_engine_id,
+                    )
                     inpaint_mask = None
                 strength = self.frame_args.strength_series[frame_idx]
 
@@ -329,12 +355,18 @@ class Animator:
                 noise_scale = self.frame_args.noise_scale_series[frame_idx]
                 image = image_gen(
                     stub, 
-                    args.W, args.H, 
-                    prompts, weights, 
-                    steps, seed, args.cfg_scale, sampler, 
-                    init_image, strength,
+                    args.W,
+                    args.H, 
+                    prompts,
+                    weights, 
+                    steps,
+                    seed,
+                    args.cfg_scale,
+                    sampler, 
+                    init_image,
+                    strength,
                     init_noise_scale=noise_scale, 
-                    guidance_preset=guidance
+                    guidance_preset=guidance,
                 )
 
                 if color_match_image is None:
