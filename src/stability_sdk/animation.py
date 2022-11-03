@@ -282,9 +282,11 @@ class Animator:
                     inpaint_mask = None
 
             # either run diffusion or emit an inbetween frame
-            if (frame_idx-diffusion_cadence_ofs) % diffusion_cadence == 0:
+            if (frame_idx-diffusion_cadence_ofs) % diffusion_cadence == 0: # DMARX: i don't thinks subtracting the 'offset' is needed here, it's a modulo already
 
                 # didn't we already do this in self.build_prior_frame_transforms ?
+                # TO DO: add a color match op after each inpaint step.
+                # maybe this just needs to be a subprocedure of image_inpaint?
                 if inpaint_mask is not None:
                     prior_frames[-1] = image_inpaint(stub, prior_frames[-1], inpaint_mask, prompts, weights, steps//2, seed, args.cfg_scale)
                     inpaint_mask = None
@@ -297,7 +299,7 @@ class Animator:
                     brightness = self.frame_args.brightness_series[frame_idx]
                     contrast = self.frame_args.contrast_series[frame_idx]
                     mix_in = self.frame_args.video_mix_in_series[frame_idx]
-                    
+
                     ops = [] # if we previously populated ops before, looks like we're going to overwrite it here. is that on purpose? guessing it's not... I think maybe this should have a different name to distinguish it as init_image specific ops.
                     if args.color_coherence != 'None' and color_match_image is not None:                    
                         op = colormatch_op(
