@@ -178,23 +178,26 @@ class Animator:
         color_match_image,
     ):
         args = self.args
+        frame_args = self.frame_args
         video_prev_frame=None
         ops = []
         if args.save_depth_maps or args.animation_mode == '3D':
-            ops.append(generation.TransformOperation(                    
+            op=generation.TransformOperation(                    
                 depth_calc=generation.TransformDepthCalc(
                     blend_weight=args.midas_weight,
                     export=args.save_depth_maps
                 )
-            ))
+            )
+            ops.append(op)
         if args.animation_mode == '2D':
-            ops.append(warp2d_op(
-                self.frame_args.translation_x_series[frame_idx], 
-                self.frame_args.translation_y_series[frame_idx], 
-                self.frame_args.angle_series[frame_idx], 
-                self.frame_args.zoom_series[frame_idx], 
-                args.border,
-            ))
+            op = warp2d_op(
+                border_mode=args.border,
+                rotate=frame_args.angle_series[frame_idx], 
+                scale=frame_args.zoom_series[frame_idx], 
+                translate_x=frame_args.translation_x_series[frame_idx], 
+                translate_y=frame_args.translation_y_series[frame_idx], 
+            )
+            ops.append(op)
         elif args.animation_mode == '3D':
 
             if not (args.near_plane < args.far_plane):
@@ -203,19 +206,18 @@ class Animator:
                 f"got near={args.near_plane}, far={args.far_plane}"
             )
 
-            op = generation.TransformOperation(
-                warp3d=generation.TransformWarp3d(
-                    border_mode = border_mode_from_str_3d(args.border),
-                    translate_x = self.frame_args.translation_x_series[frame_idx],
-                    translate_y = self.frame_args.translation_y_series[frame_idx],
-                    translate_z = self.frame_args.translation_z_series[frame_idx],
-                    rotate_x = self.frame_args.rotation_x_series[frame_idx],
-                    rotate_y = self.frame_args.rotation_y_series[frame_idx],
-                    rotate_z = self.frame_args.rotation_z_series[frame_idx],
+            op = warp3d_op(
+                    border_mode = args.border,
+                    translate_x = frame_args.translation_x_series[frame_idx],
+                    translate_y = frame_args.translation_y_series[frame_idx],
+                    translate_z = frame_args.translation_z_series[frame_idx],
+                    rotate_x = frame_args.rotation_x_series[frame_idx],
+                    rotate_y = frame_args.rotation_y_series[frame_idx],
+                    rotate_z = frame_args.rotation_z_series[frame_idx],
                     near_plane = args.near_plane,
                     far_plane = args.far_plane,
-                    fov = self.frame_args.fov_series[frame_idx],
-                ))
+                    fov = frame_args.fov_series[frame_idx],
+                )
             ops.append(op)
 
         elif args.animation_mode == 'Video Input':

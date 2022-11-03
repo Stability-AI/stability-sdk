@@ -296,24 +296,38 @@ def image_xform(
     return images, mask
 
 
-def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
+def warp2d_op(
+    border_mode:str,
+    rotate:float,
+    scale:float,
+    translate_x:float,
+    translate_y:float,
+) -> generation.TransformOperation:
     return generation.TransformOperation(
         warp2d=generation.TransformWarp2d(
-            border_mode = border_mode_from_str_2d(border),
+            border_mode = border_mode_from_str_2d(border_mode),
             rotate = rotate,
             scale = scale,
-            translate_x = dx,
-            translate_y = dy,
+            translate_x = translate_x,
+            translate_y = translate_y,
         ))
 
 def warp3d_op(
-    dx:float, dy:float, dz:float, rx:float, ry:float, rz:float,
-    near:float, far:float, fov:float, border:str
+    border_mode:str,
+    translate_x:float,
+    translate_y:float,
+    translate_z:float,
+    rotate_x:float,
+    rotate_y:float,
+    rotate_z:float,
+    near_plane:float,
+    far_plane:float,
+    fov:float, 
 ) -> generation.TransformOperation:
-    if not (near < far):
+    if not (near_plane < far_plane):
         raise ValueError(
             "Invalid camera volume: must satisfy near < far, "
-            f"got near={near}, far={far}"
+            f"got near={near_plane}, far={far_plane}"
         )
     if not (fov > 0):
         raise ValueError(
@@ -322,15 +336,15 @@ def warp3d_op(
         )
     return generation.TransformOperation(
         warp3d=generation.TransformWarp3d(
-            border_mode = border_mode_from_str_3d(border),
-            translate_x = dx,
-            translate_y = dy,
-            translate_z = dz,
-            rotate_x = rx,
-            rotate_y = ry,
-            rotate_z = rz,
-            near_plane = near,
-            far_plane = far,
+            border_mode = border_mode_from_str_3d(border_mode),
+            translate_x = translate_x,
+            translate_y = translate_y,
+            translate_z = translate_z,
+            rotate_x = rotate_x,
+            rotate_y = rotate_y,
+            rotate_z = rotate_z,
+            near_plane = near_plane,
+            far_plane = far_plane,
             fov = fov,
             ))
     
