@@ -3,14 +3,15 @@ import cv2
 import datetime
 import json
 import logging
-import numpy as np
 import os
-import pandas as pd
 import random
 
 from base64 import b64encode
 from collections import OrderedDict
-from IPython import display
+from IPython import display # this should be conditional on notebook env
+import numpy as np
+import param
+import pandas as pd
 from PIL import Image
 from tqdm import tqdm
 from types import SimpleNamespace
@@ -28,13 +29,14 @@ from stability_sdk.utils import (
     key_frame_parse,
     guidance_from_string,
     image_mix,
-    image_to_jpg_bytes,
     image_xform,
     warp2d_op,
     warp3d_op,
     colormatch_op,
     depthcalc_op,
     warpflow_op,
+    blend_op,
+    contrast_op,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,27 +48,145 @@ def display_frame(image: np.ndarray):
     display.display(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
 
 
-class AnimationArgs:
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError
+docstring_bordermode = ( 
+    "Method that will be used to fill empty regions, e.g. after a rotation transform."
+    "\n\t* reflect - Mirror pixels across the image edge to fill empty regions."
+    "\n\t* replicate - Use closest pixel values (default)."
+    "\n\t* wrap - Treat image borders as if they were connected, i.e. use pixels from left edge to fill empty regions touching the right edge."
+    "\n\t* zero - Fill empty regions with black pixels."
+)
+
+# to do: these defaults and bounds should be configured in a language agnostic way so they can be 
+# shared across client libraries, front end, etc.
+# https://param.holoviz.org/user_guide/index.html
+# TO DO: "prompt" argument has a bit of a logical collision with animation prompts
+class BasicSettings(param.Parameterized):
+    #prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
+    height  = param.Integer(default=512, bounds=(256, 1024), doc="Output image dimensions. Will be resized to a multiple of 64.")
+    width   = param.Integer(default=512, bounds=(256, 1024), doc="Output image dimensions. Will be resized to a multiple of 64.")
+    sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms"])
+    seed    = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
+    cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
+    clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
+    ####
+    # missing param: n_samples = param.Integer(1, bounds=(1,9))
+
+class AnimationSettings(param.Parameterized):
+    animation_mode = param.ObjectSelector(default='3D', objects=['2D', '3D', 'Video Input'])
+    max_frames = param.Integer(default=60, doc="Force stop of animation job after this many frames are generated.")
+    border = param.ObjectSelector(default='replicate', objects=['reflect', 'replicate', 'wrap', 'zero'], doc=docstring_bordermode)
+    # this should really be a border mode
+    inpaint_border = param.Boolean(default=False, doc="Use diffusion inpainting to backfill empty border regions. Overrides `border`, defaults to False")
+    interpolate_prompts = param.Boolean(default=False)
+    locked_seed = param.Boolean(default=False)
+
+
+# TO DO: ability to specify backfill/interpolation method for each parameter
+# TO DO: ability to provide a function that returns a parameter value given some frame index
+# TO DO: inherit from param.String to add validation to these things
+# TO DO: should defaults be noop or opinionated? Maybe a separate object for opinionated defaults?
+class KeyframedSettings(param.Parameterized):
+    """
+    See disco/deforum keyframing syntax, originally developed by Chigozie Nri
+    General syntax: "<frameId>:(<valueAtFrame>), f2:(v2),f3:(v3)...." 
+    Values between intermediate keyframes will be linearly interpolated by default to produce smooth transitions.
+    For abrupt transitions, specify values at adjacent keyframes.
+    """
+    angle = param.String(default="0:(1)")
+    zoom = param.String(default="0:(1)")
+    translation_x = param.String(default="0:(0)")
+    translation_y = param.String(default="0:(0)")
+    translation_z = param.String(default="0:(1)")
+    rotation_x = param.String(default="0:(0)", doc="Euler angle in radians")
+    rotation_y = param.String(default="0:(0)", doc="Euler angle in radians")
+    rotation_z = param.String(default="0:(0)", doc="Euler angle in radians")
+    brightness_curve = param.String(default="0:(1.0)")
+    contrast_curve = param.String(default="0:(1.0)")
+    noise_curve = param.String(default="0:(0.0)")
+    noise_scale_curve = param.String(default="0:(1.02)")
+    steps_curve = param.String(default="0:(50)", doc="Diffusion steps")
+    strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
+
+
+# should diffusion cadence be moved up to the keyframed settings?
+# if not, maybe stuff like steps and strength should be moved elsewhere?
+class CoherenceSettings(param.Parameterized):
+    color_coherence = param.ObjectSelector(default='LAB', objects=['None', 'HSV', 'LAB', 'RGB'], doc="Color space that will be used for inter-frame color adjustments.")
+    diffusion_cadence_curve = param.String(default="0:(4)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
+
+
+# TO DO: change to a generic `depth_weight` rather than specifying model name in the parameter
+class DepthwarpSettings(param.Parameterized):
+    #use_depth_warping = True #@param {type:"boolean"}
+    midas_weight = param.Number(default=0.3, softbounds=(0,1), doc="Strength of depth model influence.")
+    # do these camera parameters need to be integer valued?
+    near_plane = param.Number(default=200, doc="Distance to nearest plane of camera view volume.")
+    far_plane = param.Number(default=10000, doc="Distance to furthest plane of camera view volume.")
+    fov_curve = param.String(default="0:(25)", doc="FOV angle of camera volume in degrees.")
+    save_depth_maps = param.Boolean(default=False)
+
+
+class VideoInputSettings(param.Parameterized):
+    video_init_path = param.String(default="./video_in.mp4", doc="Path to video input")
+    extract_nth_frame = param.Integer(default=1, bounds=(1,None), doc="Only use every Nth frame of the video")
+    video_mix_in_curve = param.String(default="0:(0.02)")
+    video_flow_warp = param.Boolean(default=True, doc="Whether or not to transfer the optical flow from the video to the generated animation as a warp effect.")
+
+
+class AnimationArgs(
+    BasicSettings,
+    AnimationSettings,
+    KeyframedSettings,
+    CoherenceSettings,
+    DepthwarpSettings,
+    VideoInputSettings,
+):
+    pass
+
+
+def args2dict(args):
+    """
+    Converts arguments object to an OrderedDict
+    """
+    f = None
+    if isinstance(args, param.Parameterized):
+        f = args2dict_param
+    if isinstance(args, SimpleNamespace):
+        f = args2dict_simplenamespace
+    if f is None:
+        raise NotImplementedError(f"Unsupported arguments object type: {type(args)}")
+    return f(args)
+
+def args2dict_simplenamespace(args):
+    return OrderedDict(vars(args))
+
+def args2dict_param(args):
+    return OrderedDict(args.param.values())
 
 
 class Animator:
     def __init__(
         self,
+        animation_prompts,
         args=None,
         out_dir='.',
-        animation_prompts={0:'a tasty cheeseburger'},
+        #####
+        # we shouldn't be treating these special. to do: more generic prompt input
         negative_prompt='',
         negative_prompt_weight=0.0,
+        #####
         transform_engine_id='transform-server-v1',
+        inpaint_engine_id='stable-diffusion-v1-5',
+        generate_engine_id='stable-diffusion-v1-5',
     ):
+        self.animation_prompts = animation_prompts
         self.args = args
         self.out_dir = out_dir
-        self.animation_prompts = animation_prompts
         self.negative_prompt = negative_prompt
         self.negative_prompt_weight = negative_prompt_weight
         self.transform_engine_id = transform_engine_id
+        self.inpaint_engine_id = inpaint_engine_id
+        self.generate_engine_id = generate_engine_id
 
         self.video_prev_frame = None
         self.setup_animation()
@@ -93,7 +213,7 @@ class Animator:
             timestring = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
             settings_filename = os.path.join(self.out_dir, f"{timestring}_settings.txt")
             with open(settings_filename, "w+", encoding="utf-8") as f:
-                save_dict = OrderedDict(vars(self.args))
+                save_dict = args2dict(self.args)
                 for k in ['angle', 'zoom', 'translation_x', 'translation_y', 'translation_z', 'rotation_x', 'rotation_y', 'rotation_z']:
                     save_dict.move_to_end(k, last=True)
                 save_dict['animation_prompts'] = self.animation_prompts
@@ -141,6 +261,7 @@ class Animator:
 
         self.prior_frames = []
         self.video_reader = None
+        self.video_prev_frame = None
         video_in = args.video_init_path if args.animation_mode == 'Video Input' else None
         if video_in:
             self.load_video(video_in)
@@ -168,7 +289,6 @@ class Animator:
     ):
         args = self.args
         frame_args = self.frame_args
-        video_prev_frame=None
         ops = []
         if args.save_depth_maps or args.animation_mode == '3D':
             op=depthcalc_op(
@@ -176,6 +296,7 @@ class Animator:
                 export=args.save_depth_maps,
                 )
             ops.append(op)
+
         if args.animation_mode == '2D':
             op = warp2d_op(
                 border_mode=args.border,
@@ -186,13 +307,6 @@ class Animator:
             )
             ops.append(op)
         elif args.animation_mode == '3D':
-
-            if not (args.near_plane < args.far_plane):
-                raise ValueError(
-                "Invalid camera volume: must satisfy near < far, "
-                f"got near={args.near_plane}, far={args.far_plane}"
-            )
-
             op = warp3d_op(
                     border_mode = args.border,
                     translate_x = frame_args.translation_x_series[frame_idx],
@@ -209,22 +323,20 @@ class Animator:
 
         elif args.animation_mode == 'Video Input':
             video_extract_nth = args.extract_nth_frame
-            video_prev_frame = self.video_prev_frame
             for i in range(video_extract_nth):
                 success, video_next_frame = self.video_reader.read()
             if success:
                 video_next_frame = cv2.resize(video_next_frame, (args.W, args.H), interpolation=cv2.INTER_LANCZOS4)
                 if args.video_flow_warp:
                     op = warpflow_op(
-                        prev_frame=video_prev_frame,
+                        prev_frame=self.video_prev_frame,
                         next_frame=video_next_frame,
                     )
                     ops.append(op)
-                video_prev_frame = video_next_frame
+                self.video_prev_frame = video_next_frame
                 color_match_image = video_next_frame
-        self.video_prev_frame = video_prev_frame
 
-        return ops, color_match_image, video_prev_frame
+        return ops, color_match_image
 
     def render_animation(
         self,
@@ -245,7 +357,6 @@ class Animator:
 
         #video_reader = self.video_reader
         prior_frames = self.prior_frames
-        #video_prev_frame = self.video_prev_frame
         
         # to facilitate resuming, we need some sort of self.generate_frame(frame_idx) function that gets looped over here
         for frame_idx in tqdm(range(args.max_frames)):
@@ -262,7 +373,7 @@ class Animator:
 
             ops=[]
             if len(prior_frames):
-                (ops, color_match_image, video_prev_frame) = self.build_prior_frame_transforms(
+                (ops, color_match_image) = self.build_prior_frame_transforms(
                     frame_idx=frame_idx,
                     color_match_image=color_match_image,
                 )
@@ -277,15 +388,39 @@ class Animator:
 
                 if inpaint_mask is not None:
                     for i in range(len(prior_frames)):
-                        prior_frames[i] = image_inpaint(stub, prior_frames[i], inpaint_mask, prompts, weights, steps//2, seed, args.cfg_scale)
+                        prior_frames[i] = image_inpaint(
+                            stub=stub,
+                            image=prior_frames[i],
+                            mask=inpaint_mask,
+                            prompts=prompts,
+                            weights=weights,
+                            steps=steps//2,
+                            seed=seed,
+                            cfg_scale=args.cfg_scale,
+                            #blur_ks=...,
+                            engine_id=self.inpaint_engine_id,
+                        )
                     inpaint_mask = None
 
             # either run diffusion or emit an inbetween frame
-            if (frame_idx-diffusion_cadence_ofs) % diffusion_cadence == 0:
+            if (frame_idx-diffusion_cadence_ofs) % diffusion_cadence == 0: # DMARX: i don't thinks subtracting the 'offset' is needed here, it's a modulo already
 
                 # didn't we already do this in self.build_prior_frame_transforms ?
+                # TO DO: add a color match op after each inpaint step.
+                # maybe this just needs to be a subprocedure of image_inpaint?
                 if inpaint_mask is not None:
-                    prior_frames[-1] = image_inpaint(stub, prior_frames[-1], inpaint_mask, prompts, weights, steps//2, seed, args.cfg_scale)
+                    prior_frames[-1] = image_inpaint(
+                        stub=stub,
+                        image=prior_frames[-1],
+                        mask=inpaint_mask,
+                        prompts=prompts,
+                        weights=weights,
+                        steps=steps//2,
+                        seed=seed,
+                        cfg_scale=args.cfg_scale,
+                        #blur_ks=...,
+                        engine_id=self.inpaint_engine_id,
+                    )
                     inpaint_mask = None
                 strength = self.frame_args.strength_series[frame_idx]
 
@@ -296,6 +431,7 @@ class Animator:
                     brightness = self.frame_args.brightness_series[frame_idx]
                     contrast = self.frame_args.contrast_series[frame_idx]
                     mix_in = self.frame_args.video_mix_in_series[frame_idx]
+
                     ops = [] # if we previously populated ops before, looks like we're going to overwrite it here. is that on purpose? guessing it's not... I think maybe this should have a different name to distinguish it as init_image specific ops.
                     if args.color_coherence != 'None' and color_match_image is not None:                    
                         op = colormatch_op(
@@ -303,15 +439,17 @@ class Animator:
                             color_mode=args.color_coherence,
                         )
                         ops.append(op)
-                    if mix_in > 0 and video_prev_frame is not None:
-                        ops.append(generation.TransformOperation(blend=generation.TransformBlend(
+                    if mix_in > 0 and self.video_prev_frame is not None:
+                        op = blend_op(
                             amount=mix_in, 
-                            target=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(video_prev_frame))
-                        )))
+                            target=self.video_prev_frame)
+                        ops.append(op)
                     if brightness != 1.0 or contrast != 1.0:
-                        ops.append(generation.TransformOperation(contrast=generation.TransformContrast(
-                            brightness=brightness, contrast=contrast
-                        )))
+                        op=contrast_op(
+                            brightness=brightness,
+                            contrast=contrast,
+                        )
+                        ops.append(op)
                     if noise > 0:
                         ops.append(generation.TransformOperation(add_noise=generation.TransformAddNoise(amount=noise, seed=seed)))
                     if len(ops):
@@ -323,12 +461,18 @@ class Animator:
                 noise_scale = self.frame_args.noise_scale_series[frame_idx]
                 image = image_gen(
                     stub, 
-                    args.W, args.H, 
-                    prompts, weights, 
-                    steps, seed, args.cfg_scale, sampler, 
-                    init_image, strength,
+                    args.W,
+                    args.H, 
+                    prompts,
+                    weights, 
+                    steps,
+                    seed,
+                    args.cfg_scale,
+                    sampler, 
+                    init_image,
+                    strength,
                     init_noise_scale=noise_scale, 
-                    guidance_preset=guidance
+                    guidance_preset=guidance,
                 )
 
                 if color_match_image is None:

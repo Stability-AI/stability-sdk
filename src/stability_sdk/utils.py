@@ -344,7 +344,7 @@ def depthcalc_op(
 def warpflow_op(
     prev_frame:np.ndarray,
     next_frame:np.ndarray,
-):
+) -> generation.TransformOperation:
     im_prev=generation.Artifact(
         type=generation.ARTIFACT_IMAGE,
         binary=image_to_jpg_bytes(prev_frame))
@@ -357,3 +357,28 @@ def warpflow_op(
             next_frame=im_next,
         )
     )
+
+def blend_op(
+    amount:float,
+    target:np.ndarray,
+) -> generation.TransformOperation:
+    im=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(target),
+    )
+    return generation.TransformOperation(
+        blend=generation.TransformBlend(
+            amount=amount, 
+            target=im,
+        ))
+
+# this is another one that feels like it should take an init_image
+def contrast_op(
+    brightness:float,
+    contrast:float,
+) -> generation.TransformOperation:
+    return generation.TransformOperation(
+        contrast=generation.TransformContrast(
+            brightness=brightness,
+            contrast=contrast,
+                        ))
