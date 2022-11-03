@@ -6,11 +6,7 @@ import logging
 import numpy as np
 import os
 import pandas as pd
-import pathlib
 import random
-import re
-import subprocess
-import sys
 
 from base64 import b64encode
 from collections import OrderedDict
@@ -24,35 +20,32 @@ from stability_sdk.client import (
     image_gen,
     image_inpaint,
     generation,
-    generation_grpc
 )
 
 from stability_sdk.utils import (
-    color_match_from_string,
     sampler_from_string,
     key_frame_inbetweens,
     key_frame_parse,
     guidance_from_string,
-    #curve_to_series,
     image_mix,
-    image_to_jpg_bytes,
-    image_to_png_bytes,
-    image_to_prompt,
     image_xform,
     warp2d_op,
     warp3d_op,
-    border_mode_from_str_2d,
-    border_mode_from_str_3d,
-
+    colormatch_op,
+    depthcalc_op,
+    warpflow_op,
+    blend_op,
+    contrast_op,
 )
+
+logger = logging.getLogger(__name__)
+logger.setLevel(level=logging.INFO)
 
 
 def display_frame(image: np.ndarray):
     display.clear_output(wait=True)
     display.display(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
 
-
-from dataclasses import dataclass, asdict
 
 class AnimationArgs:
     def __init__(self, *args, **kwargs):
@@ -69,8 +62,6 @@ class Animator:
         negative_prompt_weight=0.0,
         transform_engine_id='transform-server-v1',
     ):
-        #if args is None:
-        #    args = SimpleNamespace(**asdict(AnimationArgs()))
         self.args = args
         self.out_dir = out_dir
         self.animation_prompts = animation_prompts
@@ -177,23 +168,24 @@ class Animator:
         color_match_image,
     ):
         args = self.args
+        frame_args = self.frame_args
         video_prev_frame=None
         ops = []
         if args.save_depth_maps or args.animation_mode == '3D':
-            ops.append(generation.TransformOperation(                    
-                depth_calc=generation.TransformDepthCalc(
-                    blend_weight=args.midas_weight,
-                    export=args.save_depth_maps
+            op=depthcalc_op(
+                blend_weight=args.midas_weight,
+                export=args.save_depth_maps,
                 )
-            ))
+            ops.append(op)
         if args.animation_mode == '2D':
-            ops.append(warp2d_op(
-                self.frame_args.translation_x_series[frame_idx], 
-                self.frame_args.translation_y_series[frame_idx], 
-                self.frame_args.angle_series[frame_idx], 
-                self.frame_args.zoom_series[frame_idx], 
-                args.border,
-            ))
+            op = warp2d_op(
+                border_mode=args.border,
+                rotate=frame_args.angle_series[frame_idx], 
+                scale=frame_args.zoom_series[frame_idx], 
+                translate_x=frame_args.translation_x_series[frame_idx], 
+                translate_y=frame_args.translation_y_series[frame_idx], 
+            )
+            ops.append(op)
         elif args.animation_mode == '3D':
 
             if not (args.near_plane < args.far_plane):
@@ -202,19 +194,18 @@ class Animator:
                 f"got near={args.near_plane}, far={args.far_plane}"
             )
 
-            op = generation.TransformOperation(
-                warp3d=generation.TransformWarp3d(
-                    border_mode = border_mode_from_str_3d(args.border),
-                    translate_x = self.frame_args.translation_x_series[frame_idx],
-                    translate_y = self.frame_args.translation_y_series[frame_idx],
-                    translate_z = self.frame_args.translation_z_series[frame_idx],
-                    rotate_x = self.frame_args.rotation_x_series[frame_idx],
-                    rotate_y = self.frame_args.rotation_y_series[frame_idx],
-                    rotate_z = self.frame_args.rotation_z_series[frame_idx],
+            op = warp3d_op(
+                    border_mode = args.border,
+                    translate_x = frame_args.translation_x_series[frame_idx],
+                    translate_y = frame_args.translation_y_series[frame_idx],
+                    translate_z = frame_args.translation_z_series[frame_idx],
+                    rotate_x = frame_args.rotation_x_series[frame_idx],
+                    rotate_y = frame_args.rotation_y_series[frame_idx],
+                    rotate_z = frame_args.rotation_z_series[frame_idx],
                     near_plane = args.near_plane,
                     far_plane = args.far_plane,
-                    fov = self.frame_args.fov_series[frame_idx],
-                ))
+                    fov = frame_args.fov_series[frame_idx],
+                )
             ops.append(op)
 
         elif args.animation_mode == 'Video Input':
@@ -225,12 +216,11 @@ class Animator:
             if success:
                 video_next_frame = cv2.resize(video_next_frame, (args.W, args.H), interpolation=cv2.INTER_LANCZOS4)
                 if args.video_flow_warp:
-                    ops.append(generation.TransformOperation(
-                        warp_flow=generation.TransformWarpFlow(
-                            prev_frame=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(video_prev_frame)),
-                            next_frame=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(video_next_frame)),
-                        )
-                    ))
+                    op = warpflow_op(
+                        prev_frame=video_prev_frame,
+                        next_frame=video_next_frame,
+                    )
+                    ops.append(op)
                 video_prev_frame = video_next_frame
                 color_match_image = video_next_frame
         self.video_prev_frame = video_prev_frame
@@ -249,7 +239,6 @@ class Animator:
         if not out_dir:
             out_dir = self.out_dir
         key_frame_values = self.keyframe_values
-        video_extract_nth = args.extract_nth_frame
         seed = args.seed
         color_match_image = None # optional target for color matching
         inpaint_mask = None      # optional mask of revealed areas
@@ -293,9 +282,11 @@ class Animator:
                     inpaint_mask = None
 
             # either run diffusion or emit an inbetween frame
-            if (frame_idx-diffusion_cadence_ofs) % diffusion_cadence == 0:
+            if (frame_idx-diffusion_cadence_ofs) % diffusion_cadence == 0: # DMARX: i don't thinks subtracting the 'offset' is needed here, it's a modulo already
 
                 # didn't we already do this in self.build_prior_frame_transforms ?
+                # TO DO: add a color match op after each inpaint step.
+                # maybe this just needs to be a subprocedure of image_inpaint?
                 if inpaint_mask is not None:
                     prior_frames[-1] = image_inpaint(stub, prior_frames[-1], inpaint_mask, prompts, weights, steps//2, seed, args.cfg_scale)
                     inpaint_mask = None
@@ -308,21 +299,25 @@ class Animator:
                     brightness = self.frame_args.brightness_series[frame_idx]
                     contrast = self.frame_args.contrast_series[frame_idx]
                     mix_in = self.frame_args.video_mix_in_series[frame_idx]
+
                     ops = [] # if we previously populated ops before, looks like we're going to overwrite it here. is that on purpose? guessing it's not... I think maybe this should have a different name to distinguish it as init_image specific ops.
                     if args.color_coherence != 'None' and color_match_image is not None:                    
-                        ops.append(generation.TransformOperation(color_match=generation.TransformColorMatch(
-                            color_mode=color_match_from_string(args.color_coherence),
-                            image=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(color_match_image))
-                        )))
+                        op = colormatch_op(
+                            palette_image=color_match_image,
+                            color_mode=args.color_coherence,
+                        )
+                        ops.append(op)
                     if mix_in > 0 and video_prev_frame is not None:
-                        ops.append(generation.TransformOperation(blend=generation.TransformBlend(
+                        op = blend_op(
                             amount=mix_in, 
-                            target=generation.Artifact(type=generation.ARTIFACT_IMAGE, binary=image_to_jpg_bytes(video_prev_frame))
-                        )))
+                            target=video_prev_frame)
+                        ops.append(op)
                     if brightness != 1.0 or contrast != 1.0:
-                        ops.append(generation.TransformOperation(contrast=generation.TransformContrast(
-                            brightness=brightness, contrast=contrast
-                        )))
+                        op=contrast_op(
+                            brightness:float,
+                            contrast:float,
+                        )
+                        ops.append(op)
                     if noise > 0:
                         ops.append(generation.TransformOperation(add_noise=generation.TransformAddNoise(amount=noise, seed=seed)))
                     if len(ops):

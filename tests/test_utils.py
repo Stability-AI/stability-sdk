@@ -4,6 +4,7 @@ import pytest
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk.utils import (
+    _2d_only_modes,
     BORDER_MODES_2D,
     BORDER_MODES_3D,
     COLOR_SPACES,
@@ -20,7 +21,6 @@ from stability_sdk.utils import (
     image_to_jpg_bytes,
     image_to_png_bytes,
     image_to_prompt,
-    #image_to_prompt_mask,
     image_xform,
     #########
     key_frame_inbetweens,
@@ -28,6 +28,11 @@ from stability_sdk.utils import (
     #########
     warp2d_op,
     warp3d_op,
+    colormatch_op,
+    depthcalc_op,
+    warpflow_op,
+    blend_op,
+    contrast_op,
 )
 
 @pytest.mark.parametrize("border", BORDER_MODES_2D.keys())
@@ -130,3 +135,117 @@ def test_image_to_prompt_mask(np_image):
     outv = image_to_prompt(np_image, is_mask=True)
     assert isinstance(outv, generation.Prompt)
     assert outv.artifact.type == generation.ARTIFACT_MASK
+
+########################################
+
+    # warp2d_op,
+    # warp3d_op,
+    # colormatch_op,
+    # depthcalc_op,
+    # warpflow_op,
+
+# should a null transform op even return a transform op?
+# would probably be better if this actually returned None or an empty list or 
+# some sort of NOOP
+@pytest.mark.parametrize("border_mode", BORDER_MODES_2D.keys())
+def test_warp2d_op_valid(border_mode):
+    op = warp2d_op(
+        border_mode = border_mode,
+        rotate = 0,
+        scale = 0,
+        translate_x = 0,
+        translate_y = 0,
+    )
+    assert isinstance(op, generation.TransformOperation)
+
+@pytest.mark.parametrize("border_mode", ['not a border mode'])
+def test_warp2d_op_invalid(border_mode):
+    with pytest.raises(ValueError, match="invalid 2d border mode"):
+        op = warp2d_op(
+            border_mode = border_mode,
+            rotate = 0,
+            scale = 0,
+            translate_x = 0,
+            translate_y = 0,
+        )
+
+
+@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
+def test_warp3d_op_valid(border_mode):
+    op = warp3d_op(
+        border_mode=border_mode,
+        translate_x=0,
+        translate_y=0,
+        translate_z=0,
+        rotate_x=0,
+        rotate_y=0,
+        rotate_z=0,
+        near_plane=200,
+        far_plane=10000,
+        fov=30, 
+    )
+    assert isinstance(op, generation.TransformOperation)
+
+
+@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
+def test_warp3d_op_invalid_nearfar(border_mode):
+    with pytest.raises(ValueError, match='Invalid camera volume: must satisfy near < far'):
+        op = warp3d_op(
+            border_mode=border_mode,
+            translate_x=0,
+            translate_y=0,
+            translate_z=0,
+            rotate_x=0,
+            rotate_y=0,
+            rotate_z=0,
+            near_plane=0,
+            far_plane=0,
+            fov=30, 
+        )
+
+@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
+def test_warp3d_op_invalid_fov(border_mode):
+    with pytest.raises(ValueError, match='Invalid camera volume: fov'):
+        op = warp3d_op(
+            border_mode=border_mode,
+            translate_x=0,
+            translate_y=0,
+            translate_z=0,
+            rotate_x=0,
+            rotate_y=0,
+            rotate_z=0,
+            near_plane=200,
+            far_plane=10000,
+            fov=0, 
+        )
+
+@pytest.mark.parametrize("border_mode", ['not a border mode'] + _2d_only_modes)
+def test_warp3d_op_invalid(border_mode):
+    with pytest.raises(ValueError, match="invalid 3d border mode"):
+        op = warp3d_op(
+            border_mode=border_mode,
+            translate_x=0,
+            translate_y=0,
+            translate_z=0,
+            rotate_x=0,
+            rotate_y=0,
+            rotate_z=0,
+            near_plane=200,
+            far_plane=10000,
+            fov=30, 
+        )
+
+@pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
+def test_colormatch_op_valid(np_image, color_mode):
+    op = colormatch_op(
+        palette_image=np_image,
+        color_mode=color_mode
+    )
+    assert isinstance(op, generation.TransformOperation)
+
+def test_colormatch_op_invalid(np_image):
+    with pytest.raises(ValueError, match="invalid color space"):
+        op = colormatch_op(
+        palette_image=np_image,
+        color_mode="not a real color mode",
+    )

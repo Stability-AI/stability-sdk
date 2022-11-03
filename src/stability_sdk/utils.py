@@ -1,16 +1,8 @@
-import bisect
-import copy
 import io
 import logging
-import mimetypes
 import os
-import pathlib
 import re
-import random
-import sys
-import time
 from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
-import uuid
 import warnings
 
 
@@ -225,38 +217,6 @@ def key_frame_parse(string, prompt_parser=None):
     return frames
 
 
-# Needs to be modified to take `animation_prompts` as an argument
-"""
-def get_animation_prompts_weights(frame_idx: int, key_frame_values: List[int], interp: bool) -> Tuple[List[str], List[float]]:
-    idx = bisect.bisect_right(key_frame_values, frame_idx)
-    prev, next = idx - 1, idx
-    if not interp:
-        return [animation_prompts[key_frame_values[min(len(key_frame_values)-1, prev)]]], [1.0]
-    elif next == len(key_frame_values):
-        return [animation_prompts[key_frame_values[-1]]], [1.0]
-    else:
-        tween = (frame_idx - key_frame_values[prev]) / (key_frame_values[next] - key_frame_values[prev])
-        return [animation_prompts[key_frame_values[prev]], animation_prompts[key_frame_values[next]]], [1.0 - tween, tween]
-"""
-
-def get_animation_prompts_weights():
-    raise NotImplementedError
-
-
-
-
-# def curve_to_series(curve: str) -> List[float]:
-#     """expand key frame curves to per-frame values
-
-#     Args:
-#         curve (str): keyframe curve prompt syntax
-
-#     Returns:
-#         List[float]: per-frame values
-#     """
-#     return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)        
-
-
 #####################################################################
 
 
@@ -295,25 +255,46 @@ def image_xform(
                     mask = im
     return images, mask
 
+#################################
+# transform ops helpers
+#  - move to their own submodule
+#  - add doc strings giving details on parameters
 
-def warp2d_op(dx:float, dy:float, rotate:float, scale:float, border:str) -> generation.TransformOperation:
+# is call signature of generation.TransformWarp_d inconsistent? 
+# or did I ust shuffle them here?
+def warp2d_op(
+    border_mode:str,
+    rotate:float,
+    scale:float,
+    translate_x:float,
+    translate_y:float,
+) -> generation.TransformOperation:
     return generation.TransformOperation(
         warp2d=generation.TransformWarp2d(
-            border_mode = border_mode_from_str_2d(border),
+            border_mode = border_mode_from_str_2d(border_mode),
             rotate = rotate,
             scale = scale,
-            translate_x = dx,
-            translate_y = dy,
+            translate_x = translate_x,
+            translate_y = translate_y,
         ))
 
+# to do: defaults. None?
 def warp3d_op(
-    dx:float, dy:float, dz:float, rx:float, ry:float, rz:float,
-    near:float, far:float, fov:float, border:str
+    border_mode:str,
+    translate_x:float,
+    translate_y:float,
+    translate_z:float,
+    rotate_x:float,
+    rotate_y:float,
+    rotate_z:float,
+    near_plane:float,
+    far_plane:float,
+    fov:float, 
 ) -> generation.TransformOperation:
-    if not (near < far):
+    if not (near_plane < far_plane):
         raise ValueError(
             "Invalid camera volume: must satisfy near < far, "
-            f"got near={near}, far={far}"
+            f"got near={near_plane}, far={far_plane}"
         )
     if not (fov > 0):
         raise ValueError(
@@ -322,16 +303,82 @@ def warp3d_op(
         )
     return generation.TransformOperation(
         warp3d=generation.TransformWarp3d(
-            border_mode = border_mode_from_str_3d(border),
-            translate_x = dx,
-            translate_y = dy,
-            translate_z = dz,
-            rotate_x = rx,
-            rotate_y = ry,
-            rotate_z = rz,
-            near_plane = near,
-            far_plane = far,
+            border_mode = border_mode_from_str_3d(border_mode),
+            translate_x = translate_x,
+            translate_y = translate_y,
+            translate_z = translate_z,
+            rotate_x = rotate_x,
+            rotate_y = rotate_y,
+            rotate_z = rotate_z,
+            near_plane = near_plane,
+            far_plane = far_plane,
             fov = fov,
             ))
     
+def colormatch_op(
+    palette_image:np.ndarray,
+    color_mode:str='LAB',
+) -> generation.TransformOperation:
+    im = generation.Artifact(
+        type=generation.ARTIFACT_IMAGE, 
+        binary=image_to_jpg_bytes(palette_image),
+    )
+    return generation.TransformOperation(
+        color_match=generation.TransformColorMatch(
+            color_mode=color_match_from_string(color_mode),
+            image= im))
 
+# why doesn't this take an image as an argument?
+# pretty confident we should parameterize this to expect an ARTIFACT_IMAGE
+def depthcalc_op(
+    blend_weight:float,
+    export:bool,
+) -> generation.TransformOperation:
+    return generation.TransformOperation(                    
+        depth_calc=generation.TransformDepthCalc(
+            blend_weight=blend_weight,
+            export=export
+        )
+    )
+
+def warpflow_op(
+    prev_frame:np.ndarray,
+    next_frame:np.ndarray,
+) -> generation.TransformOperation:
+    im_prev=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(prev_frame))
+    im_next=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(next_frame))
+    return generation.TransformOperation(
+        warp_flow=generation.TransformWarpFlow(
+            prev_frame=im_prev,
+            next_frame=im_next,
+        )
+    )
+
+def blend_op(
+    amount:float,
+    target:np.ndarray,
+) -> generation.TransformOperation:
+    im=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(target),
+    )
+    return generation.TransformOperation(
+        blend=generation.TransformBlend(
+            amount=amount, 
+            target=im,
+        ))
+
+# this is another one that feels like it should take an init_image
+def contrast_op(
+    brightness:float,
+    contrast:float,
+) -> generation.TransformOperation:
+    return generation.TransformOperation(
+        contrast=generation.TransformContrast(
+            brightness=brightness,
+            contrast=contrast,
+                        ))
