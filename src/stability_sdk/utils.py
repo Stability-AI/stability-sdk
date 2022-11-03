@@ -353,8 +353,8 @@ def warp3d_op(
             ))
     
 def colormatch_op(
-    palette_image,
-    color_mode='LAB',
+    palette_image:np.ndarray,
+    color_mode:str='LAB',
 ) -> generation.TransformOperation:
     im = generation.Artifact(
         type=generation.ARTIFACT_IMAGE, 
@@ -365,6 +365,8 @@ def colormatch_op(
             color_mode=color_match_from_string(color_mode),
             image= im))
 
+# why doesn't this take an image as an argument?
+# pretty confident we should parameterize this to expect an ARTIFACT_IMAGE
 def depthcalc_op(
     blend_weight:float,
     export:bool,
