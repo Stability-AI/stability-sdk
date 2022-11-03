@@ -286,6 +286,7 @@ def warp2d_op(
             translate_y = translate_y,
         ))
 
+# to do: defaults. None?
 def warp3d_op(
     border_mode:str,
     translate_x:float,
