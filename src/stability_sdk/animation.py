@@ -161,7 +161,7 @@ def args2dict_simplenamespace(args):
     return OrderedDict(vars(args))
 
 def args2dict_param(args):
-    return OrderedDict(args.get_param_values())
+    return OrderedDict(args.param.values())
 
 
 class Animator:
