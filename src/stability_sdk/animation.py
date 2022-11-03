@@ -446,8 +446,8 @@ class Animator:
                         ops.append(op)
                     if brightness != 1.0 or contrast != 1.0:
                         op=contrast_op(
-                            brightness:float,
-                            contrast:float,
+                            brightness=brightness,
+                            contrast=contrast,
                         )
                         ops.append(op)
                     if noise > 0:
