@@ -178,11 +178,44 @@ def test_warp3d_op_valid(border_mode):
         rotate_x=0,
         rotate_y=0,
         rotate_z=0,
-        near_plane=0,
-        far_plane=0,
-        fov=0, 
+        near_plane=200,
+        far_plane=10000,
+        fov=30, 
     )
     assert isinstance(op, generation.TransformOperation)
+
+
+@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
+def test_warp3d_op_invalid_nearfar(border_mode):
+    with pytest.raises(ValueError, match='Invalid camera volume: must satisfy near < far'):
+        op = warp3d_op(
+            border_mode=border_mode,
+            translate_x=0,
+            translate_y=0,
+            translate_z=0,
+            rotate_x=0,
+            rotate_y=0,
+            rotate_z=0,
+            near_plane=0,
+            far_plane=0,
+            fov=30, 
+        )
+
+@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
+def test_warp3d_op_invalid_fov(border_mode):
+    with pytest.raises(ValueError, match='Invalid camera volume: fov'):
+        op = warp3d_op(
+            border_mode=border_mode,
+            translate_x=0,
+            translate_y=0,
+            translate_z=0,
+            rotate_x=0,
+            rotate_y=0,
+            rotate_z=0,
+            near_plane=200,
+            far_plane=10000,
+            fov=0, 
+        )
 
 @pytest.mark.parametrize("border_mode", ['not a border mode'] + _2d_only_modes)
 def test_warp3d_op_invalid(border_mode):
