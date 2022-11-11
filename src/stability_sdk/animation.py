@@ -270,7 +270,7 @@ class Animator:
             if self.start_frame_idx > 2:
                 self.prior_frames = [
                     cv2.imread(self.get_frame_filename(self.start_frame_idx-2)),
-                    cv2.imread(self.get_frame_filename(self.start_frame_idx-2))
+                    cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
                 ]
 
     def load_video(self, video_in):
@@ -388,28 +388,28 @@ class Animator:
                     contrast = self.frame_args.contrast_series[frame_idx]
                     mix_in = self.frame_args.video_mix_in_series[frame_idx]
 
-                    ops = [] # if we previously populated ops before, looks like we're going to overwrite it here. is that on purpose? guessing it's not... I think maybe this should have a different name to distinguish it as init_image specific ops.
+                    init_ops = []
                     if args.color_coherence != 'None' and self.color_match_image is not None:                    
-                        ops.append(colormatch_op(
+                        init_ops.append(colormatch_op(
                             palette_image=self.color_match_image,
                             color_mode=args.color_coherence,
                         ))
                     if mix_in > 0 and self.video_prev_frame is not None:
-                        ops.append(blend_op(
+                        init_ops.append(blend_op(
                             amount=mix_in, 
                             target=self.video_prev_frame
                         ))
                     if brightness != 1.0 or contrast != 1.0:
-                        ops.append(contrast_op(
+                        init_ops.append(contrast_op(
                             brightness=brightness,
                             contrast=contrast,
                         ))
                     if noise > 0:
-                        ops.append(generation.TransformOperation(
+                        init_ops.append(generation.TransformOperation(
                             add_noise=generation.TransformAddNoise(amount=noise, seed=seed)
                         ))
-                    if len(ops):
-                        init_image = image_xform(self.stub, [init_image], ops, self.transform_engine_id)[0][0]
+                    if len(init_ops):
+                        init_image = image_xform(self.stub, [init_image], init_ops, self.transform_engine_id)[0][0]
 
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
