@@ -32,7 +32,8 @@ setup(
     extras_require={
         'dev': [
             'pytest',
-            'grpcio-testing'
+            'grpcio-testing',
+            'numpy',
         ],
         'anim': [
             'numpy',
