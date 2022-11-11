@@ -320,7 +320,7 @@ class Animator:
 
         elif args.animation_mode == 'Video Input':
             for _ in range(args.extract_nth_frame):
-                success, self.video_next_frame = self.video_reader.read()
+                success, video_next_frame = self.video_reader.read()
             if success:
                 video_next_frame = cv2.resize(
                     video_next_frame, 
