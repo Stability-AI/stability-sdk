@@ -581,5 +581,3 @@ def stable_diffusion(
             pass
 
     return image_urls
-
-    #adding comments
