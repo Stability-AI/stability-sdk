@@ -38,6 +38,8 @@ setup(
             'numpy',
             'pandas',
             'opencv-python-headless',
+            'pims',
+            'av'
         ]
     },
     packages=find_packages(
