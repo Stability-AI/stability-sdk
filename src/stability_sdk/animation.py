@@ -184,6 +184,9 @@ class Animator:
         self.start_frame_idx: int = 0
         self.video_prev_frame: np.ndarray = None
         self.video_reader = None
+        self.video_mask_reader = None
+        self.video_mask_prev_frame = None
+        self.prior_frames_masks = None
 
         self.stub = stub
         self.transform_engine_id = transform_engine_id
@@ -273,14 +276,24 @@ class Animator:
                     cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
                 ]
 
-    def load_video(self, video_in):
+    def load_video(self, video_in, video_mask=None):
         self.video_reader = cv2.VideoCapture(video_in)
+        if video_mask is not None:
+            self.video_mask_reader = cv2.VideoCapture(video_mask)
         if self.video_reader is not None:
             success, image = self.video_reader.read()
             if not success:
                 raise Exception(f"Failed to read first frame from {video_in}")
             self.video_prev_frame = cv2.resize(image, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
             self.prior_frames = [self.video_prev_frame, self.video_prev_frame]
+
+            if self.video_mask_reader is not None:
+                success, mask = self.video_mask_reader.read()
+                if not success:
+                    raise Exception(f"Failed to read first frame from {video_mask}")
+                self.video_mask_prev_frame = cv2.resize(mask, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+                self.prior_frames_masks = [self.video_mask_prev_frame, self.video_mask_prev_frame]
+                
 
     def build_prior_frame_transforms(self, frame_idx) -> List[generation.TransformOperation]:
         if not len(self.prior_frames):
