@@ -17,6 +17,10 @@ from argparse import ArgumentParser, Namespace
 from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 from google.protobuf.json_format import MessageToJson
 from PIL import Image
+#from stability_sdk import uploadToS3
+from stability_sdk.uploadToS3 import upload_file_using_client
+#from stability_sdk import sendToAirtable
+from stability_sdk.sendToAirtable import add_new_record
 
 try:
     from dotenv import load_dotenv
@@ -110,6 +114,8 @@ def process_artifacts_from_answers(
     :return: A Generator of tuples of artifact filenames and Artifacts, intended
         for passthrough.
     """
+    image_url = ""
+
     idx = 0
     for resp in answers:
         for artifact in resp.artifacts:
@@ -117,6 +123,17 @@ def process_artifacts_from_answers(
             if artifact.type == generation.ARTIFACT_IMAGE:
                 ext = mimetypes.guess_extension(artifact.mime)
                 contents = artifact.binary
+
+                # Uploading to AWS and Add new record to Airtable
+                aws_response = upload_file_using_client(contents, f"{artifact_start}{ext}")
+                logger.info(f"AWS Response: {aws_response}")
+
+                airtable_response = add_new_record(f"https://dev-generated-images.s3.us-west-1.amazonaws.com/{artifact_start}{ext}", prompt, "Ian")
+                logger.info(f"Airtable Response: {airtable_response}")
+
+                #Add S3 Bucket URL to Array of URLs
+                image_url = f"https://dev-generated-images.s3.us-west-1.amazonaws.com/{artifact_start}{ext}"
+
             elif artifact.type == generation.ARTIFACT_CLASSIFICATIONS:
                 ext = ".pb.json"
                 contents = MessageToJson(artifact.classifier).encode("utf-8")
@@ -126,7 +143,10 @@ def process_artifacts_from_answers(
             else:
                 ext = ".pb"
                 contents = artifact.SerializeToString()
-            out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
+
+            #Edited this to only output start time
+            # out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
+            out_p = str(image_url)
             if write:
                 with open(out_p, "wb") as f:
                     f.write(bytes(contents))
@@ -377,26 +397,46 @@ class StabilityInference:
             start = time.time()
 
 
-def build_request_dict(cli_args: Namespace) -> Dict[str, Any]:
-    """
-    Build a Request arguments dictionary from the CLI arguments.
-    """
-    return {
-        "height": cli_args.height,
-        "width": cli_args.width,
-        "start_schedule": cli_args.start_schedule,
-        "end_schedule": cli_args.end_schedule,
-        "cfg_scale": cli_args.cfg_scale,
-        "sampler": get_sampler_from_str(cli_args.sampler),
-        "steps": cli_args.steps,
-        "seed": cli_args.seed,
-        "samples": cli_args.num_samples,
-        "init_image": cli_args.init_image,
-        "mask_image": cli_args.mask_image,
-    }
+# def build_request_dict(cli_args: Namespace) -> Dict[str, Any]:
+#     """
+#     Build a Request arguments dictionary from the CLI arguments.
+#     """
+#     return {
+#         "height": cli_args.height,
+#         "width": cli_args.width,
+#         "start_schedule": cli_args.start_schedule,
+#         "end_schedule": cli_args.end_schedule,
+#         "cfg_scale": cli_args.cfg_scale,
+#         "sampler": get_sampler_from_str(cli_args.sampler),
+#         "steps": cli_args.steps,
+#         "seed": cli_args.seed,
+#         "samples": cli_args.num_samples,
+#         "init_image": cli_args.init_image,
+#         "mask_image": cli_args.mask_image,
+#     }
 
 
-if __name__ == "__main__":
+def stable_diffusion(
+    height = 512,
+    width = 512,
+    start_schedule = 0.5,
+    end_schedule = 0.01,
+    cfg_scale = 7.0,
+    sampler = "k_lms",
+    steps = 50,
+    seed = 0,
+    prefix = "generation",
+    no_store = True,
+    num_samples = 1,
+    show = False,
+    engine = "stable-diffusion-v1-5",
+    prompt = "",
+    init_image = None,
+    mask_image = None,
+    user_name = "",
+    ):
+
+
     # Set up logging for output to console.
     fh = logging.StreamHandler()
     fh_formatter = logging.Formatter(
@@ -406,7 +446,7 @@ if __name__ == "__main__":
     logger.addHandler(fh)
 
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
-    STABILITY_KEY = os.getenv("STABILITY_KEY", "")
+    STABILITY_KEY = os.getenv("STABILITY_KEY", "sk-kjZOHjJzEdV6N81YIgu9SW8Y0AxVIyJXLKOII3uicjSGeu0U")
 
     if not STABILITY_HOST:
         logger.warning("STABILITY_HOST environment variable needs to be set.")
@@ -421,101 +461,123 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # CLI parsing
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--height", "-H", type=int, default=512, help="[512] height of image"
-    )
-    parser.add_argument(
-        "--width", "-W", type=int, default=512, help="[512] width of image"
-    )
-    parser.add_argument(
-        "--start_schedule",
-        type=float,
-        default=0.5,
-        help="[0.5] start schedule for init image (must be greater than 0, 1 is full strength text prompt, no trace of image)",
-    )
-    parser.add_argument(
-        "--end_schedule",
-        type=float,
-        default=0.01,
-        help="[0.01] end schedule for init image",
-    )
-    parser.add_argument(
-        "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor"
-    )
-    parser.add_argument(
-        "--sampler",
-        "-A",
-        type=str,
-        default="k_lms",
-        help="[k_lms] (" + ", ".join(algorithms.keys()) + ")",
-    )
-    parser.add_argument(
-        "--steps", "-s", type=int, default=50, help="[50] number of steps"
-    )
-    parser.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
-    parser.add_argument(
-        "--prefix",
-        "-p",
-        type=str,
-        default="generation_",
-        help="output prefixes for artifacts",
-    )
-    parser.add_argument(
-        "--no-store", action="store_true", help="do not write out artifacts"
-    )
-    parser.add_argument(
-        "--num_samples", "-n", type=int, default=1, help="number of samples to generate"
-    )
-    parser.add_argument("--show", action="store_true", help="open artifacts using PIL")
-    parser.add_argument(
-        "--engine",
-        "-e",
-        type=str,
-        help="engine to use for inference",
-        default="stable-diffusion-v1-5",
-    )
-    parser.add_argument(
-        "--init_image",
-        "-i",
-        type=str,
-        help="Init image",
-    )
-    parser.add_argument(
-        "--mask_image",
-        "-m",
-        type=str,
-        help="Mask image",
-    )
-    parser.add_argument("prompt", nargs="*")
+    # parser = ArgumentParser()
+    # parser.add_argument(
+    #     "--height", "-H", type=int, default=512, help="[512] height of image"
+    # )
+    # parser.add_argument(
+    #     "--width", "-W", type=int, default=512, help="[512] width of image"
+    # )
+    # parser.add_argument(
+    #     "--start_schedule",
+    #     type=float,
+    #     default=0.5,
+    #     help="[0.5] start schedule for init image (must be greater than 0, 1 is full strength text prompt, no trace of image)",
+    # )
+    # parser.add_argument(
+    #     "--end_schedule",
+    #     type=float,
+    #     default=0.01,
+    #     help="[0.01] end schedule for init image",
+    # )
+    # parser.add_argument(
+    #     "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor"
+    # )
+    # parser.add_argument(
+    #     "--sampler",
+    #     "-A",
+    #     type=str,
+    #     default="k_lms",
+    #     help="[k_lms] (" + ", ".join(algorithms.keys()) + ")",
+    # )
+    # parser.add_argument(
+    #     "--steps", "-s", type=int, default=50, help="[50] number of steps"
+    # )
+    # parser.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
+    # parser.add_argument(
+    #     "--prefix",
+    #     "-p",
+    #     type=str,
+    #     default="generation_",
+    #     help="output prefixes for artifacts",
+    # )
+    # parser.add_argument(
+    #     "--no-store", action="store_true", help="do not write out artifacts"
+    # )
+    # parser.add_argument(
+    #     "--num_samples", "-n", type=int, default=1, help="number of samples to generate"
+    # )
+    # parser.add_argument("--show", action="store_true", help="open artifacts using PIL")
+    # parser.add_argument(
+    #     "--engine",
+    #     "-e",
+    #     type=str,
+    #     help="engine to use for inference",
+    #     default="stable-diffusion-v1-5",
+    # )
+    # parser.add_argument(
+    #     "--init_image",
+    #     "-i",
+    #     type=str,
+    #     help="Init image",
+    # )
+    # parser.add_argument(
+    #     "--mask_image",
+    #     "-m",
+    #     type=str,
+    #     help="Mask image",
+    # )
+    # parser.add_argument("prompt", nargs="*")
 
-    args = parser.parse_args()
-    if not args.prompt and not args.init_image:
-        logger.warning("prompt or init image must be provided")
-        parser.print_help()
-        sys.exit(1)
-    else:
-        args.prompt = " ".join(args.prompt)
+    # args = parser.parse_args()
+    # if not args.prompt and not args.init_image:
+    #     logger.warning("prompt or init image must be provided")
+    #     parser.print_help()
+    #     sys.exit(1)
+    # else:
+    #     args.prompt = " ".join(args.prompt)
 
-    if args.init_image:
-        args.init_image = Image.open(args.init_image)
+    # if args.init_image:
+    #     args.init_image = Image.open(args.init_image)
 
-    if args.mask_image:
-        args.mask_image = Image.open(args.mask_image)
+    # if args.mask_image:
+    #     args.mask_image = Image.open(args.mask_image)
 
-    request = build_request_dict(args)
+    # request = build_request_dict(args)
+    request: Dict[str, Any] = {
+        "height": height,
+        "width": width,
+        "start_schedule": start_schedule,
+        "end_schedule": end_schedule,
+        "cfg_scale": cfg_scale,
+        "sampler": get_sampler_from_str(sampler),
+        "steps": steps,
+        "seed": seed,
+        "samples": num_samples,
+        "init_image": init_image,
+        "mask_image": mask_image,
+    }
+
 
     stability_api = StabilityInference(
-        STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
+        STABILITY_HOST, STABILITY_KEY, engine=engine, verbose=True
     )
 
-    answers = stability_api.generate(args.prompt, **request)
+    answers = stability_api.generate(prompt, **request)
     artifacts = process_artifacts_from_answers(
-        args.prefix, args.prompt, answers, write=not args.no_store, verbose=True
+        prefix, prompt, answers, write=not no_store, verbose=True
     )
-    if args.show:
+
+    image_urls = []
+    for artifact in artifacts:
+        if artifact[1].type == 1:
+            image_urls.append(artifact[0])
+
+    if show:
         for artifact in open_images(artifacts, verbose=True):
             pass
     else:
         for artifact in artifacts:
             pass
+
+    return image_urls

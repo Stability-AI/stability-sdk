@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>Text-2-Image</h2>
+
+<form action="/run_txt_2_img" method="POST">
+  <label for="prompt">Insert Prompt:</label><br>
+  <input type="text" id="prompt" name="prompt" placeholder="Prompt" value="{{request.form['prompt']}}"><br>
+  <input type="submit" value="Submit">
+</form>
+
+</body>
+</html>
+
