@@ -61,9 +61,9 @@ def vidpath():
 def default_anim_args(vidpath):
 
     #@markdown ####**Settings:**
-    W = 512 #@param
-    H = 512 #@param
-    W, H = map(lambda x: x - x % 64, (W, H))  # resize to integer multiple of 64
+    width = 512 #@param
+    height = 512 #@param
+    width, height = map(lambda x: x - x % 64, (width, height))  # resize to integer multiple of 64
     sampler = 'K_euler_ancestral' #@param ["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms"]
     seed = -1 #@param
     cfg_scale = 7 #@param {type:"number"}
