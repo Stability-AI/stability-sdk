@@ -239,7 +239,15 @@ class Animator:
             args.seed = random.randint(0, 2**32 - 1)
 
         def curve_to_series(curve: str) -> List[float]:
-            return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)    
+            try:
+                from keyframed import Keyframed
+                print("using fancy keyframes")
+                k = Keyframed.from_string(curve)
+                if args.max_frames:
+                    k.set_length(args.max_frames)
+                return k
+            except ImportError:
+                return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)    
 
         # expand key frame strings to per frame series
         self.frame_args = SimpleNamespace(**dict(
