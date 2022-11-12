@@ -242,7 +242,12 @@ class Animator:
             try:
                 from keyframed import Keyframed
                 print("using fancy keyframes")
-                k = Keyframed.from_string(curve)
+                if isinstance(curve, Keyframed):
+                    k = curve
+                elif isinstance(curve, str):
+                    k = Keyframed.from_string(curve)
+                elif isinstance(curve, dict):
+                    k = Keyframed(curve)
                 if args.max_frames:
                     k.set_length(args.max_frames)
                 return k
