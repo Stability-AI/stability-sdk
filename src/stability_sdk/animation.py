@@ -121,7 +121,7 @@ class VideoInputSettings(param.Parameterized):
     video_mix_in_curve = param.String(default="0:(0.02)")
     video_flow_warp = param.Boolean(default=True, doc="Whether or not to transfer the optical flow from the video to the generated animation as a warp effect.")
     # negative precedence hides development feature from UI
-    video_mask_path = param.String(default="./video_in.mp4", doc="Path to video input mask", precedence=-1)) 
+    video_mask_path = param.String(default="./video_in.mp4", doc="Path to video input mask", precedence=-1)
 
 class AnimationArgs(
     BasicSettings,
