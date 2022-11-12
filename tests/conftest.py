@@ -44,7 +44,7 @@ def grpc_server(grpc_addr):
 @pytest.fixture(scope='module')
 def impath():
     #impath = "tests\assets\4166726513_giant__rainbow_sequoia__tree_by_hayao_miyazaki___earth_tones__a_row_of_western_cedar_nurse_trees_che.png"
-    return next(pathlib.Path('.').glob('**/tests/assets/*.png'))
+    return str(next(pathlib.Path('.').glob('**/tests/assets/*.png')).resolve())
 
 @pytest.fixture(scope='module')
 def pil_image(impath):
@@ -58,7 +58,4 @@ def np_image(pil_image):
 def vidpath():
     return str(next(pathlib.Path('.').glob('**/tests/assets/*.mp4')))
 
-# TO DO: get defaults from arg objects
-@pytest.fixture(scope='module')
-def default_anim_args():
-    return AnimationArgs()
+
