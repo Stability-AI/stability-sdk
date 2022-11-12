@@ -33,7 +33,6 @@ setup(
         'dev': [
             'pytest',
             'grpcio-testing',
-            'numpy',
         ],
         'anim': [
             'numpy',
