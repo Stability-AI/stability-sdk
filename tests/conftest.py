@@ -60,8 +60,5 @@ def vidpath():
 
 # TO DO: get defaults from arg objects
 @pytest.fixture(scope='module')
-def default_anim_args(vidpath):
-    args = AnimationArgs()
-    args.video_init_path = vidpath
-    return args
-
+def default_anim_args():
+    return AnimationArgs()

@@ -46,6 +46,7 @@ def test_load_video(default_anim_args, vidpath):
 @pytest.mark.parametrize('animation_mode', ['Video Input','2D','3D'])
 def test_build_prior_txs(default_anim_args, vidpath, animation_mode):
     default_anim_args.animation_mode=animation_mode
+    default_anim_args.video_init_path = vidpath
     artist = Animator(stub=None, args=default_anim_args, animation_prompts=animation_prompts)
     artist.load_video(video_in=vidpath) # just to populate prior frames
     ops = artist.build_prior_frame_transforms(frame_idx=0)
@@ -53,6 +54,7 @@ def test_build_prior_txs(default_anim_args, vidpath, animation_mode):
 @pytest.mark.parametrize('animation_mode', ['Video Input','2D','3D'])
 def test_render(default_anim_args, animation_mode, grpc_addr, grpc_server, vidpath):
     default_anim_args.animation_mode=animation_mode
+    default_anim_args.video_init_path = vidpath
     stub = client.open_channel(grpc_addr[0])
     artist = Animator(stub=stub, args=default_anim_args, animation_prompts=animation_prompts)
     if animation_mode == 'Video Input':
