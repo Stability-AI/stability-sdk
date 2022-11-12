@@ -332,8 +332,11 @@ class Animator:
             ))
 
         elif args.animation_mode == 'Video Input':
+            success_mask = False
             for _ in range(args.extract_nth_frame):
                 success, video_next_frame = self.video_reader.read()
+                if self.video_mask_reader is not None:
+                    success_mask, video_mask_next_frame = self.video_mask_reader.read()
             if success:
                 video_next_frame = cv2.resize(
                     video_next_frame, 
@@ -347,6 +350,19 @@ class Animator:
                     ))
                 self.video_prev_frame = video_next_frame
                 self.color_match_image = video_next_frame
+            ##################################################
+            if success and success_mask:
+                # video_mask_next_frame = cv2.resize(
+                #     video_mask_next_frame, 
+                #     (args.width, args.height), 
+                #     interpolation=cv2.INTER_LANCZOS4
+                # )
+                # if args.video_flow_warp:
+                #     ops.append(warpflow_op(
+                #         prev_frame=self.video_mask_prev_frame,
+                #         next_frame=video_mask_next_frame,
+                #     ))
+                self.video_mask_prev_frame = video_mask_next_frame
 
         return ops
 
