@@ -120,7 +120,8 @@ class VideoInputSettings(param.Parameterized):
     extract_nth_frame = param.Integer(default=1, bounds=(1,None), doc="Only use every Nth frame of the video")
     video_mix_in_curve = param.String(default="0:(0.02)")
     video_flow_warp = param.Boolean(default=True, doc="Whether or not to transfer the optical flow from the video to the generated animation as a warp effect.")
-    video_mask_path = param.String(default="./video_in.mp4", doc="Path to video input mask")
+    # negative precedence hides development feature from UI
+    video_mask_path = param.String(default="./video_in.mp4", doc="Path to video input mask", precedence=-1)) 
 
 class AnimationArgs(
     BasicSettings,
