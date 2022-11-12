@@ -226,7 +226,8 @@ class Animator:
 
     def prepare_init_image(self, fpath=None):
         if fpath is None:
-            fpath = self.args.get('init_image')
+            #fpath = self.args.get('init_image')
+            fpath =  self.args.init_image
         if not fpath:
             return
         img = Image.open(fpath)
