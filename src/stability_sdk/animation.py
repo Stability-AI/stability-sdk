@@ -58,7 +58,7 @@ class BasicSettings(param.Parameterized):
     seed    = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
-    init_image = param.String(doc="Path to image. Height and width dimensions will be inherited from image.")
+    init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
     ####
     # missing param: n_samples = param.Integer(1, bounds=(1,9))
 
