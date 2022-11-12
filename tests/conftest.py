@@ -57,6 +57,7 @@ def np_image(pil_image):
 def vidpath():
     return str(next(pathlib.Path('.').glob('**/tests/assets/*.mp4')))
 
+# TO DO: get defaults from arg objects
 @pytest.fixture(scope='module')
 def default_anim_args(vidpath):
 
@@ -68,6 +69,7 @@ def default_anim_args(vidpath):
     seed = -1 #@param
     cfg_scale = 7 #@param {type:"number"}
     clip_guidance = 'FastBlue' #@param ["None", "Simple", "FastBlue", "FastGreen"]
+    init_image = ''
 
     #@markdown ####**Animation Settings:**
     animation_mode = '3D' #@param ['2D', '3D', 'Video Input'] {type:'string'}
