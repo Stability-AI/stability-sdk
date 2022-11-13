@@ -10,7 +10,7 @@ import random
 from collections import OrderedDict
 from PIL import Image
 from types import SimpleNamespace
-from typing import Generator, List, Tuple
+from typing import Generator, List, Tuple, Union
 
 from stability_sdk.client import (
     image_gen,
