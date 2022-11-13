@@ -46,6 +46,26 @@ docstring_bordermode = (
     "\n\t* zero - Fill empty regions with black pixels."
 )
 
+
+from keyframed import Keyframed, to_keyframed
+from dataclasses import dataclass
+
+@dataclass
+class Prompt:
+    prompt: Union[str,Image.Image]
+    weight_curve: Keyframed
+
+class Prompts:
+    prompts: List[Prompt]
+
+    def __getitem__(self, k):
+        prompts, weights = [], []
+        for p in self.prompts:
+            prompts.append(p.prompt)
+            weights.append(p.weight_curve[k])
+        return prompts, weights
+
+
 # to do: these defaults and bounds should be configured in a language agnostic way so they can be 
 # shared across client libraries, front end, etc.
 # https://param.holoviz.org/user_guide/index.html
@@ -194,6 +214,8 @@ class Animator:
         self.setup_animation(resume)
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
+        if isinstance(self.animation_prompts, Prompts):
+            return self.animation_prompts[frame_index]
         keys = self.key_frame_values
         idx = bisect.bisect_right(keys, frame_idx)
         prev, next = idx - 1, idx
