@@ -21,7 +21,7 @@ jobs:
         #############################
         # Tensorizer
         #############################
-        cp ./api-interfaces/src/tensorizer/proto ./src/proto/tensorizer.proto
+        cp ./api-interfaces/src/tensorizer/proto/tensors.proto ./src/proto/tensors.proto
         cp ./api-interfaces/src/tensorizer/tensors/tensors_pb2.py $TGT/$KIND/tensors_pb2.py
         #############################
         # for backwards compatibility
