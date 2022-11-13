@@ -268,7 +268,8 @@ class Animator:
         img = Image.open(fpath)
         self.args.height, self.args.width = img.size[0], img.size[1]
         p = self.prior_frames
-        self.prior_frames = [img, img] + p 
+        #self.prior_frames = [img, img] + p 
+        self.prior_frames =  [img, img] 
 
     def setup_animation(self, resume):
         args = self.args
