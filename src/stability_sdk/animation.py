@@ -63,8 +63,11 @@ class Prompts:
     def __getitem__(self, k):
         prompts, weights = [], []
         for p in self.prompts:
-            prompts.append(p.prompt)
-            weights.append(p.weight_curve[k])
+            p_ = p.prompt
+            w_ = p.weight_curve[k]
+            if w_ != 0:
+              prompts.append(p_)
+              weights.append(w_)
         return prompts, weights
 
 
