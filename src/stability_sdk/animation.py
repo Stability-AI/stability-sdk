@@ -302,12 +302,14 @@ class Animator:
             video_mix_in_series = curve_to_series(args.video_mix_in_curve),
         ))
 
-        # prepare sorted list of key frames
-        self.key_frame_values = sorted(list(self.animation_prompts.keys()))
-        if self.key_frame_values[0] != 0:
-            raise ValueError("First keyframe must be 0")
-        if len(self.key_frame_values) != len(set(self.key_frame_values)):
-            raise ValueError("Duplicate keyframes are not allowed!")
+        if not isinstance(self.animation_prompts, Prompts):
+            # to do: move this
+            # prepare sorted list of key frames
+            self.key_frame_values = sorted(list(self.animation_prompts.keys()))
+            if self.key_frame_values[0] != 0:
+                raise ValueError("First keyframe must be 0")
+            if len(self.key_frame_values) != len(set(self.key_frame_values)):
+                raise ValueError("Duplicate keyframes are not allowed!")
 
         # prepare video input
         video_in = args.video_init_path if args.animation_mode == 'Video Input' else None
