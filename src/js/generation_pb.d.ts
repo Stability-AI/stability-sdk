@@ -2,6 +2,7 @@
 // file: generation.proto
 
 import * as jspb from "google-protobuf";
+import * as tensors_pb from "./tensors_pb";
 
 export class Token extends jspb.Message {
   hasText(): boolean;
@@ -94,6 +95,11 @@ export class Artifact extends jspb.Message {
   getClassifier(): ClassifierParameters | undefined;
   setClassifier(value?: ClassifierParameters): void;
 
+  hasTensor(): boolean;
+  clearTensor(): void;
+  getTensor(): tensors_pb.Tensor | undefined;
+  setTensor(value?: tensors_pb.Tensor): void;
+
   getIndex(): number;
   setIndex(value: number): void;
 
@@ -102,6 +108,12 @@ export class Artifact extends jspb.Message {
 
   getSeed(): number;
   setSeed(value: number): void;
+
+  getUuid(): string;
+  setUuid(value: string): void;
+
+  getSize(): number;
+  setSize(value: number): void;
 
   getDataCase(): Artifact.DataCase;
   serializeBinary(): Uint8Array;
@@ -124,9 +136,12 @@ export namespace Artifact {
     text: string,
     tokens?: Tokens.AsObject,
     classifier?: ClassifierParameters.AsObject,
+    tensor?: tensors_pb.Tensor.AsObject,
     index: number,
     finishReason: FinishReasonMap[keyof FinishReasonMap],
     seed: number,
+    uuid: string,
+    size: number,
   }
 
   export enum DataCase {
@@ -135,6 +150,7 @@ export namespace Artifact {
     TEXT = 6,
     TOKENS = 7,
     CLASSIFIER = 11,
+    TENSOR = 14,
   }
 }
 
@@ -240,6 +256,11 @@ export class SamplerParameters extends jspb.Message {
   getCfgScale(): number;
   setCfgScale(value: number): void;
 
+  hasInitNoiseScale(): boolean;
+  clearInitNoiseScale(): void;
+  getInitNoiseScale(): number;
+  setInitNoiseScale(value: number): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): SamplerParameters.AsObject;
   static toObject(includeInstance: boolean, msg: SamplerParameters): SamplerParameters.AsObject;
@@ -257,6 +278,7 @@ export namespace SamplerParameters {
     latentChannels: number,
     downsamplingFactor: number,
     cfgScale: number,
+    initNoiseScale: number,
   }
 }
 
@@ -743,8 +765,11 @@ export class AssetParameters extends jspb.Message {
   getAction(): AssetActionMap[keyof AssetActionMap];
   setAction(value: AssetActionMap[keyof AssetActionMap]): void;
 
-  getProject(): number;
-  setProject(value: number): void;
+  getProjectId(): string;
+  setProjectId(value: string): void;
+
+  getUse(): AssetUseMap[keyof AssetUseMap];
+  setUse(value: AssetUseMap[keyof AssetUseMap]): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): AssetParameters.AsObject;
@@ -759,7 +784,8 @@ export class AssetParameters extends jspb.Message {
 export namespace AssetParameters {
   export type AsObject = {
     action: AssetActionMap[keyof AssetActionMap],
-    project: number,
+    projectId: string,
+    use: AssetUseMap[keyof AssetUseMap],
   }
 }
 
@@ -1024,6 +1050,8 @@ export interface ArtifactTypeMap {
   ARTIFACT_EMBEDDING: 5;
   ARTIFACT_CLASSIFICATIONS: 6;
   ARTIFACT_MASK: 7;
+  ARTIFACT_LATENT: 8;
+  ARTIFACT_TENSOR: 9;
 }
 
 export const ArtifactType: ArtifactTypeMap;
@@ -1095,6 +1123,16 @@ export interface AssetActionMap {
 }
 
 export const AssetAction: AssetActionMap;
+
+export interface AssetUseMap {
+  ASSET_USE_UNDEFINED: 0;
+  ASSET_USE_INPUT: 1;
+  ASSET_USE_OUTPUT: 2;
+  ASSET_USE_INTERMEDIATE: 3;
+  ASSET_USE_PROJECT: 4;
+}
+
+export const AssetUse: AssetUseMap;
 
 export interface StageActionMap {
   STAGE_ACTION_PASS: 0;

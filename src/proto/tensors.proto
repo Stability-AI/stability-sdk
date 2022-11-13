@@ -1,0 +1,54 @@
+syntax = 'proto3';
+package tensors;
+option go_package = "github.com/coreweave/tensorizer/tensors";
+
+enum Dtype {
+  DT_INVALID = 0;
+  DT_FLOAT32 = 1;
+  DT_FLOAT64 = 2;
+  DT_FLOAT16 = 3;
+  DT_BFLOAT16 = 4;
+  DT_COMPLEX32 = 5;
+  DT_COMPLEX64 = 6;
+  DT_COMPLEX128 = 7;
+  DT_UINT8 = 8;
+  DT_INT8 = 9;
+  DT_INT16 = 10;
+  DT_INT32 = 11;
+  DT_INT64 = 12;
+  DT_BOOL = 13;
+  DT_QUINT8 = 14;
+  DT_QINT8 = 15;
+  DT_QINT32 = 16;
+  DT_QUINT4_2 = 17;
+}
+
+enum AttributeType {
+  AT_PARAMETER = 0;
+  AT_BUFFER = 1;
+}
+
+message Tensor {
+  Dtype dtype = 1;
+  repeated int64 shape = 2;
+  bytes data = 3;
+  optional AttributeType attr_type = 4;
+}
+
+message Attribute {
+  string name = 1;
+  oneof value {
+    Module module = 3;
+    Tensor tensor = 4;
+    string string = 5;
+    int64 int64 = 6;
+    float float = 7;
+    bool bool = 8;
+  }
+}
+
+message Module {
+  string name = 1;
+  repeated string names = 2;
+  repeated Attribute attributes = 3;
+}

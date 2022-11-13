@@ -13,14 +13,10 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global = (function() { return this || window || global || self || Function('return this')(); }).call(null);
 
+var tensors_pb = require('./tensors_pb.js');
+goog.object.extend(proto, tensors_pb);
 goog.exportSymbol('proto.gooseai.Action', null, global);
 goog.exportSymbol('proto.gooseai.Answer', null, global);
 goog.exportSymbol('proto.gooseai.AnswerMeta', null, global);
@@ -29,6 +25,7 @@ goog.exportSymbol('proto.gooseai.Artifact.DataCase', null, global);
 goog.exportSymbol('proto.gooseai.ArtifactType', null, global);
 goog.exportSymbol('proto.gooseai.AssetAction', null, global);
 goog.exportSymbol('proto.gooseai.AssetParameters', null, global);
+goog.exportSymbol('proto.gooseai.AssetUse', null, global);
 goog.exportSymbol('proto.gooseai.ChainRequest', null, global);
 goog.exportSymbol('proto.gooseai.ClassifierCategory', null, global);
 goog.exportSymbol('proto.gooseai.ClassifierConcept', null, global);
@@ -1002,7 +999,7 @@ proto.gooseai.Tokens.prototype.hasTokenizerId = function() {
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.gooseai.Artifact.oneofGroups_ = [[5,6,7,11]];
+proto.gooseai.Artifact.oneofGroups_ = [[5,6,7,11,14]];
 
 /**
  * @enum {number}
@@ -1012,7 +1009,8 @@ proto.gooseai.Artifact.DataCase = {
   BINARY: 5,
   TEXT: 6,
   TOKENS: 7,
-  CLASSIFIER: 11
+  CLASSIFIER: 11,
+  TENSOR: 14
 };
 
 /**
@@ -1061,9 +1059,12 @@ proto.gooseai.Artifact.toObject = function(includeInstance, msg) {
     text: jspb.Message.getFieldWithDefault(msg, 6, ""),
     tokens: (f = msg.getTokens()) && proto.gooseai.Tokens.toObject(includeInstance, f),
     classifier: (f = msg.getClassifier()) && proto.gooseai.ClassifierParameters.toObject(includeInstance, f),
+    tensor: (f = msg.getTensor()) && tensors_pb.Tensor.toObject(includeInstance, f),
     index: jspb.Message.getFieldWithDefault(msg, 8, 0),
     finishReason: jspb.Message.getFieldWithDefault(msg, 9, 0),
-    seed: jspb.Message.getFieldWithDefault(msg, 10, 0)
+    seed: jspb.Message.getFieldWithDefault(msg, 10, 0),
+    uuid: jspb.Message.getFieldWithDefault(msg, 12, ""),
+    size: jspb.Message.getFieldWithDefault(msg, 13, 0)
   };
 
   if (includeInstance) {
@@ -1134,6 +1135,11 @@ proto.gooseai.Artifact.deserializeBinaryFromReader = function(msg, reader) {
       reader.readMessage(value,proto.gooseai.ClassifierParameters.deserializeBinaryFromReader);
       msg.setClassifier(value);
       break;
+    case 14:
+      var value = new tensors_pb.Tensor;
+      reader.readMessage(value,tensors_pb.Tensor.deserializeBinaryFromReader);
+      msg.setTensor(value);
+      break;
     case 8:
       var value = /** @type {number} */ (reader.readUint32());
       msg.setIndex(value);
@@ -1145,6 +1151,14 @@ proto.gooseai.Artifact.deserializeBinaryFromReader = function(msg, reader) {
     case 10:
       var value = /** @type {number} */ (reader.readUint32());
       msg.setSeed(value);
+      break;
+    case 12:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setUuid(value);
+      break;
+    case 13:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setSize(value);
       break;
     default:
       reader.skipField();
@@ -1233,6 +1247,14 @@ proto.gooseai.Artifact.serializeBinaryToWriter = function(message, writer) {
       proto.gooseai.ClassifierParameters.serializeBinaryToWriter
     );
   }
+  f = message.getTensor();
+  if (f != null) {
+    writer.writeMessage(
+      14,
+      f,
+      tensors_pb.Tensor.serializeBinaryToWriter
+    );
+  }
   f = message.getIndex();
   if (f !== 0) {
     writer.writeUint32(
@@ -1251,6 +1273,20 @@ proto.gooseai.Artifact.serializeBinaryToWriter = function(message, writer) {
   if (f !== 0) {
     writer.writeUint32(
       10,
+      f
+    );
+  }
+  f = message.getUuid();
+  if (f.length > 0) {
+    writer.writeString(
+      12,
+      f
+    );
+  }
+  f = message.getSize();
+  if (f !== 0) {
+    writer.writeUint64(
+      13,
       f
     );
   }
@@ -1518,6 +1554,43 @@ proto.gooseai.Artifact.prototype.hasClassifier = function() {
 
 
 /**
+ * optional tensors.Tensor tensor = 14;
+ * @return {?proto.tensors.Tensor}
+ */
+proto.gooseai.Artifact.prototype.getTensor = function() {
+  return /** @type{?proto.tensors.Tensor} */ (
+    jspb.Message.getWrapperField(this, tensors_pb.Tensor, 14));
+};
+
+
+/**
+ * @param {?proto.tensors.Tensor|undefined} value
+ * @return {!proto.gooseai.Artifact} returns this
+*/
+proto.gooseai.Artifact.prototype.setTensor = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 14, proto.gooseai.Artifact.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.gooseai.Artifact} returns this
+ */
+proto.gooseai.Artifact.prototype.clearTensor = function() {
+  return this.setTensor(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.gooseai.Artifact.prototype.hasTensor = function() {
+  return jspb.Message.getField(this, 14) != null;
+};
+
+
+/**
  * optional uint32 index = 8;
  * @return {number}
  */
@@ -1568,6 +1641,42 @@ proto.gooseai.Artifact.prototype.getSeed = function() {
  */
 proto.gooseai.Artifact.prototype.setSeed = function(value) {
   return jspb.Message.setProto3IntField(this, 10, value);
+};
+
+
+/**
+ * optional string uuid = 12;
+ * @return {string}
+ */
+proto.gooseai.Artifact.prototype.getUuid = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 12, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.gooseai.Artifact} returns this
+ */
+proto.gooseai.Artifact.prototype.setUuid = function(value) {
+  return jspb.Message.setProto3StringField(this, 12, value);
+};
+
+
+/**
+ * optional uint64 size = 13;
+ * @return {number}
+ */
+proto.gooseai.Artifact.prototype.getSize = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 13, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.gooseai.Artifact} returns this
+ */
+proto.gooseai.Artifact.prototype.setSize = function(value) {
+  return jspb.Message.setProto3IntField(this, 13, value);
 };
 
 
@@ -2131,7 +2240,8 @@ proto.gooseai.SamplerParameters.toObject = function(includeInstance, msg) {
     samplingSteps: jspb.Message.getFieldWithDefault(msg, 2, 0),
     latentChannels: jspb.Message.getFieldWithDefault(msg, 3, 0),
     downsamplingFactor: jspb.Message.getFieldWithDefault(msg, 4, 0),
-    cfgScale: jspb.Message.getFloatingPointFieldWithDefault(msg, 5, 0.0)
+    cfgScale: jspb.Message.getFloatingPointFieldWithDefault(msg, 5, 0.0),
+    initNoiseScale: jspb.Message.getFloatingPointFieldWithDefault(msg, 6, 0.0)
   };
 
   if (includeInstance) {
@@ -2187,6 +2297,10 @@ proto.gooseai.SamplerParameters.deserializeBinaryFromReader = function(msg, read
     case 5:
       var value = /** @type {number} */ (reader.readFloat());
       msg.setCfgScale(value);
+      break;
+    case 6:
+      var value = /** @type {number} */ (reader.readFloat());
+      msg.setInitNoiseScale(value);
       break;
     default:
       reader.skipField();
@@ -2249,6 +2363,13 @@ proto.gooseai.SamplerParameters.serializeBinaryToWriter = function(message, writ
   if (f != null) {
     writer.writeFloat(
       5,
+      f
+    );
+  }
+  f = /** @type {number} */ (jspb.Message.getField(message, 6));
+  if (f != null) {
+    writer.writeFloat(
+      6,
       f
     );
   }
@@ -2432,6 +2553,42 @@ proto.gooseai.SamplerParameters.prototype.clearCfgScale = function() {
  */
 proto.gooseai.SamplerParameters.prototype.hasCfgScale = function() {
   return jspb.Message.getField(this, 5) != null;
+};
+
+
+/**
+ * optional float init_noise_scale = 6;
+ * @return {number}
+ */
+proto.gooseai.SamplerParameters.prototype.getInitNoiseScale = function() {
+  return /** @type {number} */ (jspb.Message.getFloatingPointFieldWithDefault(this, 6, 0.0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.gooseai.SamplerParameters} returns this
+ */
+proto.gooseai.SamplerParameters.prototype.setInitNoiseScale = function(value) {
+  return jspb.Message.setField(this, 6, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.gooseai.SamplerParameters} returns this
+ */
+proto.gooseai.SamplerParameters.prototype.clearInitNoiseScale = function() {
+  return jspb.Message.setField(this, 6, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.gooseai.SamplerParameters.prototype.hasInitNoiseScale = function() {
+  return jspb.Message.getField(this, 6) != null;
 };
 
 
@@ -5988,7 +6145,8 @@ proto.gooseai.AssetParameters.prototype.toObject = function(opt_includeInstance)
 proto.gooseai.AssetParameters.toObject = function(includeInstance, msg) {
   var f, obj = {
     action: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    project: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    projectId: jspb.Message.getFieldWithDefault(msg, 2, ""),
+    use: jspb.Message.getFieldWithDefault(msg, 3, 0)
   };
 
   if (includeInstance) {
@@ -6030,8 +6188,12 @@ proto.gooseai.AssetParameters.deserializeBinaryFromReader = function(msg, reader
       msg.setAction(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
-      msg.setProject(value);
+      var value = /** @type {string} */ (reader.readString());
+      msg.setProjectId(value);
+      break;
+    case 3:
+      var value = /** @type {!proto.gooseai.AssetUse} */ (reader.readEnum());
+      msg.setUse(value);
       break;
     default:
       reader.skipField();
@@ -6069,10 +6231,17 @@ proto.gooseai.AssetParameters.serializeBinaryToWriter = function(message, writer
       f
     );
   }
-  f = message.getProject();
-  if (f !== 0) {
-    writer.writeUint64(
+  f = message.getProjectId();
+  if (f.length > 0) {
+    writer.writeString(
       2,
+      f
+    );
+  }
+  f = message.getUse();
+  if (f !== 0.0) {
+    writer.writeEnum(
+      3,
       f
     );
   }
@@ -6098,20 +6267,38 @@ proto.gooseai.AssetParameters.prototype.setAction = function(value) {
 
 
 /**
- * optional uint64 project = 2;
- * @return {number}
+ * optional string project_id = 2;
+ * @return {string}
  */
-proto.gooseai.AssetParameters.prototype.getProject = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+proto.gooseai.AssetParameters.prototype.getProjectId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.gooseai.AssetParameters} returns this
  */
-proto.gooseai.AssetParameters.prototype.setProject = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+proto.gooseai.AssetParameters.prototype.setProjectId = function(value) {
+  return jspb.Message.setProto3StringField(this, 2, value);
+};
+
+
+/**
+ * optional AssetUse use = 3;
+ * @return {!proto.gooseai.AssetUse}
+ */
+proto.gooseai.AssetParameters.prototype.getUse = function() {
+  return /** @type {!proto.gooseai.AssetUse} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
+};
+
+
+/**
+ * @param {!proto.gooseai.AssetUse} value
+ * @return {!proto.gooseai.AssetParameters} returns this
+ */
+proto.gooseai.AssetParameters.prototype.setUse = function(value) {
+  return jspb.Message.setProto3EnumField(this, 3, value);
 };
 
 
@@ -7929,7 +8116,9 @@ proto.gooseai.ArtifactType = {
   ARTIFACT_TOKENS: 4,
   ARTIFACT_EMBEDDING: 5,
   ARTIFACT_CLASSIFICATIONS: 6,
-  ARTIFACT_MASK: 7
+  ARTIFACT_MASK: 7,
+  ARTIFACT_LATENT: 8,
+  ARTIFACT_TENSOR: 9
 };
 
 /**
@@ -8005,6 +8194,17 @@ proto.gooseai.AssetAction = {
   ASSET_PUT: 0,
   ASSET_GET: 1,
   ASSET_DELETE: 2
+};
+
+/**
+ * @enum {number}
+ */
+proto.gooseai.AssetUse = {
+  ASSET_USE_UNDEFINED: 0,
+  ASSET_USE_INPUT: 1,
+  ASSET_USE_OUTPUT: 2,
+  ASSET_USE_INTERMEDIATE: 3,
+  ASSET_USE_PROJECT: 4
 };
 
 /**
