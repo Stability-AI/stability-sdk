@@ -268,8 +268,10 @@ class Animator:
         img = Image.open(fpath)
         self.args.height, self.args.width = img.size[0], img.size[1]
         p = self.prior_frames
-        #self.prior_frames = [img, img] + p 
-        self.prior_frames =  [img, img] 
+        self.prior_frames = [img, img] + p 
+        #self.prior_frames =  [img, img] 
+        self.video_prev_frame = img
+        self.color_match_image = img
 
     def setup_animation(self, resume):
         args = self.args
