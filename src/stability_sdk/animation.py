@@ -181,11 +181,14 @@ def cv2_to_pil(img):
     return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
 
+from pathlib import Path
+
 class Animator:
     def __init__(
         self,
         stub: 'generation_grpc.GenerationServiceStub',
-        animation_prompts,
+        animation_prompts: Keyframed,
+        init_images: Keyframed=None,
         args=None,
         out_dir='.',
         #####
@@ -199,6 +202,8 @@ class Animator:
         generate_engine_id='stable-diffusion-v1-5',
     ):
         self.animation_prompts = animation_prompts
+        if init_images:
+            self.init_images = init_images
         self.args = args
         self.color_match_image: np.ndarray = None
         self.diffusion_cadence_ofs: int = 0
@@ -220,6 +225,12 @@ class Animator:
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
         if isinstance(self.animation_prompts, Prompts):
+            # patch in init_image, cause this isn't hacky at all
+            if hasattr(self, 'init_images'):
+                ims, wts = self.init_images[frame_idx]
+                init_path = Path(ims[0])
+                if init_path.exists():
+                    self.prepare_init_image(fpath=init_path)
             return self.animation_prompts[frame_idx]
         keys = self.key_frame_values
         idx = bisect.bisect_right(keys, frame_idx)
