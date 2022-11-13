@@ -220,7 +220,7 @@ class Animator:
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
         if isinstance(self.animation_prompts, Prompts):
-            return self.animation_prompts[frame_index]
+            return self.animation_prompts[frame_idx]
         keys = self.key_frame_values
         idx = bisect.bisect_right(keys, frame_idx)
         prev, next = idx - 1, idx
