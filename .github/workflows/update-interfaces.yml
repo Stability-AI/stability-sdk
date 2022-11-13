@@ -17,7 +17,12 @@ jobs:
         TGT=./src/stability_sdk/interfaces/gooseai
         KIND=generation
         cp $SRC/$KIND/${KIND}_pb2_grpc.py $TGT/$KIND/${KIND}_pb2_grpc.py
-        cp $SRC/$KIND/${KIND}_pb2.py $TGT/$KIND/${KIND}_pb2.py
+        cp $SRC/$KIND/${KIND}_pb2.py $TGT/$KIND/${KIND}_pb2.py        
+        #############################
+        # Tensorizer
+        #############################
+        cp ./api-interfaces/src/tensorizer/proto ./src/proto/tensorizer.proto
+        cp ./api-interfaces/src/tensorizer/tensors/tensors_pb2.py $TGT/$KIND/tensors_pb2.py
         #############################
         # for backwards compatibility
         #############################
@@ -25,7 +30,7 @@ jobs:
         cp $SRC/$KIND/${KIND}_pb_service.d.ts ./src/js/${KIND}_pb_service.d.ts
         cp $SRC/$KIND/${KIND}_pb_service.js ./src/js/${KIND}_pb_service.js
         cp $SRC/$KIND/${KIND}_pb.d.ts ./src/js/${KIND}_pb.d.ts
-        cp $SRC/$KIND/${KIND}_pb.js ./src/js/${KIND}_pb.js
+        cp $SRC/$KIND/${KIND}_pb.js ./src/js/${KIND}_pb.js        
     #- name: Commit files
     #  run: |
     #    shopt -s globstar
