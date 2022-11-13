@@ -228,9 +228,10 @@ class Animator:
             # patch in init_image, cause this isn't hacky at all
             if hasattr(self, 'init_images'):
                 ims, wts = self.init_images[frame_idx]
-                init_path = Path(ims[0])
-                if init_path.exists():
-                    self.prepare_init_image(fpath=init_path)
+                if ims:
+                    init_path = Path(ims[0])
+                    if init_path.exists():
+                        self.prepare_init_image(fpath=init_path)
             return self.animation_prompts[frame_idx]
         keys = self.key_frame_values
         idx = bisect.bisect_right(keys, frame_idx)
