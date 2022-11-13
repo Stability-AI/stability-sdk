@@ -55,6 +55,8 @@ class Prompt:
     prompt: Union[str,Image.Image]
     weight_curve: Keyframed
 
+
+@dataclass
 class Prompts:
     prompts: List[Prompt]
 
