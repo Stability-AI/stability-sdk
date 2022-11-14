@@ -16,6 +16,7 @@ jobs:
           submodules: recursive
       - name: fix submodule checkout
         run: |
+          cd src/stability_sdk/interfaces
           git submodule init
           git submodule update
       - name: Set up Python ${{ matrix.python-version }}
