@@ -1,11 +1,21 @@
 import pytest
+import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 
 from stability_sdk.utils import (
     SAMPLERS,
+    artifact_type_to_str,
     get_sampler_from_str,
     truncate_fit,
 )
 
+@pytest.mark.parametrize("artifact_type", generation.ArtifactType.values())
+def test_artifact_type_to_str_valid(artifact_type):
+    type_str = artifact_type_to_str(artifact_type)
+    assert type_str == generation.ArtifactType.Name(artifact_type)
+
+def test_artifact_type_to_str_invalid():
+    type_str = artifact_type_to_str(-1)
+    assert type_str == 'ARTIFACT_UNRECOGNIZED'
 
 @pytest.mark.parametrize("sampler_name", SAMPLERS.keys())
 def test_get_sampler_from_str_valid(sampler_name):
