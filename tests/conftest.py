@@ -10,7 +10,8 @@ import sys
 thisPath = pathlib.Path(__file__).parent.parent.resolve()
 genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation"
 tensPath = thisPath / "src/stability_sdk/interfaces/src/tensorizer/tensors"
-
+assert genPath.exists()
+assert tensPath.exists()
 
 logger = logging.getLogger(__name__)
 sys.path.append(str(genPath))
