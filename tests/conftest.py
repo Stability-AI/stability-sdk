@@ -11,6 +11,8 @@ import sys
 thisPath = pathlib.Path(__file__).parent.resolve()
 genPath = thisPath / "interfaces/gooseai/generation"
 tensPath = thisPath / "interfaces/src/tensorizer/tensors"
+assert genPath.exists()
+assert tensPath.exists()
 sys.path.extend([str(genPath), str(tensPath)])
 
 
