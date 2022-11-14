@@ -7,13 +7,12 @@ import logging
 import pathlib
 import sys
 
-thisPath = pathlib.Path(__file__).parent.parent.resolve()
-#genPath = thisPath / "api-interfaces/gooseai/generation" # this path does not exist, probably need to --recurse-submodules
-genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation" # this path exists
+# fucking yeesh... putting this in __init__ really wasn't enough?
+thisPath = pathlib.Path(__file__).parent.resolve()
+genPath = thisPath / "interfaces/gooseai/generation"
+tensPath = thisPath / "interfaces/src/tensorizer/tensors"
+sys.path.extend([str(genPath), str(tensPath)])
 
-
-logger = logging.getLogger(__name__)
-sys.path.append(str(genPath))
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
