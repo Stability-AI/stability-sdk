@@ -29,11 +29,21 @@ SAMPLERS: Dict[str, int] = {
     
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
-def artifact_type_to_str(artifact_type: int):
+def artifact_type_to_str(artifact_type: generation.ArtifactType):
+    """
+    Convert ArtifactType to a string.
+    :param artifact_type: The ArtifactType to convert.
+    :return: String representation of the ArtifactType.
+    """
     try:
         return generation.ArtifactType.Name(artifact_type)
     except ValueError:
-        return "UNKNOWN"
+        logging.warning(
+            f"Received artifact of type {artifact_type}, which is not recognized in the loaded protobuf definition.\n"
+            "If you are seeing this message, you might be using an old version of the client library. Please update your client via `pip install --upgrade stability-sdk`\n"
+            "If updating the client does not make this warning message go away, please report this behavior to https://github.com/Stability-AI/stability-sdk/issues/new"
+        )
+        return f"ARTIFACT_UNRECOGNIZED"
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
