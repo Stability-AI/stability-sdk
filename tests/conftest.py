@@ -8,9 +8,10 @@ import pathlib
 import sys
 
 # fucking yeesh... putting this in __init__ really wasn't enough?
-thisPath = pathlib.Path(__file__).parent.resolve()
-genPath = thisPath / "interfaces/gooseai/generation"
-tensPath = thisPath / "interfaces/src/tensorizer/tensors"
+#thisPath = pathlib.Path(__file__).parent.resolve()
+thisPath = pathlib.Path(__file__).parent.parent.resolve()
+genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation"
+tensPath = thisPath / "src/stability_sdk/interfaces/src/tensorizer/tensors"
 
 logger = logging.getLogger(__name__)
 logger.info(thisPath)
