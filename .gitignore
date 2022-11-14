@@ -3,5 +3,6 @@
 *.png
 dist/
 pyenv/
-.venv/
+*venv/
+.env
 generation-*.pb.json
