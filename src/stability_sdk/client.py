@@ -36,6 +36,7 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as genera
 from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
+    artifact_type_to_str,
     truncate_fit,
     get_sampler_from_str,
     open_images,
@@ -44,7 +45,6 @@ from stability_sdk.utils import (
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
-
 
 def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
     if init and mask:
@@ -107,7 +107,7 @@ def process_artifacts_from_answers(
                 with open(out_p, "wb") as f:
                     f.write(bytes(contents))
                     if verbose:
-                        artifact_t = generation.ArtifactType.Name(artifact.type)
+                        artifact_t = artifact_type_to_str(artifact.type)
                         logger.info(f"wrote {artifact_t} to {out_p}")
 
             yield (out_p, artifact)
@@ -329,7 +329,7 @@ class StabilityInference:
             if self.verbose:
                 if len(answer.artifacts) > 0:
                     artifact_ts = [
-                        generation.ArtifactType.Name(artifact.type)
+                        artifact_type_to_str(artifact.type)
                         for artifact in answer.artifacts
                     ]
                     logger.info(

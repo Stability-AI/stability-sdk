@@ -29,6 +29,12 @@ SAMPLERS: Dict[str, int] = {
     
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
+def artifact_type_to_str(artifact_type: int):
+    try:
+        return generation.ArtifactType.Name(artifact_type)
+    except ValueError:
+        return "UNKNOWN"
+
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
     Constructs an output filename from a collection of required fields.
