@@ -43,7 +43,7 @@ def artifact_type_to_str(artifact_type: generation.ArtifactType):
             "If you are seeing this message, you might be using an old version of the client library. Please update your client via `pip install --upgrade stability-sdk`\n"
             "If updating the client does not make this warning message go away, please report this behavior to https://github.com/Stability-AI/stability-sdk/issues/new"
         )
-        return f"ARTIFACT_UNRECOGNIZED"
+        return "ARTIFACT_UNRECOGNIZED"
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
