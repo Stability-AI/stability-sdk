@@ -18,7 +18,7 @@ jobs:
         run: |
           cd src/stability_sdk/interfaces
           git submodule init
-          git submodule update
+          git submodule update --recursive
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
