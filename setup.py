@@ -1,13 +1,13 @@
 # fmt: off
 
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 with open('README.md','r') as f:
     README = f.read()
 
 setup(
     name='stability-sdk',
-    version='0.2.8',
+    version='0.2.9',
     author='Wes Brown',
     author_email='wesbrown18@gmail.com',
     maintainer='David Marx',
@@ -31,7 +31,7 @@ setup(
             'pytest',
             'grpcio-testing'
     ]},
-    packages=find_packages(
+    packages=find_namespace_packages(
         where='src',
         include=['stability_sdk*'],
     ),
