@@ -14,11 +14,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
-      - name: fix submodule checkout
-        run: |
-          cd src/stability_sdk/interfaces
-          git submodule init
-          git submodule update --recursive
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -30,6 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f src/stability_sdk/interfaces/src/tensorizer/requirements.txt ]; then pip install -r src/stability_sdk/interfaces/src/tensorizer/requirements.txt; fi
       - name: Install package
         run: |
           pip install .[dev]
