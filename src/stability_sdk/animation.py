@@ -225,9 +225,8 @@ class Animator:
             fpath =  self.args.init_image
         if not fpath:
             return
-        #img = Image.open(fpath)
         img = cv2.imread(fpath)
-        self.args.height, self.args.width = img.size[0], img.size[1]
+        self.args.height, self.args.width, _ = img.shape
         p = self.prior_frames
         self.prior_frames = [img, img] + p 
 
