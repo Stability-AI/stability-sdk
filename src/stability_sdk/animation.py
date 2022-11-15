@@ -227,8 +227,7 @@ class Animator:
             return
         img = cv2.imread(fpath)
         self.args.height, self.args.width, _ = img.shape
-        p = self.prior_frames
-        self.prior_frames = [img, img] + p 
+        self.prior_frames = [img, img]
 
     def setup_animation(self, resume):
         args = self.args
