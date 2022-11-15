@@ -25,11 +25,6 @@ except ModuleNotFoundError:
 else:
     load_dotenv()
 
-# this is necessary because of how the auto-generated code constructs its imports
-thisPath = pathlib.Path(__file__).parent.resolve()
-genPath = thisPath / "interfaces/gooseai/generation"
-sys.path.append(str(genPath))
-
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 

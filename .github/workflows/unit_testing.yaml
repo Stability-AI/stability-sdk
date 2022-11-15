@@ -12,6 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -28,4 +30,4 @@ jobs:
           pip install .[dev]
       - name: Test with pytest
         run: |
-          pytest -s
+          pytest -s --ignore=src/stability_sdk/interfaces
