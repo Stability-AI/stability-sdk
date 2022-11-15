@@ -58,6 +58,7 @@ class BasicSettings(param.Parameterized):
     seed    = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
+    init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
     ####
     # missing param: n_samples = param.Integer(1, bounds=(1,9))
 
@@ -115,7 +116,7 @@ class DepthwarpSettings(param.Parameterized):
 
 
 class VideoInputSettings(param.Parameterized):
-    video_init_path = param.String(default="./video_in.mp4", doc="Path to video input")
+    video_init_path = param.String(default="", doc="Path to video input")
     extract_nth_frame = param.Integer(default=1, bounds=(1,None), doc="Only use every Nth frame of the video")
     video_mix_in_curve = param.String(default="0:(0.02)")
     video_flow_warp = param.Boolean(default=True, doc="Whether or not to transfer the optical flow from the video to the generated animation as a warp effect.")
@@ -219,6 +220,15 @@ class Animator:
             save_dict['negative_prompt_weight'] = self.negative_prompt_weight
             json.dump(save_dict, f, ensure_ascii=False, indent=4)
 
+    def prepare_init_image(self, fpath=None):
+        if fpath is None:
+            fpath =  self.args.init_image
+        if not fpath:
+            return
+        img = cv2.imread(fpath)
+        self.args.height, self.args.width, _ = img.shape
+        self.prior_frames = [img, img]
+
     def setup_animation(self, resume):
         args = self.args
 
@@ -261,6 +271,9 @@ class Animator:
         video_in = args.video_init_path if args.animation_mode == 'Video Input' else None
         if video_in:
             self.load_video(video_in)
+        
+        # what it says
+        self.prepare_init_image()
 
         # handle resuming animation from last frames of a previous run
         if resume:
