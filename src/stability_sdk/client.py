@@ -38,9 +38,8 @@ else:
     load_dotenv()
 
 # this is necessary because of how the auto-generated code constructs its imports
-thisPath = pathlib.Path(__file__).parent.resolve()
-genPath = thisPath / "interfaces/gooseai/generation"
-sys.path.append(str(genPath))
+this_path = pathlib.Path(__file__).parent.resolve()
+sys.path.append(str(this_path / "interfaces/gooseai/generation"))
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
@@ -48,130 +47,16 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as genera
 from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
-    truncate_fit,
-    sampler_from_string,
-    open_images,
     image_to_prompt,
+    open_images,
+    sampler_from_string,
+    truncate_fit,
 )
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
-# these probably don't all need to be mandatory positional args
-def image_gen(
-    stub:generation_grpc.GenerationServiceStub, 
-    width:int, 
-    height:int, 
-    prompts:List[str], 
-    weights:List[str], 
-    steps:int, 
-    seed:int, 
-    cfg_scale:float, 
-    sampler: generation.DiffusionSampler,
-    init_image:np.ndarray, # to do: this should accept PIL and fpath
-    init_strength:float,
-    ###############################
-    init_noise_scale: float = 1.0,
-    guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
-    guidance_cuts: int = 0,
-    guidance_strength: float = 0.0,
-    engine_id='stable-diffusion-v1-5',
-) -> np.ndarray:
-
-    p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
-    if init_image is not None:
-        p.append(image_to_prompt(init_image))
-
-    step_parameters = {
-        "scaled_step": 0,
-        "sampler": generation.SamplerParameters(cfg_scale=cfg_scale, init_noise_scale=init_noise_scale),
-    }
-
-    begin_schedule = 1.0 if init_image is None else 1.0-init_strength
-    if begin_schedule != 1.0:
-        step_parameters["schedule"] = generation.ScheduleParameters(
-            start=begin_schedule
-        )
-
-    if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
-        guidance_prompt = None
-        guiders = None
-        if guidance_cuts:
-            cutouts = generation.CutoutParameters(count=guidance_cuts)
-        else:
-            cutouts = None
-        step_parameters["guidance"] = generation.GuidanceParameters(
-            guidance_preset=guidance_preset,
-            instances=[
-                generation.GuidanceInstanceParameters(
-                    guidance_strength=guidance_strength,
-                    models=guiders,
-                    cutouts=cutouts,
-                    prompt=guidance_prompt,
-                )
-            ],
-        )
-
-    imageParams = {
-        "height": height,
-        "width": width,
-        "seed": [seed],
-        "steps": steps,
-        "parameters": [generation.StepParameter(**step_parameters)],
-    }
-    rq = generation.Request(
-        engine_id=engine_id,
-        prompt=p,
-        image=generation.ImageParameters(**imageParams)
-    )        
-    rq.image.transform.diffusion = sampler
-
-    for resp in stub.Generate(rq, wait_for_ready=True):
-        for artifact in resp.artifacts:
-            if artifact.type == generation.ARTIFACT_IMAGE:
-                nparr = np.frombuffer(artifact.binary, np.uint8)
-                return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-# these probably don't all need to be mandatory positional args
-def image_inpaint(
-    stub:generation_grpc.GenerationServiceStub,
-    image:np.ndarray,
-    mask:np.ndarray,
-    prompts:List[str],
-    weights:List[float],
-    steps:int,
-    seed:int,
-    cfg_scale:float,
-    blur_ks:int = 11,
-    engine_id='stable-diffusion-v1-5',
-) -> np.ndarray:
-    width, height = image.shape[1], image.shape[0]
-    mask = cv2.GaussianBlur(mask, (blur_ks,blur_ks), 0)
-
-    p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
-    p.extend([
-        image_to_prompt(image),
-        image_to_prompt(mask, is_mask=True)
-    ])
-    rq = generation.Request(
-        engine_id=engine_id,
-        prompt=p,
-        image=generation.ImageParameters(height=height, width=width, steps=steps, seed=[seed])
-    )
-    rq.image.parameters.append(
-        generation.StepParameter(
-            schedule=generation.ScheduleParameters(start=0.99),
-            sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
-        )
-    )
-    for resp in stub.Generate(rq, wait_for_ready=True):
-        for artifact in resp.artifacts:
-            if artifact.type == generation.ARTIFACT_IMAGE:
-                nparr = np.frombuffer(artifact.binary, np.uint8)
-                return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    raise Exception(f"no image artifact returned from inpaint request")
 
 def process_artifacts_from_answers(
     prefix: str,
@@ -234,6 +119,189 @@ def open_channel(host: str, api_key: str = None) -> generation_grpc.GenerationSe
     return generation_grpc.GenerationServiceStub(channel)
 
 
+class ApiEndpoint:
+    def __init__(self, stub, engine_id):
+        self.stub = stub
+        self.engine_id = engine_id
+
+class Api:
+    def __init__(self, stub):
+        self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
+        self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')
+        self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
+        self._transform = ApiEndpoint(stub, 'transform-server-v1')
+
+    def generate(
+        self,
+        prompts: List[str], 
+        weights: List[str], 
+        width: int = 512, 
+        height: int = 512, 
+        steps: int = 50, 
+        seed: int = 0, 
+        cfg_scale: float = 7.0, 
+        sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
+        init_image: Optional[np.ndarray] = None,
+        init_strength: float = 0.0,
+        init_noise_scale: float = 1.0,
+        guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
+        guidance_cuts: int = 0,
+        guidance_strength: float = 0.0,
+    ) -> np.ndarray:
+
+        p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
+        if init_image is not None:
+            p.append(image_to_prompt(init_image))
+
+        step_parameters = {
+            "scaled_step": 0,
+            "sampler": generation.SamplerParameters(cfg_scale=cfg_scale, init_noise_scale=init_noise_scale),
+        }
+
+        begin_schedule = 1.0 if init_image is None else 1.0-init_strength
+        if begin_schedule != 1.0:
+            step_parameters["schedule"] = generation.ScheduleParameters(
+                start=begin_schedule
+            )
+
+        if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
+            guidance_prompt = None
+            guiders = None
+            if guidance_cuts:
+                cutouts = generation.CutoutParameters(count=guidance_cuts)
+            else:
+                cutouts = None
+            step_parameters["guidance"] = generation.GuidanceParameters(
+                guidance_preset=guidance_preset,
+                instances=[
+                    generation.GuidanceInstanceParameters(
+                        guidance_strength=guidance_strength,
+                        models=guiders,
+                        cutouts=cutouts,
+                        prompt=guidance_prompt,
+                    )
+                ],
+            )
+
+        imageParams = {
+            "height": height,
+            "width": width,
+            "seed": [seed],
+            "steps": steps,
+            "parameters": [generation.StepParameter(**step_parameters)],
+        }
+        rq = generation.Request(
+            engine_id=self._generate.engine_id,
+            prompt=p,
+            image=generation.ImageParameters(**imageParams)
+        )        
+        rq.image.transform.diffusion = sampler
+
+        for resp in self._generate.stub.Generate(rq, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_IMAGE:
+                    nparr = np.frombuffer(artifact.binary, np.uint8)
+                    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    # these probably don't all need to be mandatory positional args
+    def inpaint(
+        self,
+        image: np.ndarray,
+        mask: np.ndarray,
+        prompts: List[str],
+        weights: List[float],
+        steps: int = 50,
+        seed: int = 0,
+        cfg_scale: float = 7.0,
+        blur_ks: int = 11,
+    ) -> np.ndarray:
+        width, height = image.shape[1], image.shape[0]
+        mask = cv2.GaussianBlur(mask, (blur_ks,blur_ks), 0)
+
+        p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
+        p.extend([
+            image_to_prompt(image),
+            image_to_prompt(mask, is_mask=True)
+        ])
+        rq = generation.Request(
+            engine_id=self._inpaint.engine_id,
+            prompt=p,
+            image=generation.ImageParameters(height=height, width=width, steps=steps, seed=[seed])
+        )
+        rq.image.parameters.append(
+            generation.StepParameter(
+                schedule=generation.ScheduleParameters(start=0.99),
+                sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
+            )
+        )
+        for resp in self._inpaint.stub.Generate(rq, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_IMAGE:
+                    nparr = np.frombuffer(artifact.binary, np.uint8)
+                    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        raise Exception(f"no image artifact returned from inpaint request")
+
+    def interpolate(
+        self,
+        images: List[np.ndarray], 
+        ratios: List[float],
+        mode: generation.InterpolateMode = generation.INTERPOLATE_LINEAR,
+    ) -> List[np.ndarray]:
+        assert(len(images) == 2)
+        assert(len(ratios) >= 1)
+
+        stub, engine_id = self._interpolate.stub, self._interpolate.engine_id
+        if mode == generation.INTERPOLATE_VAE_LINEAR or mode == generation.INTERPOLATE_VAE_SLERP:
+            stub, engine_id = self._generate.stub, self._generate.engine_id
+
+        p = [image_to_prompt(image) for image in images]
+        rq = generation.Request(
+            engine_id=engine_id,
+            prompt=p,
+            interpolate=generation.InterpolateParameters(ratios=ratios, mode=mode)
+        )
+
+        results = []
+        for resp in stub.Generate(rq, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_IMAGE:
+                    nparr = np.frombuffer(artifact.binary, np.uint8)
+                    results.append(cv2.imdecode(nparr, cv2.IMREAD_COLOR))
+        return results
+
+    def transform(
+        self,
+        images: List[np.ndarray], 
+        ops: List[generation.TransformOperation],
+    ) -> Tuple[List[np.ndarray], np.ndarray]:
+        assert(len(images))
+        assert(isinstance(images[0], np.ndarray))
+
+        transforms = generation.TransformSequence(operations=ops)
+        rq = generation.Request(
+            engine_id=self._transform.engine_id,
+            prompt=[image_to_prompt(image) for image in images],
+            image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
+        )
+
+        results, mask = [], None
+        for resp in self._transform.stub.Generate(rq, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
+                    nparr = np.frombuffer(artifact.binary, np.uint8)
+                    im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if artifact.type == generation.ARTIFACT_IMAGE:
+                        results.append(im)
+                    elif artifact.type == generation.ARTIFACT_MASK:
+                        if mask is not None:
+                            raise Exception(
+                                "multiple masks returned in response, client implementaion currently assumes no more than one mask returned"
+                            )
+                        mask = im
+        return results, mask
+
+
 class StabilityInference:
     def __init__(
         self,
@@ -259,25 +327,6 @@ class StabilityInference:
         if verbose:
             logger.info(f"Opening channel to {host}")
         self.stub = open_channel(host=host, api_key=key)
-
-# def image_gen(
-#         stub:generation_grpc.GenerationServiceStub, 
-#     width:int, 
-#     height:int, 
-#         prompts:List[str], 
-#         weights:List[str], 
-#     steps:int, 
-#     seed:int, 
-#     cfg_scale:float, 
-#     sampler: generation.DiffusionSampler,
-#     init_image:np.ndarray, # to do: this should accept PIL and fpath
-#         init_strength:float,
-#     ###############################
-#         init_noise_scale: float = 1.0,
-#     guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
-#     guidance_cuts: int = 0,
-#     guidance_strength: float = 0.0,
-# ) -> np.ndarray:
 
 
     def generate(

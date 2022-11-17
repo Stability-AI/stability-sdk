@@ -36,23 +36,30 @@ SAMPLERS: Dict[str, int] = {
 }
 
 GUIDANCE_PRESETS: Dict[str, int] = {
-        "none": generation.GUIDANCE_PRESET_NONE,
-        "simple": generation.GUIDANCE_PRESET_SIMPLE,
-        "fastblue": generation.GUIDANCE_PRESET_FAST_BLUE,
-        "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
-    }
+    "none": generation.GUIDANCE_PRESET_NONE,
+    "simple": generation.GUIDANCE_PRESET_SIMPLE,
+    "fastblue": generation.GUIDANCE_PRESET_FAST_BLUE,
+    "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
+}
 
 COLOR_SPACES =  {
-        "hsv": generation.COLOR_MATCH_HSV,
-        "lab": generation.COLOR_MATCH_LAB,
-        "rgb": generation.COLOR_MATCH_RGB,
-    }
+    "hsv": generation.COLOR_MATCH_HSV,
+    "lab": generation.COLOR_MATCH_LAB,
+    "rgb": generation.COLOR_MATCH_RGB,
+}
 
 BORDER_MODES_2D = {
     'replicate': generation.BORDER_REPLICATE,
     'reflect': generation.BORDER_REFLECT,
     'wrap': generation.BORDER_WRAP,
     'zero': generation.BORDER_ZERO,
+}
+
+INTERP_MODES = {
+    'mix': generation.INTERPOLATE_LINEAR,
+    'rife': generation.INTERPOLATE_RIFE,
+    'vae-lerp': generation.INTERPOLATE_VAE_LINEAR,
+    'vae-slerp': generation.INTERPOLATE_VAE_SLERP,
 }
 
 _2d_only_modes = ['wrap']
@@ -103,6 +110,11 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
 
 sampler_from_string = get_sampler_from_str
 
+def interp_mode_from_str(s: str) -> generation.InterpolateMode:
+    mode = INTERP_MODES.get(s.lower().strip())
+    if mode is None:
+        raise ValueError(f"invalid interpolation mode: {s}")
+    return mode
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
@@ -220,40 +232,6 @@ def key_frame_parse(string, prompt_parser=None):
 #####################################################################
 
 
-def image_xform(
-    stub:generation_grpc.GenerationServiceStub, 
-    images:List[np.ndarray], 
-    ops:List[generation.TransformOperation],
-    engine_id: str = 'transform-server-v1'
-) -> Tuple[List[np.ndarray], np.ndarray]:
-    assert(len(images))
-    transforms = generation.TransformSequence(operations=ops)
-    p = [image_to_prompt(image) for image in images]
-    rq = generation.Request(
-        engine_id=engine_id,
-        prompt=p,
-        image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
-    )
-
-    # This whole bottom portion looks like something that should be handled by "process response" or some evolved version of that
-    ######################
-    # there's an input above named "images", which has nothing to do with anything below this comment.
-    # this is super confusing. 
-    images, mask = [], None
-    for resp in stub.Generate(rq, wait_for_ready=True):
-        for artifact in resp.artifacts:
-            if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
-                nparr = np.frombuffer(artifact.binary, np.uint8)
-                im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                if artifact.type == generation.ARTIFACT_IMAGE:
-                    images.append(im)
-                elif artifact.type == generation.ARTIFACT_MASK:
-                    if mask is not None:
-                        raise Exception(
-                            "multiple masks returned in response, client implementaion currently assumes no more than one mask returned"
-                        )
-                    mask = im
-    return images, mask
 
 #################################
 # transform ops helpers
@@ -328,8 +306,6 @@ def colormatch_op(
             color_mode=color_match_from_string(color_mode),
             image= im))
 
-# why doesn't this take an image as an argument?
-# pretty confident we should parameterize this to expect an ARTIFACT_IMAGE
 def depthcalc_op(
     blend_weight:float,
     export:bool,
@@ -372,13 +348,12 @@ def blend_op(
             target=im,
         ))
 
-# this is another one that feels like it should take an init_image
 def contrast_op(
-    brightness:float,
-    contrast:float,
+    brightness: float,
+    contrast: float,
 ) -> generation.TransformOperation:
     return generation.TransformOperation(
         contrast=generation.TransformContrast(
             brightness=brightness,
             contrast=contrast,
-                        ))
+        ))
