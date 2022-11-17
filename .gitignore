@@ -1,6 +1,7 @@
 *.pyc
 *.egg-info
 #*.png
+.vscode/
 build/
 dist/
 pyenv/
