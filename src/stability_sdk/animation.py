@@ -163,6 +163,7 @@ class Animator:
         animation_prompts,
         args=None,
         out_dir='.',
+        fname_prefix='',
         #####
         # we shouldn't be treating these special. to do: more generic prompt input
         negative_prompt='',
@@ -179,6 +180,11 @@ class Animator:
         self.diffusion_cadence_ofs: int = 0
         self.keyframe_values: List[int] = None
         self.out_dir: str = out_dir
+        fname_prefix = fname_prefix
+        if fname_prefix:
+            if not fname_prefix.endswith('_'):
+                fname_prefix += '_'
+        self.fname_prefix = fname_prefix
         self.prior_frames: List[np.ndarray] = []
         self.negative_prompt: str = negative_prompt
         self.negative_prompt_weight: float = negative_prompt_weight
@@ -207,7 +213,7 @@ class Animator:
 
     def get_frame_filename(self, frame_idx, depth=False):
         prefix = "depth" if depth else "frame"
-        return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png")
+        return os.path.join(self.out_dir, f"{self.fname_prefix}{prefix}_{frame_idx:05d}.png")
 
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename)
