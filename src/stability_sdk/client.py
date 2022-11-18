@@ -39,7 +39,11 @@ else:
 
 # this is necessary because of how the auto-generated code constructs its imports
 this_path = pathlib.Path(__file__).parent.resolve()
-sys.path.append(str(this_path / "interfaces/gooseai/generation"))
+sys.path.extend([
+    str(this_path / "interfaces/src/tensorizer"),
+    str(this_path / "interfaces/src/tensorizer/tensors"),
+    str(this_path / "interfaces/gooseai/generation"),
+])
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
