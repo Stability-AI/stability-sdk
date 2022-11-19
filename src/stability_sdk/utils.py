@@ -308,7 +308,7 @@ def colormatch_op(
 
 def depthcalc_op(
     blend_weight:float,
-    export:bool,
+    export:bool = False,
 ) -> generation.TransformOperation:
     return generation.TransformOperation(                    
         depth_calc=generation.TransformDepthCalc(

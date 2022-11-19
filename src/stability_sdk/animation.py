@@ -58,6 +58,7 @@ class BasicSettings(param.Parameterized):
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
+    steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
     ####
     # missing param: n_samples = param.Integer(1, bounds=(1,9))
 
@@ -259,8 +260,13 @@ class Animator:
         if not fpath:
             return
         img = cv2.imread(fpath)
-        self.args.height, self.args.width, _ = img.shape
+        if False:
+            # TODO: options for inherit size, cover (preserve aspect ratio), fill (stretch)
+            self.args.height, self.args.width, _ = img.shape
+        else:
+            img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
         self.prior_frames = [img, img]
+        self.prior_diffused = [img, img]
 
     def setup_animation(self, resume):
         args = self.args
@@ -300,6 +306,10 @@ class Animator:
         if len(self.key_frame_values) != len(set(self.key_frame_values)):
             raise ValueError("Duplicate keyframes are not allowed!")
 
+        # initialize accumulated transforms
+        identity = self.identity()
+        self.prior_xforms = [identity, identity]
+
         # prepare video input
         video_in = args.video_init_path if args.animation_mode == 'Video Input' else None
         if video_in:
@@ -327,6 +337,7 @@ class Animator:
                 raise Exception(f"Failed to read first frame from {video_in}")
             self.video_prev_frame = cv2.resize(image, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
             self.prior_frames = [self.video_prev_frame, self.video_prev_frame]
+            self.prior_diffused = [self.video_prev_frame, self.video_prev_frame]
 
     def prepare_init(self, init_image: Optional[np.ndarray], frame_idx: int, noise_seed:int) -> Optional[np.ndarray]:
         if init_image is None:
@@ -375,7 +386,7 @@ class Animator:
             diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
             steps = int(self.frame_args.steps_series[frame_idx])
             strength = max(0.0, self.frame_args.strength_series[frame_idx])
-            adjusted_steps = int(max(5, steps*(1.0-strength/2))) #steps
+            adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
 
             # fetch set of prompts and weights for this frame
             prompts, weights = self.get_animation_prompts_weights(frame_idx)
@@ -547,6 +558,7 @@ class Animator:
             self.video_prev_frame = video_next_frame
             self.color_match_image = video_next_frame
 
-        self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
-        return mask
+            self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
+            return mask
+        return None
 
