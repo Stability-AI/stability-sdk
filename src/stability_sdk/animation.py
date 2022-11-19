@@ -371,9 +371,7 @@ class Animator:
             ))
 
         if len(init_ops):
-            assert(init_image.shape == (args.height, args.width, 3))
             init_image = self.api.transform([init_image], init_ops)[0][0]
-            assert(init_image.shape == (args.height, args.width, 3))
 
         return init_image
 
@@ -437,9 +435,6 @@ class Animator:
                     self.prior_diffused = [image, image]
                     self.prior_xforms = [identity, identity]
 
-                for i in range(2):
-                    assert(self.prior_frames[i].shape == (args.height, args.width, 3))
-
                 self.prior_diffused = [self.prior_diffused[1], image]
                 self.prior_frames = [self.prior_frames[1], image]
                 self.prior_xforms = [self.prior_xforms[1], self.identity()]
@@ -453,9 +448,6 @@ class Animator:
                     [tween], 
                     interp_mode_from_str(args.cadence_interp)
                 )[0]
-
-            for i in range(2):
-                assert(self.prior_frames[i].shape == (args.height, args.width, 3))
 
             cv2.imwrite(self.get_frame_filename(frame_idx), out_frame)
             yield cv2_to_pil(out_frame)
@@ -497,9 +489,6 @@ class Animator:
                 ))                
                 xformed, _ = self.api.transform([self.prior_diffused[i]], [op])
                 self.prior_frames[i] = xformed[0]
-
-            for i in range(2):
-                assert(self.prior_frames[i].shape == (args.height, args.width, 3))
 
             return None
         else:
