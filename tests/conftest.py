@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 this_path = pathlib.Path(__file__).parent.parent.resolve()
 sys.path.extend([
+    str(this_path / "interfaces/src/tensorizer"),
+    str(this_path / "interfaces/src/tensorizer/tensors"),
     str(this_path / "src/stability_sdk/interfaces/gooseai/generation"),
     "src"
 ])
