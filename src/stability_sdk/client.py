@@ -187,7 +187,7 @@ class Api:
                 ],
             )
 
-        imageParams = {
+        image_params = {
             "height": height,
             "width": width,
             "seed": [seed],
@@ -197,7 +197,7 @@ class Api:
         rq = generation.Request(
             engine_id=self._generate.engine_id,
             prompt=p,
-            image=generation.ImageParameters(**imageParams)
+            image=generation.ImageParameters(**image_params)
         )        
         rq.image.transform.diffusion = sampler
 
@@ -207,7 +207,6 @@ class Api:
                     nparr = np.frombuffer(artifact.binary, np.uint8)
                     return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-    # these probably don't all need to be mandatory positional args
     def inpaint(
         self,
         image: np.ndarray,
@@ -255,19 +254,15 @@ class Api:
         assert(len(images) == 2)
         assert(len(ratios) >= 1)
 
-        stub, engine_id = self._interpolate.stub, self._interpolate.engine_id
-        if mode == generation.INTERPOLATE_VAE_LINEAR or mode == generation.INTERPOLATE_VAE_SLERP:
-            stub, engine_id = self._generate.stub, self._generate.engine_id
-
         p = [image_to_prompt(image) for image in images]
         rq = generation.Request(
-            engine_id=engine_id,
+            engine_id=self._interpolate.engine_id,
             prompt=p,
             interpolate=generation.InterpolateParameters(ratios=ratios, mode=mode)
         )
 
         results = []
-        for resp in stub.Generate(rq, wait_for_ready=True):
+        for resp in self._interpolate.stub.Generate(rq, wait_for_ready=True):
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_IMAGE:
                     nparr = np.frombuffer(artifact.binary, np.uint8)
