@@ -324,10 +324,11 @@ class Animator:
             self.start_frame_idx = len(frames)
             self.diffusion_cadence_ofs = self.start_frame_idx
             if self.start_frame_idx > 2:
-                self.prior_frames = [
-                    cv2.imread(self.get_frame_filename(self.start_frame_idx-2)),
-                    cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
-                ]
+                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-2))
+                next = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
+                self.prior_frames = [prev, next]
+                self.prior_diffused = [prev, next]
+
 
     def load_video(self, video_in):
         self.video_reader = cv2.VideoCapture(video_in)
