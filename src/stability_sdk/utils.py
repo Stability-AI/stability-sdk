@@ -116,6 +116,22 @@ def interp_mode_from_str(s: str) -> generation.InterpolateMode:
         raise ValueError(f"invalid interpolation mode: {s}")
     return mode
 
+def artifact_type_to_str(artifact_type: generation.ArtifactType):
+    """
+    Convert ArtifactType to a string.
+    :param artifact_type: The ArtifactType to convert.
+    :return: String representation of the ArtifactType.
+    """
+    try:
+        return generation.ArtifactType.Name(artifact_type)
+    except ValueError:
+        logging.warning(
+            f"Received artifact of type {artifact_type}, which is not recognized in the loaded protobuf definition.\n"
+            "If you are seeing this message, you might be using an old version of the client library. Please update your client via `pip install --upgrade stability-sdk`\n"
+            "If updating the client does not make this warning message go away, please report this behavior to https://github.com/Stability-AI/stability-sdk/issues/new"
+        )
+        return "ARTIFACT_UNRECOGNIZED"
+
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
     Constructs an output filename from a collection of required fields.

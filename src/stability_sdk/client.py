@@ -37,20 +37,13 @@ except ModuleNotFoundError:
 else:
     load_dotenv()
 
-# this is necessary because of how the auto-generated code constructs its imports
-this_path = pathlib.Path(__file__).parent.resolve()
-sys.path.extend([
-    str(this_path / "interfaces/src/tensorizer"),
-    str(this_path / "interfaces/src/tensorizer/tensors"),
-    str(this_path / "interfaces/gooseai/generation"),
-])
-
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
 from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
+    artifact_type_to_str,
     image_to_prompt,
     open_images,
     sampler_from_string,
@@ -103,7 +96,7 @@ def process_artifacts_from_answers(
                 with open(out_p, "wb") as f:
                     f.write(bytes(contents))
                     if verbose:
-                        artifact_t = generation.ArtifactType.Name(artifact.type)
+                        artifact_t = artifact_type_to_str(artifact.type)
                         logger.info(f"wrote {artifact_t} to {out_p}")
 
             yield (out_p, artifact)
@@ -494,7 +487,7 @@ class StabilityInference:
             if self.verbose:
                 if len(answer.artifacts) > 0:
                     artifact_ts = [
-                        generation.ArtifactType.Name(artifact.type)
+                        artifact_type_to_str(artifact.type)
                         for artifact in answer.artifacts
                     ]
                     logger.info(

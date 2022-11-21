@@ -2,7 +2,6 @@
 
 from setuptools import (
     setup,
-    find_packages,
     find_namespace_packages,
 )
 
@@ -11,7 +10,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.2.7',
+    version='0.2.9',
     author='Wes Brown',
     author_email='wesbrown18@gmail.com',
     maintainer='David Marx',
@@ -40,7 +39,7 @@ setup(
             'opencv-python-headless',
         ]
     },
-    packages=find_packages(
+    packages=find_namespace_packages(
         where='src',
         include=['stability_sdk*'],
     ),
