@@ -58,6 +58,7 @@ class BasicSettings(param.Parameterized):
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
+    init_sizing = param.ObjectSelector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
     steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
     ####
     # missing param: n_samples = param.Integer(1, bounds=(1,9))
@@ -260,11 +261,19 @@ class Animator:
         if not fpath:
             return
         img = cv2.imread(fpath)
-        if False:
-            # TODO: options for inherit size, cover (preserve aspect ratio), fill (stretch)
-            self.args.height, self.args.width, _ = img.shape
-        else:
+        height, width, _ = img.shape
+        if self.args.init_sizing == 'cover':
+            scale = max(self.args.width / width, self.args.height / height)
+            img = cv2.resize(img, (int(width * scale), int(height * scale)))
+            x = (img.shape[1] - self.args.width) // 2
+            y = (img.shape[0] - self.args.height) // 2
+            img = img[y:y+self.args.height, x:x+self.args.width]
+        elif self.args.init_sizing == 'stretch':
             img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+        else: # 'resize-canvas'
+            width, height = map(lambda x: x - x % 64, (width, height))
+            self.args.width, self.args.height = width, height
+            
         self.prior_frames = [img, img]
         self.prior_diffused = [img, img]
 
