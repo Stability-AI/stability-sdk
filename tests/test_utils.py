@@ -1,7 +1,6 @@
-from typing import ByteString
-
 import pytest
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
+
+from typing import ByteString
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk.utils import (
