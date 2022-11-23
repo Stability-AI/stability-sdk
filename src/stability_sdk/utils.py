@@ -173,9 +173,19 @@ def open_images(
         yield (path, artifact)
 
 
-def image_mix(img_a: np.ndarray, img_b: np.ndarray, tween: float) -> np.ndarray:
-    assert(img_a.shape == img_b.shape)
-    return (img_a.astype(float)*(1.0-tween) + img_b.astype(float)*tween).astype(img_a.dtype)
+def image_mix(img_a: np.ndarray, img_b: np.ndarray, tween: Union[float, np.ndarray]) -> np.ndarray:
+    if img_a.shape != img_b.shape:
+        raise ValueError(f"img_a shape {tween.shape} does not match img_b shape {img_a.shape}")
+
+    if isinstance(tween, np.ndarray):
+        if tween.shape[:2] != img_a.shape[:2]:
+            raise ValueError(f"tween dimensions {tween.shape[:2]} do not match image dimensions {img_a.shape[:2]}")
+        if tween.dtype == np.uint8:
+            tween = tween.astype(np.float32) / 255.0
+        if len(tween.shape) == 2:
+            tween = np.repeat(tween[:,:,None], 3, axis=2)
+        
+    return (img_a.astype(np.float32)*(1.0-tween) + img_b.astype(np.float32)*tween).astype(img_a.dtype)
 
 def image_to_jpg_bytes(image: np.ndarray, quality: int=90):
     return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
@@ -202,7 +212,7 @@ def image_to_prompt(
         raise NotImplementedError
     
     return generation.Prompt(
-        parameters=generation.PromptParameters(init=not is_mask), # is this right?
+        parameters=generation.PromptParameters(init=not is_mask),
         artifact=generation.Artifact(
             type=generation.ARTIFACT_MASK if is_mask else generation.ARTIFACT_IMAGE,
             binary=image))

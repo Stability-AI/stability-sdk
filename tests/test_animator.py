@@ -70,8 +70,8 @@ def test_init_image_from_input(impath):
     artist = Animator(api=client.Api(None), args=AnimationArgs(), animation_prompts=animation_prompts)
     print(artist.prior_frames)
     assert len(artist.prior_frames) == 0
-    artist.prepare_init_image()
+    artist.load_init_image()
     assert len(artist.prior_frames) == 0
     assert Path(impath).exists()
-    artist.prepare_init_image(impath)
+    artist.load_init_image(impath)
     assert len(artist.prior_frames) == 2

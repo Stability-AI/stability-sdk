@@ -44,6 +44,7 @@ from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
     artifact_type_to_str,
+    image_mix,
     image_to_prompt,
     open_images,
     sampler_from_string,
@@ -141,6 +142,8 @@ class Api:
         init_image: Optional[np.ndarray] = None,
         init_strength: float = 0.0,
         init_noise_scale: float = 1.0,
+        mask: Optional[np.ndarray] = None,
+        masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
@@ -149,6 +152,8 @@ class Api:
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
             p.append(image_to_prompt(init_image))
+            if mask is not None:
+                p.append(image_to_prompt(mask, is_mask=True))
 
         step_parameters = {
             "scaled_step": 0,
@@ -186,6 +191,7 @@ class Api:
             "seed": [seed],
             "steps": steps,
             "parameters": [generation.StepParameter(**step_parameters)],
+            "masked_area_init": masked_area_init,
         }
         rq = generation.Request(
             engine_id=self._generate.engine_id,
@@ -194,11 +200,19 @@ class Api:
         )        
         rq.image.transform.diffusion = sampler
 
+        result = None
         for resp in self._generate.stub.Generate(rq, wait_for_ready=True):
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_IMAGE:
                     nparr = np.frombuffer(artifact.binary, np.uint8)
-                    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    result = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    break
+
+        # force pixels in unmasked areas not to change
+        if init_image is not None and mask is not None:
+            result = image_mix(result, init_image, mask)
+
+        return result
 
     def inpaint(
         self,

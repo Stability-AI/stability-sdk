@@ -15,6 +15,7 @@ from typing import Generator, List, Optional, Tuple
 from stability_sdk.client import (
     Api,
     generation,
+    image_mix
 )
 
 from stability_sdk.utils import (
@@ -60,6 +61,8 @@ class BasicSettings(param.Parameterized):
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
     init_sizing = param.ObjectSelector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
     steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
+    mask_path = param.String(default="", doc="Path to image or video mask")
+    mask_invert = param.Boolean(default=False, doc="White in mask marks areas to change by default.")
     ####
     # missing param: n_samples = param.Integer(1, bounds=(1,9))
 
@@ -196,6 +199,8 @@ class Animator:
         self.frame_args = None
         self.keyframe_values: List[int] = None
         self.out_dir: str = out_dir
+        self.mask: Optional[np.ndarray] = None
+        self.mask_reader = None
         self.prior_frames: List[np.ndarray] = []    # forward warped prior frames
         self.prior_diffused: List[np.ndarray] = []  # results of diffusion
         self.prior_xforms: List[np.ndarray] = []    # accumulated transforms since last diffusion
@@ -255,28 +260,6 @@ class Animator:
             save_dict['negative_prompt_weight'] = self.negative_prompt_weight
             json.dump(save_dict, f, ensure_ascii=False, indent=4)
 
-    def prepare_init_image(self, fpath=None):
-        if fpath is None:
-            fpath =  self.args.init_image
-        if not fpath:
-            return
-        img = cv2.imread(fpath)
-        height, width, _ = img.shape
-        if self.args.init_sizing == 'cover':
-            scale = max(self.args.width / width, self.args.height / height)
-            img = cv2.resize(img, (int(width * scale), int(height * scale)))
-            x = (img.shape[1] - self.args.width) // 2
-            y = (img.shape[0] - self.args.height) // 2
-            img = img[y:y+self.args.height, x:x+self.args.width]
-        elif self.args.init_sizing == 'stretch':
-            img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
-        else: # 'resize-canvas'
-            width, height = map(lambda x: x - x % 64, (width, height))
-            self.args.width, self.args.height = width, height
-            
-        self.prior_frames = [img, img]
-        self.prior_diffused = [img, img]
-
     def setup_animation(self, resume):
         args = self.args
 
@@ -319,13 +302,10 @@ class Animator:
         identity = self.identity()
         self.prior_xforms = [identity, identity]
 
-        # prepare video input
-        video_in = args.video_init_path if args.animation_mode == 'Video Input' else None
-        if video_in:
-            self.load_video(video_in)
-        
-        # what it says
-        self.prepare_init_image()
+        # prepare inputs
+        self.load_mask()
+        self.load_video()
+        self.load_init_image()
 
         # handle resuming animation from last frames of a previous run
         if resume:
@@ -338,16 +318,68 @@ class Animator:
                 self.prior_frames = [prev, next]
                 self.prior_diffused = [prev, next]
 
+    def load_init_image(self, fpath=None):
+        if fpath is None:
+            fpath =  self.args.init_image
+        if not fpath:
+            return
+        img = cv2.imread(fpath)
+        height, width, _ = img.shape
+        if self.args.init_sizing == 'cover':
+            scale = max(self.args.width / width, self.args.height / height)
+            img = cv2.resize(img, (int(width * scale), int(height * scale)))
+            x = (img.shape[1] - self.args.width) // 2
+            y = (img.shape[0] - self.args.height) // 2
+            img = img[y:y+self.args.height, x:x+self.args.width]
+        elif self.args.init_sizing == 'stretch':
+            img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+        else: # 'resize-canvas'
+            width, height = map(lambda x: x - x % 64, (width, height))
+            self.args.width, self.args.height = width, height
+            
+        self.prior_frames = [img, img]
+        self.prior_diffused = [img, img]
 
-    def load_video(self, video_in):
-        self.video_reader = cv2.VideoCapture(video_in)
+    def load_mask(self):
+        if not self.args.mask_path:
+            return
+
+        # try to load mask as an image
+        mask = cv2.imread(self.args.mask_path)
+        if mask is not None:
+            self.set_mask(mask)
+
+        # try to load mask as a video
+        if self.mask is None:
+            self.mask_reader = cv2.VideoCapture(self.args.mask_path)            
+            self.next_mask()
+
+        if self.mask is None:
+            raise Exception(f"Failed to read mask from {self.args.mask_path}")
+
+    def load_video(self):
+        if self.args.animation_mode != 'Video Input' or not self.args.video_init_path:
+            return
+
+        self.video_reader = cv2.VideoCapture(self.args.video_init_path)
         if self.video_reader is not None:
             success, image = self.video_reader.read()
             if not success:
-                raise Exception(f"Failed to read first frame from {video_in}")
+                raise Exception(f"Failed to read first frame from {self.args.video_init_path}")
             self.video_prev_frame = cv2.resize(image, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
             self.prior_frames = [self.video_prev_frame, self.video_prev_frame]
             self.prior_diffused = [self.video_prev_frame, self.video_prev_frame]
+
+    def next_mask(self):
+        if not self.mask_reader:
+            return False
+
+        for _ in range(self.args.extract_nth_frame):
+            success, mask = self.mask_reader.read()
+            if not success:
+                return
+
+        self.set_mask(mask)
 
     def prepare_init(self, init_image: Optional[np.ndarray], frame_idx: int, noise_seed:int) -> Optional[np.ndarray]:
         if init_image is None:
@@ -385,7 +417,6 @@ class Animator:
 
         return init_image
 
-
     def render(self) -> Generator[Image.Image, None, None]:
         args = self.args
         seed = args.seed
@@ -403,16 +434,26 @@ class Animator:
                 weights.append(-abs(self.negative_prompt_weight))
 
             # transform prior frames
+            inpaint_mask = None
+            stashed_prior_frames = [i.copy() for i in self.prior_frames] if self.mask is not None else None
             if args.animation_mode == '2D':
-                mask = self.transform_2d(frame_idx)
+                inpaint_mask = self.transform_2d(frame_idx)
             elif args.animation_mode == '3D':
-                mask = self.transform_3d(frame_idx)
+                inpaint_mask = self.transform_3d(frame_idx)
             elif args.animation_mode == 'Video Input':
-                mask = self.transform_video(frame_idx)
+                inpaint_mask = self.transform_video(frame_idx)
 
             # apply inpainting
-            if args.inpaint_border and mask is not None:
-                self.apply_inpainting(mask, prompts, weights, adjusted_steps, seed)
+            if args.inpaint_border and inpaint_mask is not None:
+                self.apply_inpainting(inpaint_mask, prompts, weights, adjusted_steps, seed)
+
+            # update diffusion mask
+            self.next_mask()
+
+            # apply mask to transformed prior frames
+            if self.mask is not None:
+                for i in range(len(self.prior_frames)):
+                    self.prior_frames[i] = image_mix(self.prior_frames[i], stashed_prior_frames[i], self.mask)
 
             # either run diffusion or emit an inbetween frame
             if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
@@ -434,6 +475,8 @@ class Animator:
                     init_image=init_image, 
                     init_strength=strength,
                     init_noise_scale=noise_scale, 
+                    mask = self.mask,
+                    masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                     guidance_preset=guidance,
                 )
 
@@ -468,22 +511,34 @@ class Animator:
             if not args.locked_seed:
                 seed += 1
 
+    def set_mask(self, mask: np.ndarray):
+        self.mask = cv2.resize(mask, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+        self.mask = cv2.cvtColor(self.mask, cv2.COLOR_BGR2GRAY)
+
+        # this is intentionally flipped because we want white in the mask to represent
+        # areas that should change which is opposite from the backend which treats
+        # the mask as per pixel offset in the schedule starting value
+        if not self.args.mask_invert:
+            self.mask = 255 - self.mask
+
     def transform_2d(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
-            return []
+            return None
 
         args, frame_args = self.args, self.frame_args
+        angle = frame_args.angle_series[frame_idx]
+        scale = frame_args.zoom_series[frame_idx]
+        dx = frame_args.translation_x_series[frame_idx]
+        dy = frame_args.translation_y_series[frame_idx]
+
+        if angle == 0.0 and scale == 1.0 and dx == 0.0 and dy == 0.0:
+            return None
+
         if args.accumulate_xforms:
             frame_args = self.frame_args
 
             # create xform for the current frame
-            xform = make_xform_2d(
-                args.width, args.height,
-                frame_args.angle_series[frame_idx], 
-                frame_args.zoom_series[frame_idx], 
-                frame_args.translation_x_series[frame_idx], 
-                frame_args.translation_y_series[frame_idx]
-            )
+            xform = make_xform_2d(args.width, args.height, angle, scale, dx, dy)
 
             # apply xform to prior frames running xforms
             for i in range(len(self.prior_xforms)):
@@ -504,17 +559,15 @@ class Animator:
         else:
             op = warp2d_op(
                 border_mode=args.border,
-                rotate=frame_args.angle_series[frame_idx], 
-                scale=frame_args.zoom_series[frame_idx], 
-                translate_x=frame_args.translation_x_series[frame_idx], 
-                translate_y=frame_args.translation_y_series[frame_idx], 
+                rotate=angle, scale=scale, 
+                translate_x=dx, translate_y=dy, 
             )
             self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
             return mask
 
     def transform_3d(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
-            return []
+            return None
 
         args, frame_args = self.args, self.frame_args
         ops = [
@@ -537,7 +590,7 @@ class Animator:
 
     def transform_video(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
-            return []
+            return None
 
         op = None
         args = self.args
