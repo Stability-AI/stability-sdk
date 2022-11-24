@@ -35,8 +35,10 @@ def test_get_weights():
     artist.get_animation_prompts_weights(frame_idx=0)
 
 def test_load_video(vidpath):
-    artist = Animator(api=client.Api(None), args=AnimationArgs(), animation_prompts=animation_prompts)
-    artist.load_video(video_in=vidpath)
+    args = AnimationArgs()
+    args.animation_mode = 'Video Input'
+    args.video_init_path = vidpath
+    artist = Animator(api=client.Api(None), args=args, animation_prompts=animation_prompts)
     assert len(artist.prior_frames) > 0
     assert artist.video_prev_frame is not None
     assert all([v is not None for v in artist.prior_frames]) 
@@ -44,12 +46,11 @@ def test_load_video(vidpath):
 @pytest.mark.parametrize('animation_mode', ['Video Input','2D','3D'])
 def test_render(animation_mode, grpc_addr, grpc_server, vidpath):
     args = AnimationArgs()
-    args.animation_mode=animation_mode
+    args.animation_mode = animation_mode
     args.video_init_path = vidpath
     stub = client.open_channel(grpc_addr[0])
     artist = Animator(api=client.Api(None), args=args, animation_prompts=animation_prompts)
     if animation_mode == 'Video Input':
-        artist.load_video(video_in=vidpath)
         print(len(artist.prior_frames))
         print([type(p) for p in artist.prior_frames])
     # to do: better mocking
