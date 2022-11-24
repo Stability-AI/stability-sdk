@@ -114,7 +114,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-v1-5",
+        engine: str = "stable-diffusion-v2-0",
         verbose: bool = False,
         wait_for_ready: bool = True,
     ):
