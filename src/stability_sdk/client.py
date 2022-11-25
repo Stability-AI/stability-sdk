@@ -170,8 +170,7 @@ class Api:
         :return: The generated image
         """
 
-        #p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
-        p = [generation.Prompt(text=prompt) for prompt,weight in zip(prompts, weights)]
+        p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
             p.append(image_to_prompt(init_image))
             if mask is not None:
