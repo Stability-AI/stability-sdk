@@ -148,8 +148,30 @@ class Api:
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
     ) -> np.ndarray:
+        """
+        Generate an image from a set of weighted prompts.
 
-        p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
+        :param prompts: List of text prompts
+        :param weights: List of prompt weights
+        :param width: Width of the generated image
+        :param height: Height of the generated image
+        :param steps: Number of steps to run the diffusion process
+        :param seed: Random seed for the starting noise
+        :param cfg_scale: Classifier free guidance scale
+        :param sampler: Sampler to use for the diffusion process
+        :param init_image: Initial image to use
+        :param init_strength: Strength of the initial image
+        :param init_noise_scale: Scale of the initial noise
+        :param mask: Mask to use (0 for pixels to change, 255 for pixels to keep)
+        :param masked_area_init: How to initialize the masked area
+        :param guidance_preset: Preset to use for CLIP guidance
+        :param guidance_cuts: Number of cuts to use with CLIP guidance
+        :param guidance_strength: Strength of CLIP guidance
+        :return: The generated image
+        """
+
+        #p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
+        p = [generation.Prompt(text=prompt) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
             p.append(image_to_prompt(init_image))
             if mask is not None:
@@ -223,10 +245,23 @@ class Api:
         steps: int = 50,
         seed: int = 0,
         cfg_scale: float = 7.0,
-        blur_ks: int = 11,
+        blur_radius: int = 5,
     ) -> np.ndarray:
+        """
+        Apply inpainting to an image.
+
+        :param image: Source image
+        :param mask: Mask image with 0 for pixels to change and 255 for pixels to keep
+        :param prompts: List of text prompts
+        :param weights: List of prompt weights
+        :param steps: Number of steps to run
+        :param seed: Random seed
+        :param cfg_scale: Classifier free guidance scale
+        :param blur_radius: Radius of gaussian blur kernel to apply to mask
+        :return: Inpainted image
+        """
         width, height = image.shape[1], image.shape[0]
-        mask = cv2.GaussianBlur(mask, (blur_ks,blur_ks), 0)
+        mask = cv2.GaussianBlur(mask, (blur_radius*2+1,blur_radius*2+1), 0)
 
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         p.extend([
@@ -258,8 +293,16 @@ class Api:
         ratios: List[float],
         mode: generation.InterpolateMode = generation.INTERPOLATE_LINEAR,
     ) -> List[np.ndarray]:
-        assert(len(images) == 2)
-        assert(len(ratios) >= 1)
+        """
+        Interpolate between two images
+
+        :param images: Two images with matching resolution
+        :param ratios: In-between ratios to interpolate at
+        :param mode: Interpolation mode
+        :return: One image artifact for each ratio
+        """
+        assert len(images) == 2
+        assert len(ratios) >= 1
 
         p = [image_to_prompt(image) for image in images]
         rq = generation.Request(
@@ -281,8 +324,15 @@ class Api:
         images: List[np.ndarray], 
         ops: List[generation.TransformOperation],
     ) -> Tuple[List[np.ndarray], np.ndarray]:
-        assert(len(images))
-        assert(isinstance(images[0], np.ndarray))
+        """
+        Transform images
+
+        :param images: One or more images to transform
+        :param ops: Transform operations to apply to each image
+        :return: One image artifact for each image and one transform dependent mask
+        """
+        assert len(images)
+        assert isinstance(images[0], np.ndarray)
 
         transforms = generation.TransformSequence(operations=ops)
         rq = generation.Request(

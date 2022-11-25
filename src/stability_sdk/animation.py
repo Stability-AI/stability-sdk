@@ -159,7 +159,7 @@ def args2dict_param(args):
     return OrderedDict(args.param.values())
 
 def cv2_to_pil(img):
-    assert(img is not None)
+    assert img is not None
     return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
 def make_xform_2d(
@@ -222,7 +222,7 @@ class Animator:
                 steps=inpaint_steps,
                 seed=seed,
                 cfg_scale=self.args.cfg_scale,
-                blur_ks=11,
+                blur_radius=5,
             )
 
     def generate_depth_image(self, image: np.ndarray) -> np.ndarray:

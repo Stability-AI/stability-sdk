@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from typing import ByteString
@@ -10,13 +11,13 @@ from stability_sdk.utils import (
     COLOR_SPACES,
     GUIDANCE_PRESETS,
     SAMPLERS,
+    artifact_type_to_str,
     border_mode_from_str_2d,
     border_mode_from_str_3d,
     color_match_from_string,
-    sampler_from_string,
-    guidance_from_string,
-    artifact_type_to_str,
     get_sampler_from_str,
+    guidance_from_string,
+    sampler_from_string,
     truncate_fit,
     ########
     image_mix,
@@ -27,13 +28,13 @@ from stability_sdk.utils import (
     key_frame_inbetweens,
     key_frame_parse,
     #########
+    blend_op,
+    colormatch_op,
+    contrast_op,
+    depthcalc_op,
     warp2d_op,
     warp3d_op,
-    colormatch_op,
-    depthcalc_op,
     warpflow_op,
-    blend_op,
-    contrast_op,
 )
 
 @pytest.mark.parametrize("border", BORDER_MODES_2D.keys())
@@ -44,7 +45,6 @@ def test_border_mode_from_str_2d_valid(border):
 def test_border_mode_from_str_2d_invalid():
     with pytest.raises(ValueError, match="invalid 2d border mode"):
         border_mode_from_str_2d(s='not a real border mode')
-
 
 @pytest.mark.parametrize("border", BORDER_MODES_3D.keys())
 def test_border_mode_from_str_3d_valid(border):
@@ -117,12 +117,31 @@ def test_truncate_fit1():
  
 ####################3
 
-# to do: this should fail for lerp values outside [0,1]
 def test_image_mix(np_image):
     outv = image_mix(
         img_a=np_image,
         img_b=np_image,
-        tween=0.5
+        ratio=0.5
+    )
+    assert isinstance(outv, type(np_image))
+    assert outv.shape == np_image.shape
+
+def test_image_mix_per_channel(np_image):
+    per_channel_ratios = np.full(np_image.shape, 0.5)
+    outv = image_mix(
+        img_a=np_image,
+        img_b=np_image,
+        ratio=per_channel_ratios
+    )
+    assert isinstance(outv, type(np_image))
+    assert outv.shape == np_image.shape
+
+def test_image_mix_per_pixel(np_image):
+    per_pixel_ratios = np.full(np_image.shape[:2], 0.5)
+    outv = image_mix(
+        img_a=np_image,
+        img_b=np_image,
+        ratio=per_pixel_ratios
     )
     assert isinstance(outv, type(np_image))
     assert outv.shape == np_image.shape
