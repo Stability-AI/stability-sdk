@@ -1,8 +1,13 @@
 *.pyc
 *.egg-info
-*.png
+#*.png
+.vscode/
+build/
 dist/
 pyenv/
 *venv/
 .env
 generation-*.pb.json
+*settings.txt
+
+Pipfile*

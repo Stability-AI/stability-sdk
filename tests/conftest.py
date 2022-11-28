@@ -1,7 +1,9 @@
 from concurrent import futures
 
 import grpc
+import numpy as np
 import pytest
+from PIL import Image
 
 import logging
 import pathlib
@@ -18,6 +20,7 @@ sys.path.extend([str(genPath), str(tensPath)])
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+from stability_sdk.animation import AnimationArgs
 
 # modified from https://github.com/justdoit0823/grpc-resolver/blob/master/tests/conftest.py
 
@@ -38,3 +41,22 @@ def grpc_server(grpc_addr):
     server.start()
     yield server
     server.stop(0)
+
+@pytest.fixture(scope='module')
+def impath():
+    #impath = "tests\assets\4166726513_giant__rainbow_sequoia__tree_by_hayao_miyazaki___earth_tones__a_row_of_western_cedar_nurse_trees_che.png"
+    return str(next(pathlib.Path('.').glob('**/tests/assets/*.png')).resolve())
+
+@pytest.fixture(scope='module')
+def pil_image(impath):
+    return Image.open(impath)
+
+@pytest.fixture(scope='module')
+def np_image(pil_image):
+    return np.array(pil_image)
+
+@pytest.fixture(scope='module')
+def vidpath():
+    return str(next(pathlib.Path('.').glob('**/tests/assets/*.mp4')))
+
+

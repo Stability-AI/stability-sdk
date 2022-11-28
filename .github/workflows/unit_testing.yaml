@@ -21,13 +21,17 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             **/setup.py
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Install OpenCV
+        run: |
+          pip install opencv-python-headless
       - name: Install package
         run: |
-          pip install .[dev]
+          pip install .[dev,anim]
       - name: Test with pytest
         run: |
           pytest -s --ignore=src/stability_sdk/interfaces

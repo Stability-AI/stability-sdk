@@ -1,6 +1,9 @@
 # fmt: off
 
-from setuptools import setup, find_namespace_packages
+from setuptools import (
+    setup,
+    find_namespace_packages,
+)
 
 with open('README.md','r') as f:
     README = f.read()
@@ -14,29 +17,33 @@ setup(
     maintainer_email='david@stability.ai',
     url='https://beta.dreamstudio.ai/',
     download_url='https://github.com/Stability-AI/stability-sdk/',
-
     description='Python SDK for interacting with stability.ai APIs',
     long_description=README,
     long_description_content_type="text/markdown",
-
     install_requires=[
         'Pillow',
         'grpcio==1.48.1',
         'grpcio-tools==1.48.1',
         'python-dotenv',
-        'protobuf==3.19.5'
+        'protobuf==3.19.5',        
+        'param',
     ],
     extras_require={
         'dev': [
             'pytest',
             'grpcio-testing'
-    ]},
+        ],
+        'anim': [
+            'numpy',
+            'pandas',
+            'opencv-python-headless',
+        ]
+    },
     packages=find_namespace_packages(
         where='src',
         include=['stability_sdk*'],
     ),
     package_dir = {"": "src"},
-
     classifiers=[
         'Intended Audience :: Developers',
         'Intended Audience :: Education',
