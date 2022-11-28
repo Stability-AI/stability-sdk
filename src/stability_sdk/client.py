@@ -404,7 +404,7 @@ if __name__ == "__main__":
         help="[k_lms] (" + ", ".join(SAMPLERS.keys()) + ")",
     )
     parser.add_argument(
-        "--steps", "-s", type=int, default=50, help="[50] number of steps"
+        "--steps", "-s", type=int, default=30, help="[30] number of steps"
     )
     parser.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
     parser.add_argument(
