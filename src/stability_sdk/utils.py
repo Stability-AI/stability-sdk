@@ -207,9 +207,9 @@ def pil_image_to_png_bytes(image: Image.Image):
     return buf.getvalue()
 
 def image_to_prompt(
-        image: Union[np.ndarray, Image.Image],
-        is_mask=False,
-    ) -> generation.Prompt:
+    image: Union[np.ndarray, Image.Image],
+    is_mask: bool = False
+) -> generation.Prompt:
     if isinstance(image, np.ndarray):
         image = image_to_png_bytes(image)
     elif isinstance(image, Image.Image):

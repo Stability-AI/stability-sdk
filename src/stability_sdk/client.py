@@ -298,7 +298,7 @@ class Api:
         :param images: Two images with matching resolution
         :param ratios: In-between ratios to interpolate at
         :param mode: Interpolation mode
-        :return: One image artifact for each ratio
+        :return: One image for each ratio
         """
         assert len(images) == 2
         assert len(ratios) >= 1
