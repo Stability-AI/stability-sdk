@@ -65,7 +65,7 @@ optional arguments:
   --num_samples NUM_SAMPLES, -n NUM_SAMPLES
                         number of samples to generate
   --show                open artifacts using PIL
-  --engine, -e          engine to use for inference
+  --engine, -e          engine to use for inference: stable-diffusion-v1 stable-diffusion-v1-5 stable-diffusion-512-v2-0 stable-diffusion-768-v2-0 stable-inpainting-v1-0 stable-inpainting-512-v2-0
 ```
 
 
@@ -90,3 +90,9 @@ protobuf definition to compile stubs for your language:
 Unless otherwise specified, usage of the dreamstudio API falls under the same usage terms as the dreamstudio web interface: 
 
 * https://beta.dreamstudio.ai/terms-of-service
+
+## Stability platform
+
+Getting started:
+
+* https://platform.stability.ai/docs/getting-started
