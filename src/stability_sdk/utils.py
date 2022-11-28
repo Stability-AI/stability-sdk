@@ -36,23 +36,30 @@ SAMPLERS: Dict[str, int] = {
 }
 
 GUIDANCE_PRESETS: Dict[str, int] = {
-        "none": generation.GUIDANCE_PRESET_NONE,
-        "simple": generation.GUIDANCE_PRESET_SIMPLE,
-        "fastblue": generation.GUIDANCE_PRESET_FAST_BLUE,
-        "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
-    }
+    "none": generation.GUIDANCE_PRESET_NONE,
+    "simple": generation.GUIDANCE_PRESET_SIMPLE,
+    "fastblue": generation.GUIDANCE_PRESET_FAST_BLUE,
+    "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
+}
 
 COLOR_SPACES =  {
-        "hsv": generation.COLOR_MATCH_HSV,
-        "lab": generation.COLOR_MATCH_LAB,
-        "rgb": generation.COLOR_MATCH_RGB,
-    }
+    "hsv": generation.COLOR_MATCH_HSV,
+    "lab": generation.COLOR_MATCH_LAB,
+    "rgb": generation.COLOR_MATCH_RGB,
+}
 
 BORDER_MODES_2D = {
     'replicate': generation.BORDER_REPLICATE,
     'reflect': generation.BORDER_REFLECT,
     'wrap': generation.BORDER_WRAP,
     'zero': generation.BORDER_ZERO,
+}
+
+INTERP_MODES = {
+    'mix': generation.INTERPOLATE_LINEAR,
+    'rife': generation.INTERPOLATE_RIFE,
+    'vae-lerp': generation.INTERPOLATE_VAE_LINEAR,
+    'vae-slerp': generation.INTERPOLATE_VAE_SLERP,
 }
 
 _2d_only_modes = ['wrap']
@@ -103,6 +110,27 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
 
 sampler_from_string = get_sampler_from_str
 
+def interp_mode_from_str(s: str) -> generation.InterpolateMode:
+    mode = INTERP_MODES.get(s.lower().strip())
+    if mode is None:
+        raise ValueError(f"invalid interpolation mode: {s}")
+    return mode
+
+def artifact_type_to_str(artifact_type: generation.ArtifactType):
+    """
+    Convert ArtifactType to a string.
+    :param artifact_type: The ArtifactType to convert.
+    :return: String representation of the ArtifactType.
+    """
+    try:
+        return generation.ArtifactType.Name(artifact_type)
+    except ValueError:
+        logging.warning(
+            f"Received artifact of type {artifact_type}, which is not recognized in the loaded protobuf definition.\n"
+            "If you are seeing this message, you might be using an old version of the client library. Please update your client via `pip install --upgrade stability-sdk`\n"
+            "If updating the client does not make this warning message go away, please report this behavior to https://github.com/Stability-AI/stability-sdk/issues/new"
+        )
+        return "ARTIFACT_UNRECOGNIZED"
 
 def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
     """
@@ -145,9 +173,26 @@ def open_images(
         yield (path, artifact)
 
 
-def image_mix(img_a: np.ndarray, img_b: np.ndarray, tween: float) -> np.ndarray:
-    assert(img_a.shape == img_b.shape)
-    return (img_a.astype(float)*(1.0-tween) + img_b.astype(float)*tween).astype(img_a.dtype)
+def image_mix(img_a: np.ndarray, img_b: np.ndarray, ratio: Union[float, np.ndarray]) -> np.ndarray:
+    """
+    Performs a linear interpolation between two images
+    :param img_a: The first image.
+    :param img_b: The second image.
+    :param ratio: A float (or ndarray of per-pixel floats) for in-between ratio
+    :return: The mixed image
+    """
+    if img_a.shape != img_b.shape:
+        raise ValueError(f"img_a shape {ratio.shape} does not match img_b shape {img_a.shape}")
+
+    if isinstance(ratio, np.ndarray):
+        if ratio.shape[:2] != img_a.shape[:2]:
+            raise ValueError(f"tween dimensions {ratio.shape[:2]} do not match image dimensions {img_a.shape[:2]}")
+        if ratio.dtype == np.uint8:
+            ratio = ratio.astype(np.float32) / 255.0
+        if len(ratio.shape) == 2:
+            ratio = np.repeat(ratio[:,:,None], 3, axis=2)
+        
+    return (img_a.astype(np.float32)*(1.0-ratio) + img_b.astype(np.float32)*ratio).astype(img_a.dtype)
 
 def image_to_jpg_bytes(image: np.ndarray, quality: int=90):
     return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
@@ -162,9 +207,9 @@ def pil_image_to_png_bytes(image: Image.Image):
     return buf.getvalue()
 
 def image_to_prompt(
-        image: Union[np.ndarray, Image.Image],
-        is_mask=False,
-    ) -> generation.Prompt:
+    image: Union[np.ndarray, Image.Image],
+    is_mask: bool = False
+) -> generation.Prompt:
     if isinstance(image, np.ndarray):
         image = image_to_png_bytes(image)
     elif isinstance(image, Image.Image):
@@ -174,7 +219,7 @@ def image_to_prompt(
         raise NotImplementedError
     
     return generation.Prompt(
-        parameters=generation.PromptParameters(init=not is_mask), # is this right?
+        parameters=generation.PromptParameters(init=not is_mask),
         artifact=generation.Artifact(
             type=generation.ARTIFACT_MASK if is_mask else generation.ARTIFACT_IMAGE,
             binary=image))
@@ -220,40 +265,6 @@ def key_frame_parse(string, prompt_parser=None):
 #####################################################################
 
 
-def image_xform(
-    stub:generation_grpc.GenerationServiceStub, 
-    images:List[np.ndarray], 
-    ops:List[generation.TransformOperation],
-    engine_id: str = 'transform-server-v1'
-) -> Tuple[List[np.ndarray], np.ndarray]:
-    assert(len(images))
-    transforms = generation.TransformSequence(operations=ops)
-    p = [image_to_prompt(image) for image in images]
-    rq = generation.Request(
-        engine_id=engine_id,
-        prompt=p,
-        image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
-    )
-
-    # This whole bottom portion looks like something that should be handled by "process response" or some evolved version of that
-    ######################
-    # there's an input above named "images", which has nothing to do with anything below this comment.
-    # this is super confusing. 
-    images, mask = [], None
-    for resp in stub.Generate(rq, wait_for_ready=True):
-        for artifact in resp.artifacts:
-            if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
-                nparr = np.frombuffer(artifact.binary, np.uint8)
-                im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                if artifact.type == generation.ARTIFACT_IMAGE:
-                    images.append(im)
-                elif artifact.type == generation.ARTIFACT_MASK:
-                    if mask is not None:
-                        raise Exception(
-                            "multiple masks returned in response, client implementaion currently assumes no more than one mask returned"
-                        )
-                    mask = im
-    return images, mask
 
 #################################
 # transform ops helpers
@@ -328,11 +339,9 @@ def colormatch_op(
             color_mode=color_match_from_string(color_mode),
             image= im))
 
-# why doesn't this take an image as an argument?
-# pretty confident we should parameterize this to expect an ARTIFACT_IMAGE
 def depthcalc_op(
     blend_weight:float,
-    export:bool,
+    export:bool = False,
 ) -> generation.TransformOperation:
     return generation.TransformOperation(                    
         depth_calc=generation.TransformDepthCalc(
@@ -372,13 +381,12 @@ def blend_op(
             target=im,
         ))
 
-# this is another one that feels like it should take an init_image
 def contrast_op(
-    brightness:float,
-    contrast:float,
+    brightness: float,
+    contrast: float,
 ) -> generation.TransformOperation:
     return generation.TransformOperation(
         contrast=generation.TransformContrast(
             brightness=brightness,
             contrast=contrast,
-                        ))
+        ))

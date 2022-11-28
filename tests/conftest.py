@@ -8,17 +8,18 @@ from PIL import Image
 import logging
 import pathlib
 import sys
-from types import SimpleNamespace
 
 thisPath = pathlib.Path(__file__).parent.parent.resolve()
 genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation"
+tensPath = thisPath / "src/stability_sdk/interfaces/src/tensorizer/tensors"
+assert genPath.exists()
+assert tensPath.exists()
 
 logger = logging.getLogger(__name__)
-sys.path.append(str(genPath))
+sys.path.extend([str(genPath), str(tensPath)])
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
-
 from stability_sdk.animation import AnimationArgs
 
 # modified from https://github.com/justdoit0823/grpc-resolver/blob/master/tests/conftest.py

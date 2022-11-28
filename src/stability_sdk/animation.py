@@ -10,28 +10,28 @@ import random
 from collections import OrderedDict
 from PIL import Image
 from types import SimpleNamespace
-from typing import Generator, List, Tuple
+from typing import Generator, List, Optional, Tuple
 
 from stability_sdk.client import (
-    image_gen,
-    image_inpaint,
+    Api,
     generation,
+    image_mix
 )
 
 from stability_sdk.utils import (
-    sampler_from_string,
+    blend_op,
+    border_mode_from_str_2d,
+    colormatch_op,
+    contrast_op,
+    depthcalc_op,
+    guidance_from_string,
+    interp_mode_from_str,
     key_frame_inbetweens,
     key_frame_parse,
-    guidance_from_string,
-    image_mix,
-    image_xform,
+    sampler_from_string,
     warp2d_op,
     warp3d_op,
-    colormatch_op,
-    depthcalc_op,
     warpflow_op,
-    blend_op,
-    contrast_op,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,10 @@ class BasicSettings(param.Parameterized):
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
+    init_sizing = param.ObjectSelector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
+    steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
+    mask_path = param.String(default="", doc="Path to image or video mask")
+    mask_invert = param.Boolean(default=False, doc="White in mask marks areas to change by default.")
     ####
     # missing param: n_samples = param.Integer(1, bounds=(1,9))
 
@@ -103,6 +107,8 @@ class KeyframedSettings(param.Parameterized):
 class CoherenceSettings(param.Parameterized):
     color_coherence = param.ObjectSelector(default='LAB', objects=['None', 'HSV', 'LAB', 'RGB'], doc="Color space that will be used for inter-frame color adjustments.")
     diffusion_cadence_curve = param.String(default="0:(4)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
+    accumulate_xforms = param.Boolean(default=True)
+    cadence_interp = param.ObjectSelector(default='mix', objects=['mix', 'rife', 'vae-lerp', 'vae-slerp'])
 
 
 # TO DO: change to a generic `depth_weight` rather than specifying model name in the parameter
@@ -153,13 +159,28 @@ def args2dict_param(args):
     return OrderedDict(args.param.values())
 
 def cv2_to_pil(img):
+    assert img is not None
     return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+def make_xform_2d(
+    w: float, h: float,
+    rotate: float,
+    scale: float,
+    translate_x: float,
+    translate_y: float,
+) -> np.ndarray:
+    center = (w / 2, h / 2)
+    trans_mat = np.float32([[1, 0, translate_x], [0, 1, translate_y]])
+    rot_mat = cv2.getRotationMatrix2D(center, rotate, scale)
+    trans_mat = np.vstack([trans_mat, [0,0,1]])
+    rot_mat = np.vstack([rot_mat, [0,0,1]])
+    return np.matmul(rot_mat, trans_mat)
 
 
 class Animator:
     def __init__(
         self,
-        stub: 'generation_grpc.GenerationServiceStub',
+        api: Api,
         animation_prompts,
         args=None,
         out_dir='.',
@@ -168,30 +189,46 @@ class Animator:
         negative_prompt='',
         negative_prompt_weight=-1.0,
         #####
-        resume: bool = False,
-        transform_engine_id='transform-server-v1',
-        inpaint_engine_id='stable-diffusion-v1-5',
-        generate_engine_id='stable-diffusion-v1-5',
+        resume: bool = False,        
     ):
+        self.api = api
         self.animation_prompts = animation_prompts
         self.args = args
-        self.color_match_image: np.ndarray = None
+        self.color_match_image: Optional[np.ndarray] = None
         self.diffusion_cadence_ofs: int = 0
+        self.frame_args = None
         self.keyframe_values: List[int] = None
         self.out_dir: str = out_dir
-        self.prior_frames: List[np.ndarray] = []
+        self.mask: Optional[np.ndarray] = None
+        self.mask_reader = None
+        self.prior_frames: List[np.ndarray] = []    # forward warped prior frames
+        self.prior_diffused: List[np.ndarray] = []  # results of diffusion
+        self.prior_xforms: List[np.ndarray] = []    # accumulated transforms since last diffusion
         self.negative_prompt: str = negative_prompt
         self.negative_prompt_weight: float = negative_prompt_weight
         self.start_frame_idx: int = 0
-        self.video_prev_frame: np.ndarray = None
+        self.video_prev_frame: Optional[np.ndarray] = None
         self.video_reader = None
 
-        self.stub = stub
-        self.transform_engine_id = transform_engine_id
-        self.inpaint_engine_id = inpaint_engine_id
-        self.generate_engine_id = generate_engine_id
-
         self.setup_animation(resume)
+
+    def apply_inpainting(self, mask: np.ndarray, prompts: List[str], weights: List[float], inpaint_steps: int, seed: int):
+        for i in range(len(self.prior_frames)):
+            self.prior_frames[i] = self.api.inpaint(
+                image=self.prior_frames[i],
+                mask=mask,
+                prompts=prompts,
+                weights=weights,
+                steps=inpaint_steps,
+                seed=seed,
+                cfg_scale=self.args.cfg_scale,
+                blur_radius=5,
+            )
+
+    def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
+        op = depthcalc_op(blend_weight=self.args.midas_weight, export=True)
+        results, _ = self.api.transform(self.prior_frames, [op])
+        return results[0]
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
         keys = self.key_frame_values
@@ -209,6 +246,9 @@ class Animator:
         prefix = "depth" if depth else "frame"
         return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png")
 
+    def identity(self) -> np.ndarray:
+        return make_xform_2d(self.args.width, self.args.height, 0, 1, 0, 0)
+
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename)
         with open(settings_filepath, "w+", encoding="utf-8") as f:
@@ -219,15 +259,6 @@ class Animator:
             save_dict['negative_prompt'] = self.negative_prompt
             save_dict['negative_prompt_weight'] = self.negative_prompt_weight
             json.dump(save_dict, f, ensure_ascii=False, indent=4)
-
-    def prepare_init_image(self, fpath=None):
-        if fpath is None:
-            fpath =  self.args.init_image
-        if not fpath:
-            return
-        img = cv2.imread(fpath)
-        self.args.height, self.args.width, _ = img.shape
-        self.prior_frames = [img, img]
 
     def setup_animation(self, resume):
         args = self.args
@@ -267,13 +298,14 @@ class Animator:
         if len(self.key_frame_values) != len(set(self.key_frame_values)):
             raise ValueError("Duplicate keyframes are not allowed!")
 
-        # prepare video input
-        video_in = args.video_init_path if args.animation_mode == 'Video Input' else None
-        if video_in:
-            self.load_video(video_in)
-        
-        # what it says
-        self.prepare_init_image()
+        # initialize accumulated transforms
+        identity = self.identity()
+        self.prior_xforms = [identity, identity]
+
+        # prepare inputs
+        self.load_mask()
+        self.load_video()
+        self.load_init_image()
 
         # handle resuming animation from last frames of a previous run
         if resume:
@@ -281,44 +313,266 @@ class Animator:
             self.start_frame_idx = len(frames)
             self.diffusion_cadence_ofs = self.start_frame_idx
             if self.start_frame_idx > 2:
-                self.prior_frames = [
-                    cv2.imread(self.get_frame_filename(self.start_frame_idx-2)),
-                    cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
-                ]
+                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-2))
+                next = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
+                self.prior_frames = [prev, next]
+                self.prior_diffused = [prev, next]
 
-    def load_video(self, video_in):
-        self.video_reader = cv2.VideoCapture(video_in)
+    def load_init_image(self, fpath=None):
+        if fpath is None:
+            fpath =  self.args.init_image
+        if not fpath:
+            return
+        img = cv2.imread(fpath)
+        height, width, _ = img.shape
+        if self.args.init_sizing == 'cover':
+            scale = max(self.args.width / width, self.args.height / height)
+            img = cv2.resize(img, (int(width * scale), int(height * scale)))
+            x = (img.shape[1] - self.args.width) // 2
+            y = (img.shape[0] - self.args.height) // 2
+            img = img[y:y+self.args.height, x:x+self.args.width]
+        elif self.args.init_sizing == 'stretch':
+            img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+        else: # 'resize-canvas'
+            width, height = map(lambda x: x - x % 64, (width, height))
+            self.args.width, self.args.height = width, height
+            
+        self.prior_frames = [img, img]
+        self.prior_diffused = [img, img]
+
+    def load_mask(self):
+        if not self.args.mask_path:
+            return
+
+        # try to load mask as an image
+        mask = cv2.imread(self.args.mask_path)
+        if mask is not None:
+            self.set_mask(mask)
+
+        # try to load mask as a video
+        if self.mask is None:
+            self.mask_reader = cv2.VideoCapture(self.args.mask_path)            
+            self.next_mask()
+
+        if self.mask is None:
+            raise Exception(f"Failed to read mask from {self.args.mask_path}")
+
+    def load_video(self):
+        if self.args.animation_mode != 'Video Input' or not self.args.video_init_path:
+            return
+
+        self.video_reader = cv2.VideoCapture(self.args.video_init_path)
         if self.video_reader is not None:
             success, image = self.video_reader.read()
             if not success:
-                raise Exception(f"Failed to read first frame from {video_in}")
+                raise Exception(f"Failed to read first frame from {self.args.video_init_path}")
             self.video_prev_frame = cv2.resize(image, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
             self.prior_frames = [self.video_prev_frame, self.video_prev_frame]
+            self.prior_diffused = [self.video_prev_frame, self.video_prev_frame]
 
-    def build_prior_frame_transforms(self, frame_idx) -> List[generation.TransformOperation]:
-        if not len(self.prior_frames):
-            return []
+    def next_mask(self):
+        if not self.mask_reader:
+            return False
 
+        for _ in range(self.args.extract_nth_frame):
+            success, mask = self.mask_reader.read()
+            if not success:
+                return
+
+        self.set_mask(mask)
+
+    def prepare_init(self, init_image: Optional[np.ndarray], frame_idx: int, noise_seed:int) -> Optional[np.ndarray]:
+        if init_image is None:
+            return None
+
+        args, frame_args = self.args, self.frame_args
+        noise = frame_args.noise_series[frame_idx]
+        brightness = frame_args.brightness_series[frame_idx]
+        contrast = frame_args.contrast_series[frame_idx]
+        mix_in = frame_args.video_mix_in_series[frame_idx]
+
+        init_ops = []
+        if args.color_coherence != 'None' and self.color_match_image is not None:                    
+            init_ops.append(colormatch_op(
+                palette_image=self.color_match_image,
+                color_mode=args.color_coherence,
+            ))
+        if mix_in > 0 and self.video_prev_frame is not None:
+            init_ops.append(blend_op(
+                amount=mix_in, 
+                target=self.video_prev_frame
+            ))
+        if brightness != 1.0 or contrast != 1.0:
+            init_ops.append(contrast_op(
+                brightness=brightness,
+                contrast=contrast,
+            ))
+        if noise > 0:
+            init_ops.append(generation.TransformOperation(
+                add_noise=generation.TransformAddNoise(amount=noise, seed=noise_seed)
+            ))
+
+        if len(init_ops):
+            init_image = self.api.transform([init_image], init_ops)[0][0]
+
+        return init_image
+
+    def render(self) -> Generator[Image.Image, None, None]:
         args = self.args
-        frame_args = self.frame_args
-        ops = []
+        seed = args.seed
 
-        if args.save_depth_maps or args.animation_mode == '3D':
-            ops.append(depthcalc_op(
-                blend_weight=args.midas_weight,
-                export=args.save_depth_maps,
-            ))
+        for frame_idx in range(self.start_frame_idx, args.max_frames):
+            diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
+            steps = int(self.frame_args.steps_series[frame_idx])
+            strength = max(0.0, self.frame_args.strength_series[frame_idx])
+            adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
 
-        if args.animation_mode == '2D':
-            ops.append(warp2d_op(
+            # fetch set of prompts and weights for this frame
+            prompts, weights = self.get_animation_prompts_weights(frame_idx)
+            if len(self.negative_prompt) and self.negative_prompt_weight != 0.0:
+                prompts.append(self.negative_prompt)
+                weights.append(-abs(self.negative_prompt_weight))
+
+            # transform prior frames
+            inpaint_mask = None
+            stashed_prior_frames = [i.copy() for i in self.prior_frames] if self.mask is not None else None
+            if args.animation_mode == '2D':
+                inpaint_mask = self.transform_2d(frame_idx)
+            elif args.animation_mode == '3D':
+                inpaint_mask = self.transform_3d(frame_idx)
+            elif args.animation_mode == 'Video Input':
+                inpaint_mask = self.transform_video(frame_idx)
+
+            # apply inpainting
+            if args.inpaint_border and inpaint_mask is not None:
+                self.apply_inpainting(inpaint_mask, prompts, weights, adjusted_steps, seed)
+
+            # update diffusion mask
+            self.next_mask()
+
+            # apply mask to transformed prior frames
+            if self.mask is not None:
+                for i in range(len(self.prior_frames)):
+                    self.prior_frames[i] = image_mix(self.prior_frames[i], stashed_prior_frames[i], self.mask)
+
+            # either run diffusion or emit an inbetween frame
+            if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
+                # apply additional noising and color matching to previous frame to use as init
+                init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
+                init_image = self.prepare_init(init_image, frame_idx, seed)
+
+                # generate the next frame
+                sampler = sampler_from_string(args.sampler.lower())
+                guidance = guidance_from_string(args.clip_guidance)
+                noise_scale = self.frame_args.noise_scale_series[frame_idx]
+                image = self.api.generate(
+                    prompts, weights, 
+                    args.width, args.height, 
+                    steps=adjusted_steps,
+                    seed=seed,
+                    cfg_scale=args.cfg_scale,
+                    sampler=sampler, 
+                    init_image=init_image, 
+                    init_strength=strength,
+                    init_noise_scale=noise_scale, 
+                    mask = self.mask,
+                    masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
+                    guidance_preset=guidance,
+                )
+
+                if self.color_match_image is None and args.color_coherence != 'None':
+                    self.color_match_image = image
+                if not len(self.prior_frames):
+                    identity = self.identity()
+                    self.prior_frames = [image, image]
+                    self.prior_diffused = [image, image]
+                    self.prior_xforms = [identity, identity]
+
+                self.prior_diffused = [self.prior_diffused[1], image]
+                self.prior_frames = [self.prior_frames[1], image]
+                self.prior_xforms = [self.prior_xforms[1], self.identity()]
+                self.diffusion_cadence_ofs = frame_idx
+                out_frame = image if diffusion_cadence == 1 else self.prior_frames[0]
+            else:
+                # smoothly blend between prior frames
+                tween = ((frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence) / float(diffusion_cadence)
+                out_frame = self.api.interpolate(
+                    [self.prior_frames[0], self.prior_frames[1]], 
+                    [tween], 
+                    interp_mode_from_str(args.cadence_interp)
+                )[0]
+
+            cv2.imwrite(self.get_frame_filename(frame_idx), out_frame)
+            yield cv2_to_pil(out_frame)
+            if args.save_depth_maps:
+                depth_image = self.generate_depth_image(out_frame)
+                cv2.imwrite(self.get_frame_filename(frame_idx, depth=True), depth_image)
+
+            if not args.locked_seed:
+                seed += 1
+
+    def set_mask(self, mask: np.ndarray):
+        self.mask = cv2.resize(mask, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+        self.mask = cv2.cvtColor(self.mask, cv2.COLOR_BGR2GRAY)
+
+        # this is intentionally flipped because we want white in the mask to represent
+        # areas that should change which is opposite from the backend which treats
+        # the mask as per pixel offset in the schedule starting value
+        if not self.args.mask_invert:
+            self.mask = 255 - self.mask
+
+    def transform_2d(self, frame_idx) -> Optional[np.ndarray]:
+        if not len(self.prior_frames):
+            return None
+
+        args, frame_args = self.args, self.frame_args
+        angle = frame_args.angle_series[frame_idx]
+        scale = frame_args.zoom_series[frame_idx]
+        dx = frame_args.translation_x_series[frame_idx]
+        dy = frame_args.translation_y_series[frame_idx]
+
+        if angle == 0.0 and scale == 1.0 and dx == 0.0 and dy == 0.0:
+            return None
+
+        if args.accumulate_xforms:
+            frame_args = self.frame_args
+
+            # create xform for the current frame
+            xform = make_xform_2d(args.width, args.height, angle, scale, dx, dy)
+
+            # apply xform to prior frames running xforms
+            for i in range(len(self.prior_xforms)):
+                self.prior_xforms[i] = np.matmul(self.prior_xforms[i], xform)
+
+            # warp prior diffused frames by accumulated xforms
+            for i in range(len(self.prior_diffused)):
+                matrix = self.prior_xforms[i].copy().flatten().tolist()
+                op = generation.TransformOperation(
+                    warp2d=generation.TransformWarp2d(
+                        border_mode = border_mode_from_str_2d(args.border),
+                        matrix=generation.TransformMatrix(data=matrix)
+                ))                
+                xformed, _ = self.api.transform([self.prior_diffused[i]], [op])
+                self.prior_frames[i] = xformed[0]
+
+            return None
+        else:
+            op = warp2d_op(
                 border_mode=args.border,
-                rotate=frame_args.angle_series[frame_idx], 
-                scale=frame_args.zoom_series[frame_idx], 
-                translate_x=frame_args.translation_x_series[frame_idx], 
-                translate_y=frame_args.translation_y_series[frame_idx], 
-            ))
-        elif args.animation_mode == '3D':
-            ops.append(warp3d_op(
+                rotate=angle, scale=scale, 
+                translate_x=dx, translate_y=dy, 
+            )
+            self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
+            return mask
+
+    def transform_3d(self, frame_idx) -> Optional[np.ndarray]:
+        if not len(self.prior_frames):
+            return None
+
+        args, frame_args = self.args, self.frame_args
+        ops = [
+            depthcalc_op(blend_weight=args.midas_weight),
+            warp3d_op(
                 border_mode = args.border,
                 translate_x = frame_args.translation_x_series[frame_idx],
                 translate_y = frame_args.translation_y_series[frame_idx],
@@ -329,137 +583,34 @@ class Animator:
                 near_plane = args.near_plane,
                 far_plane = args.far_plane,
                 fov = frame_args.fov_series[frame_idx],
-            ))
+            )
+        ]
+        self.prior_frames, mask = self.api.transform(self.prior_frames, ops)
+        return mask
 
-        elif args.animation_mode == 'Video Input':
-            for _ in range(args.extract_nth_frame):
-                success, video_next_frame = self.video_reader.read()
-            if success:
-                video_next_frame = cv2.resize(
-                    video_next_frame, 
-                    (args.width, args.height), 
-                    interpolation=cv2.INTER_LANCZOS4
-                )
-                if args.video_flow_warp:
-                    ops.append(warpflow_op(
-                        prev_frame=self.video_prev_frame,
-                        next_frame=video_next_frame,
-                    ))
-                self.video_prev_frame = video_next_frame
-                self.color_match_image = video_next_frame
+    def transform_video(self, frame_idx) -> Optional[np.ndarray]:
+        if not len(self.prior_frames):
+            return None
 
-        return ops
-
-    def render(self) -> Generator[Image.Image, None, None]:
+        op = None
         args = self.args
-        seed = args.seed
-
-        for frame_idx in range(self.start_frame_idx, args.max_frames):
-
-            diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
-            steps = int(self.frame_args.steps_series[frame_idx])
-
-            # fetch set of prompts and weights for this frame
-            prompts, weights = self.get_animation_prompts_weights(frame_idx)
-            if len(self.negative_prompt) and self.negative_prompt_weight != 0.0:
-                prompts.append(self.negative_prompt)
-                weights.append(-abs(self.negative_prompt_weight))
-
-            # transform prior frames
-            ops = self.build_prior_frame_transforms(frame_idx)
-            if len(ops):
-                self.prior_frames, mask = image_xform(self.stub, self.prior_frames, ops, self.transform_engine_id)
-
-                if args.save_depth_maps:
-                    depth_map = self.prior_frames.pop(0)
-                    cv2.imwrite(self.get_frame_filename(frame_idx, depth=True), depth_map)
-
-                if args.inpaint_border and mask is not None:
-                    for i in range(len(self.prior_frames)):
-                        self.prior_frames[i] = image_inpaint(
-                            stub=self.stub,
-                            image=self.prior_frames[i],
-                            mask=mask,
-                            prompts=prompts,
-                            weights=weights,
-                            steps=steps//2,
-                            seed=seed,
-                            cfg_scale=args.cfg_scale,
-                            #blur_ks=...,
-                            engine_id=self.inpaint_engine_id,
-                        )
-
-            # either run diffusion or emit an inbetween frame
-            if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
-                strength = self.frame_args.strength_series[frame_idx]
-
-                # apply additional noising and color matching to previous frame to use as init
-                init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
-                if init_image is not None:
-                    noise = self.frame_args.noise_series[frame_idx]
-                    brightness = self.frame_args.brightness_series[frame_idx]
-                    contrast = self.frame_args.contrast_series[frame_idx]
-                    mix_in = self.frame_args.video_mix_in_series[frame_idx]
-
-                    init_ops = []
-                    if args.color_coherence != 'None' and self.color_match_image is not None:                    
-                        init_ops.append(colormatch_op(
-                            palette_image=self.color_match_image,
-                            color_mode=args.color_coherence,
-                        ))
-                    if mix_in > 0 and self.video_prev_frame is not None:
-                        init_ops.append(blend_op(
-                            amount=mix_in, 
-                            target=self.video_prev_frame
-                        ))
-                    if brightness != 1.0 or contrast != 1.0:
-                        init_ops.append(contrast_op(
-                            brightness=brightness,
-                            contrast=contrast,
-                        ))
-                    if noise > 0:
-                        init_ops.append(generation.TransformOperation(
-                            add_noise=generation.TransformAddNoise(amount=noise, seed=seed)
-                        ))
-                    if len(init_ops):
-                        init_image = image_xform(self.stub, [init_image], init_ops, self.transform_engine_id)[0][0]
-
-                # generate the next frame
-                sampler = sampler_from_string(args.sampler.lower())
-                guidance = guidance_from_string(args.clip_guidance)
-                noise_scale = self.frame_args.noise_scale_series[frame_idx]
-                image = image_gen(
-                    self.stub, 
-                    args.width,
-                    args.height, 
-                    prompts,
-                    weights, 
-                    steps,
-                    seed,
-                    args.cfg_scale,
-                    sampler, 
-                    init_image,
-                    strength,
-                    init_noise_scale=noise_scale, 
-                    guidance_preset=guidance,
+        for _ in range(args.extract_nth_frame):
+            success, video_next_frame = self.video_reader.read()
+        if success:
+            video_next_frame = cv2.resize(
+                video_next_frame, 
+                (args.width, args.height), 
+                interpolation=cv2.INTER_LANCZOS4
+            )
+            if args.video_flow_warp:
+                op = warpflow_op(
+                    prev_frame=self.video_prev_frame,
+                    next_frame=video_next_frame,
                 )
+            self.video_prev_frame = video_next_frame
+            self.color_match_image = video_next_frame
 
-                if self.color_match_image is None and args.color_coherence != 'None':
-                    self.color_match_image = image
-                if not len(self.prior_frames):
-                    self.prior_frames = [image, image]
-                                
-                cv2.imwrite(self.get_frame_filename(frame_idx), self.prior_frames[1])
-                yield cv2_to_pil(self.prior_frames[1])
-                self.prior_frames[0] = self.prior_frames[1]
-                self.prior_frames[1] = image
-                self.diffusion_cadence_ofs = frame_idx
-            else:
-                # smoothly blend between prior frames
-                tween = ((frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence) / float(diffusion_cadence)
-                t = image_mix(self.prior_frames[0], self.prior_frames[1], tween)
-                cv2.imwrite(self.get_frame_filename(frame_idx), t)
-                yield cv2_to_pil(t)
+            self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
+            return mask
+        return None
 
-            if not args.locked_seed:
-                seed += 1
