@@ -114,7 +114,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-v1-5",
+        engine: str = "stable-diffusion-512-v2-0",
         verbose: bool = False,
         wait_for_ready: bool = True,
     ):
@@ -123,7 +123,7 @@ class StabilityInference:
 
         :param host: Host to connect to.
         :param key: Key to use for authentication.
-        :param engine: Engine to use.
+        :param engine: stable-diffusion-v1 stable-diffusion-v1-5 stable-diffusion-512-v2-0 stable-diffusion-768-v2-0 stable-inpainting-v1-0 stable-inpainting-512-v2-0
         :param verbose: Whether to print debug messages.
         :param wait_for_ready: Whether to wait for the server to be ready, or
             to fail immediately.
@@ -426,7 +426,7 @@ if __name__ == "__main__":
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-v1-5",
+        default="stable-diffusion-512-v2-0",
     )
     parser.add_argument(
         "--init_image",
@@ -469,7 +469,6 @@ if __name__ == "__main__":
         "init_image": args.init_image,
         "mask_image": args.mask_image,
     }
-
 
 
     stability_api = StabilityInference(
