@@ -403,7 +403,7 @@ if __name__ == "__main__":
         help="[auto-select] (" + ", ".join(SAMPLERS.keys()) + ")",
     )
     parser.add_argument(
-        "--steps", "-s", type=int, default=30, help="[30] number of steps"
+        "--steps", "-s", type=int, default=None, help="[auto] number of steps"
     )
     parser.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
     parser.add_argument(
@@ -460,8 +460,7 @@ if __name__ == "__main__":
         "width": args.width,
         "start_schedule": args.start_schedule,
         "end_schedule": args.end_schedule,
-        "cfg_scale": args.cfg_scale,        
-        "steps": args.steps,
+        "cfg_scale": args.cfg_scale,                
         "seed": args.seed,
         "samples": args.num_samples,
         "init_image": args.init_image,
@@ -469,7 +468,10 @@ if __name__ == "__main__":
     }
 
     if args.sampler:
-        request.sampler = get_sampler_from_str(args.sampler)
+        request["sampler"] = get_sampler_from_str(args.sampler)
+
+    if args.steps:
+        request["steps"] = args.steps
 
     stability_api = StabilityInference(
         STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
