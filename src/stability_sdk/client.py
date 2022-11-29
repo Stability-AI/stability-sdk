@@ -399,9 +399,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sampler",
         "-A",
-        type=str,
-        default="k_lms",
-        help="[k_lms] (" + ", ".join(SAMPLERS.keys()) + ")",
+        type=str,        
+        help="[auto-select] (" + ", ".join(SAMPLERS.keys()) + ")",
     )
     parser.add_argument(
         "--steps", "-s", type=int, default=30, help="[30] number of steps"
@@ -461,8 +460,7 @@ if __name__ == "__main__":
         "width": args.width,
         "start_schedule": args.start_schedule,
         "end_schedule": args.end_schedule,
-        "cfg_scale": args.cfg_scale,
-        "sampler": get_sampler_from_str(args.sampler),
+        "cfg_scale": args.cfg_scale,        
         "steps": args.steps,
         "seed": args.seed,
         "samples": args.num_samples,
@@ -470,7 +468,8 @@ if __name__ == "__main__":
         "mask_image": args.mask_image,
     }
 
-
+    if args.sampler:
+        request.sampler = get_sampler_from_str(args.sampler)
 
     stability_api = StabilityInference(
         STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
