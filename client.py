@@ -18,9 +18,9 @@ from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 from google.protobuf.json_format import MessageToJson
 from PIL import Image
 #from stability_sdk import uploadToS3
-from stability_sdk.uploadToS3 import upload_file_using_client
+from .uploadToS3 import upload_file_using_client
 #from stability_sdk import sendToAirtable
-from stability_sdk.sendToAirtable import add_new_record
+from .sendToAirtable import add_new_record
 
 try:
     from dotenv import load_dotenv
@@ -33,8 +33,8 @@ thisPath = pathlib.Path(__file__).parent.resolve()
 genPath = thisPath / "interfaces/gooseai/generation"
 sys.path.append(str(genPath))
 
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+from .interfaces.gooseai.generation import generation_pb2 as generation
+from .interfaces.gooseai.generation import generation_pb2_grpc as generation_grpc
 
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
@@ -188,7 +188,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-v1-5",
+        engine: str = "stable-diffusion-512-v2-0",
         verbose: bool = False,
         wait_for_ready: bool = True,
     ):

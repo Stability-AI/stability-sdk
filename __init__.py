@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, jsonify
-from stability_sdk.client import stable_diffusion
-from stability_sdk.sendToAirtable import add_new_record
-from stability_sdk.uploadToS3 import upload_file_using_client
+from .client import stable_diffusion
+from .sendToAirtable import add_new_record
+from .uploadToS3 import upload_file_using_client
 app = Flask(__name__)
 
 @app.route("/")
