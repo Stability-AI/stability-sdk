@@ -18,7 +18,7 @@ from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 from google.protobuf.json_format import MessageToJson
 from PIL import Image
 #from stability_sdk import uploadToS3
-import uploadToS3.upload_file_using_client
+from uploadToS3 import upload_file_using_client
 #from stability_sdk import sendToAirtable
 import sendToAirtable.add_new_record
 
