@@ -20,7 +20,7 @@ from PIL import Image
 #from stability_sdk import uploadToS3
 from uploadToS3 import upload_file_using_client
 #from stability_sdk import sendToAirtable
-import sendToAirtable.add_new_record
+from sendToAirtable import add_new_record
 
 try:
     from dotenv import load_dotenv
