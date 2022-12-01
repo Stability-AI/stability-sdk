@@ -168,8 +168,8 @@ class StabilityInference:
         start_schedule: float = 1.0,
         end_schedule: float = 0.01,
         cfg_scale: float = 7.0,
-        sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
-        steps: int = 50,
+        sampler: generation.DiffusionSampler = None,
+        steps: Optional[int] = None,
         seed: Union[Sequence[int], int] = 0,
         samples: int = 1,
         safety: bool = True,
@@ -233,7 +233,7 @@ class StabilityInference:
             scaled_step=0,
             sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
         )
-            
+
         # NB: Specifying schedule when there's no init image causes washed out results
         if init_image is not None:
             step_parameters['schedule'] = generation.ScheduleParameters(
@@ -245,7 +245,7 @@ class StabilityInference:
             if mask_image is not None:
                 prompts += [image_to_prompt(mask_image, mask=True)]
 
-        
+
         if guidance_prompt:
             if isinstance(guidance_prompt, str):
                 guidance_prompt = generation.Prompt(text=guidance_prompt)
@@ -254,7 +254,7 @@ class StabilityInference:
         if guidance_strength == 0.0:
             guidance_strength = None
 
-            
+
         # Build our CLIP parameters
         if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
             # to do: make it so user can override this
@@ -282,8 +282,12 @@ class StabilityInference:
                 ],
             )
 
+        transform=None
+        if sampler:
+            transform=generation.TransformType(diffusion=sampler)
+
         image_parameters=generation.ImageParameters(
-            transform=generation.TransformType(diffusion=sampler),
+            transform=transform,
             height=height,
             width=width,
             seed=seed,
@@ -292,9 +296,10 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
+
         return self.emit_request(prompt=prompts, image_parameters=image_parameters)
 
-            
+
     # The motivation here is to facilitate constructing requests by passing protobuf objects directly.
     def emit_request(
         self,
@@ -307,14 +312,14 @@ class StabilityInference:
             request_id = str(uuid.uuid4())
         if not engine_id:
             engine_id = self.engine
-        
+
         rq = generation.Request(
             engine_id=engine_id,
             request_id=request_id,
             prompt=prompt,
             image=image_parameters
         )
-        
+
         if self.verbose:
             logger.info("Sending request.")
 
@@ -357,7 +362,7 @@ if __name__ == "__main__":
         "[Deprecation Warning] instead do this:"
         "[Deprecation Warning]    $ python -m stability_sdk ...  "
     )
-    
+
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
     STABILITY_KEY = os.getenv("STABILITY_KEY", "")
 

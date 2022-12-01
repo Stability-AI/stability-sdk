@@ -31,8 +31,14 @@ jobs:
         pip install setuptools wheel twine build
     - name: Build package
       run: |
+        rm -rf dist/*
         python -m build
-     
+    - name: Install package
+      run: |
+        pip install dist/*.whl
+    - name: Test package
+      run: |
+        python -m stability_sdk A beautiful painting of a happy robot
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:

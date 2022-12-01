@@ -34,6 +34,7 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as genera
 
 from stability_sdk.client import (
     StabilityInference,
+    process_artifacts_from_answers,
 )
 from stability_sdk.utils import (
     SAMPLERS,
@@ -98,11 +99,11 @@ parser.add_argument(
     "--sampler",
     "-A",
     type=str,
-    default="k_lms",
-    help="[k_lms] (" + ", ".join(SAMPLERS.keys()) + ")",
+    default=None,
+    help="[auto] (" + ", ".join(SAMPLERS.keys()) + ")",
 )
 parser.add_argument(
-    "--steps", "-s", type=int, default=50, help="[50] number of steps"
+    "--steps", "-s", type=int, default=None, help="[auto] number of steps"
 )
 parser.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
 parser.add_argument(
@@ -155,19 +156,20 @@ if args.mask_image:
     args.mask_image = Image.open(args.mask_image)
 
 request =  {
-    "height": cli_args.height,
-    "width": cli_args.width,
-    "start_schedule": cli_args.start_schedule,
-    "end_schedule": cli_args.end_schedule,
-    "cfg_scale": cli_args.cfg_scale,
-    "sampler": get_sampler_from_str(cli_args.sampler),
-    "steps": cli_args.steps,
-    "seed": cli_args.seed,
-    "samples": cli_args.num_samples,
-    "init_image": cli_args.init_image,
-    "mask_image": cli_args.mask_image,
+    "height": args.height,
+    "width": args.width,
+    "start_schedule": args.start_schedule,
+    "end_schedule": args.end_schedule,
+    "cfg_scale": args.cfg_scale,
+    "samples": args.num_samples,
+    "init_image": args.init_image,
+    "mask_image": args.mask_image,
 }
 
+if args.sampler:
+    request["sampler"] = get_sampler_from_str(args.sampler)
+if args.seed and args.seed > 0:
+    request["seed"] = args.seed
 
 stability_api = StabilityInference(
     STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
