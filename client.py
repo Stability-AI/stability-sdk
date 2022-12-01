@@ -188,6 +188,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
+        # engine = "stable-diffusion-v1-5",
         engine: str = "stable-diffusion-512-v2-0",
         verbose: bool = False,
         wait_for_ready: bool = True,
@@ -429,6 +430,7 @@ def stable_diffusion(
     no_store = True,
     num_samples = 1,
     show = False,
+    # engine = "stable-diffusion-v1-5",
     engine = "stable-diffusion-v1-5",
     prompt = "",
     init_image = None,
@@ -560,12 +562,12 @@ def stable_diffusion(
 
 
     stability_api = StabilityInference(
-        STABILITY_HOST, STABILITY_KEY, engine=engine, verbose=True
+        STABILITY_HOST, STABILITY_KEY, engine=engine, verbose=False
     )
 
     answers = stability_api.generate(prompt, **request)
     artifacts = process_artifacts_from_answers(
-        prefix, prompt, answers, write=not no_store, verbose=True
+        prefix, prompt, answers, write=not no_store, verbose=False
     )
 
     image_urls = []
@@ -574,7 +576,7 @@ def stable_diffusion(
             image_urls.append(artifact[0])
 
     if show:
-        for artifact in open_images(artifacts, verbose=True):
+        for artifact in open_images(artifacts, verbose=False):
             pass
     else:
         for artifact in artifacts:
