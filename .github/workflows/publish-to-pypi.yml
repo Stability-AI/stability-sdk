@@ -37,8 +37,11 @@ jobs:
       run: |
         pip install dist/*.whl
     - name: Test package
+      env: 
+        STABILITY_KEY: ${{ secrets.STABILITY_KEY }}
       run: |
         python -m stability_sdk A beautiful painting of a happy robot
+        python -m stability_sdk.client A nice drawing of a horse
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
