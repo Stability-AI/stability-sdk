@@ -30,12 +30,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install setuptools wheel twine build
     - name: Build package
-      run: |
-        rm -rf dist/*
+      run: |        
         python -m build
     - name: Install package
       run: |
-        pip install dist/*.whl
+        python setup.py install
     - name: Test package
       env: 
         STABILITY_KEY: ${{ secrets.STABILITY_KEY }}
