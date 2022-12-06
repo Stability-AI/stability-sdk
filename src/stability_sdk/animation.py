@@ -2,6 +2,7 @@ import bisect
 import cv2
 import json
 import logging
+import math
 import numpy as np
 import os
 import param
@@ -18,9 +19,13 @@ from stability_sdk.client import (
     image_mix
 )
 
+
+import stability_sdk.matrix as matrix
+
 from stability_sdk.utils import (
     blend_op,
     border_mode_from_str_2d,
+    border_mode_from_str_3d,
     colormatch_op,
     contrast_op,
     depthcalc_op,
@@ -52,10 +57,11 @@ docstring_bordermode = (
 # TO DO: "prompt" argument has a bit of a logical collision with animation prompts
 class BasicSettings(param.Parameterized):
     #prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
-    height  = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
-    width   = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
+    height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
+    width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms"])
-    seed    = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
+    model = param.ObjectSelector(default='stable-diffusion-v1-5', objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-0", "stable-diffusion-768-v2-0"])
+    seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
@@ -162,20 +168,29 @@ def cv2_to_pil(img):
     assert img is not None
     return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
-def make_xform_2d(
+
+def make_xform_2dm(
     w: float, h: float,
-    rotate: float,
+    rotate: float, # in radians
     scale: float,
     translate_x: float,
     translate_y: float,
-) -> np.ndarray:
+) -> matrix.Matrix:
     center = (w / 2, h / 2)
-    trans_mat = np.float32([[1, 0, translate_x], [0, 1, translate_y]])
-    rot_mat = cv2.getRotationMatrix2D(center, rotate, scale)
-    trans_mat = np.vstack([trans_mat, [0,0,1]])
-    rot_mat = np.vstack([rot_mat, [0,0,1]])
-    return np.matmul(rot_mat, trans_mat)
+    pre = matrix.translation(-center[0], -center[1], 0)
+    post = matrix.translation(center[0], center[1], 0)
+    rotate = matrix.rotation_euler(0, 0, rotate)
+    scale = matrix.scale(scale, scale, 1)
+    rotate_scale = matrix.multiply(post, matrix.multiply(rotate, matrix.multiply(scale, pre)))
+    translate = matrix.translation(translate_x, translate_y, 0)
+    return matrix.multiply(rotate_scale, translate)
 
+
+def to_3x3(m: matrix.Matrix) -> matrix.Matrix:
+    # convert 4x4 matrix with 2D rotation, scale, and translation to 3x3 matrix
+    return [[m[0][0], m[0][1], m[0][3]],
+            [m[1][0], m[1][1], m[1][3]],
+            [m[3][0], m[3][1], m[3][3]]]
 
 class Animator:
     def __init__(
@@ -184,12 +199,9 @@ class Animator:
         animation_prompts,
         args=None,
         out_dir='.',
-        #####
-        # we shouldn't be treating these special. to do: more generic prompt input
         negative_prompt='',
         negative_prompt_weight=-1.0,
-        #####
-        resume: bool = False,        
+        resume: bool = False
     ):
         self.api = api
         self.animation_prompts = animation_prompts
@@ -203,7 +215,7 @@ class Animator:
         self.mask_reader = None
         self.prior_frames: List[np.ndarray] = []    # forward warped prior frames
         self.prior_diffused: List[np.ndarray] = []  # results of diffusion
-        self.prior_xforms: List[np.ndarray] = []    # accumulated transforms since last diffusion
+        self.prior_xforms: List[matrix.Matrix] = []    # accumulated transforms since last diffusion
         self.negative_prompt: str = negative_prompt
         self.negative_prompt_weight: float = negative_prompt_weight
         self.start_frame_idx: int = 0
@@ -246,9 +258,6 @@ class Animator:
         prefix = "depth" if depth else "frame"
         return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png")
 
-    def identity(self) -> np.ndarray:
-        return make_xform_2d(self.args.width, self.args.height, 0, 1, 0, 0)
-
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename)
         with open(settings_filepath, "w+", encoding="utf-8") as f:
@@ -262,6 +271,9 @@ class Animator:
 
     def setup_animation(self, resume):
         args = self.args
+
+        # override generate endpoint to target user selected model
+        self.api._generate.engine_id = args.model
 
         # change request for random seed into explicit value so it is saved to settings
         if args.seed <= 0:
@@ -299,8 +311,7 @@ class Animator:
             raise ValueError("Duplicate keyframes are not allowed!")
 
         # initialize accumulated transforms
-        identity = self.identity()
-        self.prior_xforms = [identity, identity]
+        self.prior_xforms = [matrix.identity, matrix.identity]
 
         # prepare inputs
         self.load_mask()
@@ -351,7 +362,7 @@ class Animator:
 
         # try to load mask as a video
         if self.mask is None:
-            self.mask_reader = cv2.VideoCapture(self.args.mask_path)            
+            self.mask_reader = cv2.VideoCapture(self.args.mask_path)
             self.next_mask()
 
         if self.mask is None:
@@ -483,22 +494,21 @@ class Animator:
                 if self.color_match_image is None and args.color_coherence != 'None':
                     self.color_match_image = image
                 if not len(self.prior_frames):
-                    identity = self.identity()
                     self.prior_frames = [image, image]
                     self.prior_diffused = [image, image]
-                    self.prior_xforms = [identity, identity]
+                    self.prior_xforms = [matrix.identity, matrix.identity]
 
                 self.prior_diffused = [self.prior_diffused[1], image]
                 self.prior_frames = [self.prior_frames[1], image]
-                self.prior_xforms = [self.prior_xforms[1], self.identity()]
+                self.prior_xforms = [self.prior_xforms[1], matrix.identity]
                 self.diffusion_cadence_ofs = frame_idx
                 out_frame = image if diffusion_cadence == 1 else self.prior_frames[0]
             else:
                 # smoothly blend between prior frames
                 tween = ((frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence) / float(diffusion_cadence)
                 out_frame = self.api.interpolate(
-                    [self.prior_frames[0], self.prior_frames[1]], 
-                    [tween], 
+                    [self.prior_frames[0], self.prior_frames[1]],
+                    [tween],
                     interp_mode_from_str(args.cadence_interp)
                 )[0]
 
@@ -538,20 +548,20 @@ class Animator:
             frame_args = self.frame_args
 
             # create xform for the current frame
-            xform = make_xform_2d(args.width, args.height, angle, scale, dx, dy)
+            xform = make_xform_2dm(args.width, args.height, math.radians(angle), scale, dx, dy)
 
             # apply xform to prior frames running xforms
             for i in range(len(self.prior_xforms)):
-                self.prior_xforms[i] = np.matmul(self.prior_xforms[i], xform)
+                self.prior_xforms[i] = matrix.multiply(xform, self.prior_xforms[i])
 
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
-                matrix = self.prior_xforms[i].copy().flatten().tolist()
+                matrix_flat = sum(to_3x3(self.prior_xforms[i]), []) 
                 op = generation.TransformOperation(
                     warp2d=generation.TransformWarp2d(
                         border_mode = border_mode_from_str_2d(args.border),
-                        matrix=generation.TransformMatrix(data=matrix)
-                ))                
+                        matrix=generation.TransformMatrix(data=matrix_flat))
+                )                
                 xformed, _ = self.api.transform([self.prior_diffused[i]], [op])
                 self.prior_frames[i] = xformed[0]
 
@@ -559,8 +569,8 @@ class Animator:
         else:
             op = warp2d_op(
                 border_mode=args.border,
-                rotate=angle, scale=scale, 
-                translate_x=dx, translate_y=dy, 
+                rotate=angle, scale=scale,
+                translate_x=dx, translate_y=dy,
             )
             self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
             return mask
@@ -570,23 +580,64 @@ class Animator:
             return None
 
         args, frame_args = self.args, self.frame_args
-        ops = [
-            depthcalc_op(blend_weight=args.midas_weight),
-            warp3d_op(
-                border_mode = args.border,
-                translate_x = frame_args.translation_x_series[frame_idx],
-                translate_y = frame_args.translation_y_series[frame_idx],
-                translate_z = frame_args.translation_z_series[frame_idx],
-                rotate_x = frame_args.rotation_x_series[frame_idx],
-                rotate_y = frame_args.rotation_y_series[frame_idx],
-                rotate_z = frame_args.rotation_z_series[frame_idx],
-                near_plane = args.near_plane,
-                far_plane = args.far_plane,
-                fov = frame_args.fov_series[frame_idx],
-            )
-        ]
-        self.prior_frames, mask = self.api.transform(self.prior_frames, ops)
-        return mask
+
+        dx = frame_args.translation_x_series[frame_idx]
+        dy = frame_args.translation_y_series[frame_idx]
+        dz = frame_args.translation_z_series[frame_idx]
+        rx = frame_args.rotation_x_series[frame_idx]
+        ry = frame_args.rotation_y_series[frame_idx]
+        rz = frame_args.rotation_z_series[frame_idx]
+        near, far = args.near_plane, args.far_plane
+        fov = frame_args.fov_series[frame_idx]
+
+        if args.accumulate_xforms:
+            TRANSLATION_SCALE = 1.0/200.0 # matches Disco
+            dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
+            rx, ry, rz = math.radians(rx), math.radians(ry), math.radians(rz)
+
+            # create xform for the current frame
+            world_view = matrix.multiply(matrix.translation(dx, dy, dz), matrix.rotation_euler(rx, ry, rz))
+            projection = matrix.projection_fov(math.radians(fov), 1.0, near, far)           
+
+            # apply world_view xform to prior frames running xforms
+            for i in range(len(self.prior_xforms)):
+                self.prior_xforms[i] = matrix.multiply(world_view, self.prior_xforms[i])
+
+            # warp prior diffused frames by accumulated xforms
+            for i in range(len(self.prior_diffused)):
+                wvp = matrix.multiply(projection, self.prior_xforms[i])
+                ops = [
+                    generation.TransformOperation(depth_calc=generation.TransformDepthCalc(
+                        blend_weight=args.midas_weight,
+                        export=False,
+                        blur_radius=5
+                    )),
+                    generation.TransformOperation(
+                        resample=generation.TransformResample(
+                            border_mode=border_mode_from_str_3d(args.border),
+                            transform=generation.TransformMatrix(data=sum(wvp, [])),
+                            prev_transform=generation.TransformMatrix(data=sum(projection, [])),
+                            depth_warp=1.0,
+                            export_mask=False,
+                        )
+                    ),
+                ]
+                xformed, mask = self.api.transform([self.prior_diffused[i]], ops)
+                self.prior_frames[i] = xformed[0]
+
+            return mask
+        else:
+            ops = [
+                depthcalc_op(blend_weight=args.midas_weight),
+                warp3d_op(
+                    border_mode = args.border,
+                    translate_x = dx, translate_y = dy, translate_z = dz,
+                    rotate_x = rx, rotate_y = ry, rotate_z = rz,
+                    near_plane = near, far_plane = far, fov = fov
+                )
+            ]
+            self.prior_frames, mask = self.api.transform(self.prior_frames, ops)
+            return mask
 
     def transform_video(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
@@ -598,8 +649,8 @@ class Animator:
             success, video_next_frame = self.video_reader.read()
         if success:
             video_next_frame = cv2.resize(
-                video_next_frame, 
-                (args.width, args.height), 
+                video_next_frame,
+                (args.width, args.height),
                 interpolation=cv2.INTER_LANCZOS4
             )
             if args.video_flow_warp:
