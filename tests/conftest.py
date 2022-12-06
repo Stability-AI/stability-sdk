@@ -16,8 +16,8 @@ assert tensPath.exists()
 logger = logging.getLogger(__name__)
 sys.path.extend([str(genPath), str(tensPath)])
 
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_api_interfaces.gooseai.generation_pb2 as generation
+import stability_api_interfaces.gooseai.generation_pb2_grpc as generation_grpc
 
 # modified from https://github.com/justdoit0823/grpc-resolver/blob/master/tests/conftest.py
 

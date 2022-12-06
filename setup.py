@@ -24,7 +24,8 @@ setup(
         'grpcio==1.48.1',
         'grpcio-tools==1.48.1',
         'python-dotenv',
-        'protobuf==3.19.5'
+        'protobuf==4.21.6',
+        'stability-api-interfaces @ git+ssh://git@github.com/stability-ai/api-interfaces.git@js/buf-spike#subdirectory=gen/proto/python',
     ],
     extras_require={
         'dev': [

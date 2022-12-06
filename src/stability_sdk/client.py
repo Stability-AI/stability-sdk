@@ -25,8 +25,8 @@ except ModuleNotFoundError:
 else:
     load_dotenv()
 
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_api_interfaces.gooseai.generation_pb2 as generation
+import stability_api_interfaces.gooseai.generation_pb2_grpc as generation_grpc
 
 from stability_sdk.utils import (
     SAMPLERS,
