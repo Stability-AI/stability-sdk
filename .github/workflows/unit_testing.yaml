@@ -30,4 +30,4 @@ jobs:
           pip install .[dev]
       - name: Test with pytest
         run: |
-          pytest -s --ignore=src/stability_sdk/interfaces
+          pytest -s
