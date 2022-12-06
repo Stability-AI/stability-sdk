@@ -21,8 +21,8 @@ setup(
 
     install_requires=[
         'Pillow',
-        'grpcio==1.48.1',
-        'grpcio-tools==1.48.1',
+        'grpcio==1.51.1',
+        'grpcio-tools==1.51.1',
         'python-dotenv',
         'protobuf==4.21.6',
         'stability-api-interfaces @ git+https://github.com/stability-ai/api-interfaces.git@js/buf-spike#subdirectory=gen/proto/python',
