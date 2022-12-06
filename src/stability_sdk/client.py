@@ -194,6 +194,8 @@ class Api:
                 cutouts = generation.CutoutParameters(count=guidance_cuts)
             else:
                 cutouts = None
+            if guidance_strength == 0.0:
+                guidance_strength = None
             step_parameters["guidance"] = generation.GuidanceParameters(
                 guidance_preset=guidance_preset,
                 instances=[
@@ -302,6 +304,9 @@ class Api:
         """
         assert len(images) == 2
         assert len(ratios) >= 1
+
+        if mode == generation.INTERPOLATE_LINEAR and len(ratios) == 1:
+            return [image_mix(images[0], images[1], ratios[0])]
 
         p = [image_to_prompt(image) for image in images]
         rq = generation.Request(
