@@ -325,9 +325,9 @@ class Api:
 
     def transform(
         self,
-        images: List[np.ndarray], 
-        ops: List[generation.TransformOperation],
-    ) -> Tuple[List[np.ndarray], np.ndarray]:
+        images: List[np.ndarray],
+        params: Union[generation.TransformParameters, List[generation.TransformParameters]]
+    ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
         """
         Transform images
 
@@ -337,29 +337,87 @@ class Api:
         """
         assert len(images)
         assert isinstance(images[0], np.ndarray)
+        
+        if isinstance(params, generation.TransformParameters):
+            rq = generation.Request(
+                engine_id=self._transform.engine_id,
+                prompt=[image_to_prompt(image) for image in images],
+                transform=params
+            )
+            responses = self._transform.stub.Generate(rq, wait_for_ready=True)
+        else:
+            stages = []
+            for idx, param in enumerate(params):
+                final = idx == len(params) - 1
+                rq = generation.Request(
+                    engine_id=self._transform.engine_id,
+                    prompt=[image_to_prompt(image) for image in images] if idx == 0 else None,
+                    transform=param
+                )
+                stages.append(generation.Stage(
+                    id=str(idx),
+                    request=rq, 
+                    on_status=[generation.OnStatus(
+                        action=[generation.STAGE_ACTION_PASS if not final else generation.STAGE_ACTION_RETURN], 
+                        target=str(idx+1) if not final else None
+                    )]
+                ))
+            chain_rq = generation.ChainRequest(request_id="xform_chain", stage=stages)
+            responses = self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True)
 
-        transforms = generation.TransformSequence(operations=ops)
-        rq = generation.Request(
+        results = self._process_response(responses)
+        return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
+
+
+    def transform_resample_3d(
+        self, 
+        images: List[np.ndarray], 
+        depth_calc: generation.TransformDepthCalc,
+        resample: generation.TransformResample
+    ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
+        assert len(images)
+        assert isinstance(images[0], np.ndarray)
+
+        rq_depth = generation.Request(
+            engine_id=self._transform.engine_id,
+            requested_type=generation.ARTIFACT_TENSOR,
+            prompt=[image_to_prompt(image) for image in images],
+            transform=generation.TransformParameters(depth_calc=depth_calc)
+        )
+        rq_resample = generation.Request(
             engine_id=self._transform.engine_id,
             prompt=[image_to_prompt(image) for image in images],
-            image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
+            transform=generation.TransformParameters(resample=resample)
         )
 
-        results, mask = [], None
-        for resp in self._transform.stub.Generate(rq, wait_for_ready=True):
+        chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
+            generation.Stage(
+                id="depth_calc",
+                request=rq_depth, 
+                on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target="resample")]
+            ),
+            generation.Stage(
+                id="resample",
+                request=rq_resample, 
+                on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
+            ) 
+        ])
+
+        results = self._process_response(self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True))
+        return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
+
+    def _process_response(self, response) -> Dict[int, List[np.ndarray]]:
+        results = {}
+        for resp in response:
             for artifact in resp.artifacts:
                 if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
                     nparr = np.frombuffer(artifact.binary, np.uint8)
                     im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    if artifact.type == generation.ARTIFACT_IMAGE:
-                        results.append(im)
-                    elif artifact.type == generation.ARTIFACT_MASK:
-                        if mask is not None:
-                            raise Exception(
-                                "multiple masks returned in response, client implementaion currently assumes no more than one mask returned"
-                            )
-                        mask = im
-        return results, mask
+
+                    if artifact.type not in results:
+                        results[artifact.type] = []
+                    results[artifact.type].append(im)
+        return results
 
 
 class StabilityInference:

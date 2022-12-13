@@ -273,96 +273,42 @@ def key_frame_parse(string, prompt_parser=None):
 #  - move to their own submodule
 #  - add doc strings giving details on parameters
 
-# is call signature of generation.TransformWarp_d inconsistent? 
-# or did I ust shuffle them here?
-def warp2d_op(
-    border_mode:str,
-    rotate:float,
-    scale:float,
-    translate_x:float,
-    translate_y:float,
-) -> generation.TransformOperation:
-    return generation.TransformOperation(
-        warp2d=generation.TransformWarp2d(
-            border_mode = border_mode_from_str_2d(border_mode),
-            rotate = rotate,
-            scale = scale,
-            translate_x = translate_x,
-            translate_y = translate_y,
-        ))
-
-# to do: defaults. None?
-def warp3d_op(
-    border_mode:str,
-    translate_x:float,
-    translate_y:float,
-    translate_z:float,
-    rotate_x:float,
-    rotate_y:float,
-    rotate_z:float,
-    near_plane:float,
-    far_plane:float,
-    fov:float, 
-) -> generation.TransformOperation:
-    if not (near_plane < far_plane):
-        raise ValueError(
-            "Invalid camera volume: must satisfy near < far, "
-            f"got near={near_plane}, far={far_plane}"
-        )
-    if not (fov > 0):
-        raise ValueError(
-            "Invalid camera volume: fov must be greater than 0, "
-            f"got fov={fov}"
-        )
-    return generation.TransformOperation(
-        warp3d=generation.TransformWarp3d(
-            border_mode = border_mode_from_str_3d(border_mode),
-            translate_x = translate_x,
-            translate_y = translate_y,
-            translate_z = translate_z,
-            rotate_x = rotate_x,
-            rotate_y = rotate_y,
-            rotate_z = rotate_z,
-            near_plane = near_plane,
-            far_plane = far_plane,
-            fov = fov,
-            ))
-    
 def colormatch_op(
     palette_image:np.ndarray,
     color_mode:str='LAB',
-) -> generation.TransformOperation:
-    im = generation.Artifact(
-        type=generation.ARTIFACT_IMAGE, 
-        binary=image_to_jpg_bytes(palette_image),
-    )
-    return generation.TransformOperation(
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
         color_match=generation.TransformColorMatch(
             color_mode=color_match_from_string(color_mode),
-            image= im))
+            image=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE,
+                binary=image_to_jpg_bytes(palette_image),
+            )
+        )
+    )
 
 def depthcalc_op(
     blend_weight:float,
-    export:bool = False,
-) -> generation.TransformOperation:
-    return generation.TransformOperation(                    
+    blur_radius:float=0.0,
+) -> generation.TransformParameters:
+    return generation.TransformParameters(                    
         depth_calc=generation.TransformDepthCalc(
             blend_weight=blend_weight,
-            export=export
+            blur_radius=blur_radius,
         )
     )
 
 def warpflow_op(
     prev_frame:np.ndarray,
     next_frame:np.ndarray,
-) -> generation.TransformOperation:
+) -> generation.TransformParameters:
     im_prev=generation.Artifact(
         type=generation.ARTIFACT_IMAGE,
         binary=image_to_jpg_bytes(prev_frame))
     im_next=generation.Artifact(
         type=generation.ARTIFACT_IMAGE,
         binary=image_to_jpg_bytes(next_frame))
-    return generation.TransformOperation(
+    return generation.TransformParameters(
         warp_flow=generation.TransformWarpFlow(
             prev_frame=im_prev,
             next_frame=im_next,
@@ -372,22 +318,22 @@ def warpflow_op(
 def blend_op(
     amount:float,
     target:np.ndarray,
-) -> generation.TransformOperation:
-    im=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(target),
-    )
-    return generation.TransformOperation(
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
         blend=generation.TransformBlend(
             amount=amount, 
-            target=im,
-        ))
+            target=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE,
+                binary=image_to_jpg_bytes(target),
+            )
+        )
+    )
 
 def contrast_op(
     brightness: float,
     contrast: float,
-) -> generation.TransformOperation:
-    return generation.TransformOperation(
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
         contrast=generation.TransformContrast(
             brightness=brightness,
             contrast=contrast,

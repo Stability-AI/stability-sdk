@@ -34,8 +34,6 @@ from stability_sdk.utils import (
     key_frame_inbetweens,
     key_frame_parse,
     sampler_from_string,
-    warp2d_op,
-    warp3d_op,
     warpflow_op,
 )
 
@@ -59,8 +57,8 @@ class BasicSettings(param.Parameterized):
     #prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
     height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
-    sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms"])
-    model = param.ObjectSelector(default='stable-diffusion-v1-5', objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-0", "stable-diffusion-768-v2-0"])
+    sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"])
+    model = param.ObjectSelector(default='stable-diffusion-v1-5', objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1"])
     seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
@@ -102,7 +100,6 @@ class KeyframedSettings(param.Parameterized):
     rotation_z = param.String(default="0:(0)", doc="Euler angle in radians")
     brightness_curve = param.String(default="0:(1.0)")
     contrast_curve = param.String(default="0:(1.0)")
-    noise_curve = param.String(default="0:(0.0)")
     noise_scale_curve = param.String(default="0:(1.02)")
     steps_curve = param.String(default="0:(50)", doc="Diffusion steps")
     strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
@@ -169,7 +166,7 @@ def cv2_to_pil(img):
     return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
 
-def make_xform_2dm(
+def make_xform_2d(
     w: float, h: float,
     rotate: float, # in radians
     scale: float,
@@ -238,8 +235,13 @@ class Animator:
             )
 
     def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
-        op = depthcalc_op(blend_weight=self.args.midas_weight, export=True)
-        results, _ = self.api.transform(self.prior_frames, [op])
+        params = generation.TransformParameters(                    
+            depth_calc=generation.TransformDepthCalc(
+                blend_weight=self.args.midas_weight,
+                blur_radius=0.0
+            )
+        )
+        results, _ = self.api.transform([image], params)
         return results[0]
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
@@ -294,7 +296,6 @@ class Animator:
             rotation_z_series = curve_to_series(args.rotation_z),
             brightness_series = curve_to_series(args.brightness_curve),
             contrast_series = curve_to_series(args.contrast_curve),
-            noise_series = curve_to_series(args.noise_curve),
             noise_scale_series = curve_to_series(args.noise_scale_curve),
             steps_series = curve_to_series(args.steps_curve),
             strength_series = curve_to_series(args.strength_curve),
@@ -397,12 +398,11 @@ class Animator:
             return None
 
         args, frame_args = self.args, self.frame_args
-        noise = frame_args.noise_series[frame_idx]
         brightness = frame_args.brightness_series[frame_idx]
         contrast = frame_args.contrast_series[frame_idx]
         mix_in = frame_args.video_mix_in_series[frame_idx]
 
-        init_ops = []
+        init_ops: List[generation.TransformParameters] = []
         if args.color_coherence != 'None' and self.color_match_image is not None:                    
             init_ops.append(colormatch_op(
                 palette_image=self.color_match_image,
@@ -417,10 +417,6 @@ class Animator:
             init_ops.append(contrast_op(
                 brightness=brightness,
                 contrast=contrast,
-            ))
-        if noise > 0:
-            init_ops.append(generation.TransformOperation(
-                add_noise=generation.TransformAddNoise(amount=noise, seed=noise_seed)
             ))
 
         if len(init_ops):
@@ -544,11 +540,11 @@ class Animator:
         if angle == 0.0 and scale == 1.0 and dx == 0.0 and dy == 0.0:
             return None
 
+        # create xform for the current frame
+        xform = make_xform_2d(args.width, args.height, math.radians(angle), scale, dx, dy)
+
         if args.accumulate_xforms:
             frame_args = self.frame_args
-
-            # create xform for the current frame
-            xform = make_xform_2dm(args.width, args.height, math.radians(angle), scale, dx, dy)
 
             # apply xform to prior frames running xforms
             for i in range(len(self.prior_xforms)):
@@ -556,23 +552,27 @@ class Animator:
 
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
-                matrix_flat = sum(to_3x3(self.prior_xforms[i]), []) 
-                op = generation.TransformOperation(
-                    warp2d=generation.TransformWarp2d(
-                        border_mode = border_mode_from_str_2d(args.border),
-                        matrix=generation.TransformMatrix(data=matrix_flat))
-                )                
-                xformed, _ = self.api.transform([self.prior_diffused[i]], [op])
+                matrix_flat = sum(to_3x3(self.prior_xforms[i]), [])
+                params = generation.TransformParameters(
+                    resample=generation.TransformResample(
+                        border_mode=border_mode_from_str_2d(args.border),
+                        transform=generation.TransformMatrix(data=matrix_flat),
+                        export_mask=False
+                    )
+                )
+                xformed, _ = self.api.transform([self.prior_diffused[i]], params)
                 self.prior_frames[i] = xformed[0]
 
             return None
         else:
-            op = warp2d_op(
-                border_mode=args.border,
-                rotate=angle, scale=scale,
-                translate_x=dx, translate_y=dy,
+            params = generation.TransformParameters(
+                resample=generation.TransformResample(
+                    border_mode=border_mode_from_str_2d(args.border),
+                    transform=generation.TransformMatrix(data=sum(to_3x3(xform), [])),
+                    export_mask=False
+                )
             )
-            self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
+            self.prior_frames, mask = self.api.transform(self.prior_frames, params)
             return mask
 
     def transform_3d(self, frame_idx) -> Optional[np.ndarray]:
@@ -590,15 +590,15 @@ class Animator:
         near, far = args.near_plane, args.far_plane
         fov = frame_args.fov_series[frame_idx]
 
+        TRANSLATION_SCALE = 1.0/200.0 # matches Disco
+        dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
+        rx, ry, rz = math.radians(rx), math.radians(ry), math.radians(rz)
+
+        # create xform for the current frame
+        world_view = matrix.multiply(matrix.translation(dx, dy, dz), matrix.rotation_euler(rx, ry, rz))
+        projection = matrix.projection_fov(math.radians(fov), 1.0, near, far)           
+
         if args.accumulate_xforms:
-            TRANSLATION_SCALE = 1.0/200.0 # matches Disco
-            dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
-            rx, ry, rz = math.radians(rx), math.radians(ry), math.radians(rz)
-
-            # create xform for the current frame
-            world_view = matrix.multiply(matrix.translation(dx, dy, dz), matrix.rotation_euler(rx, ry, rz))
-            projection = matrix.projection_fov(math.radians(fov), 1.0, near, far)           
-
             # apply world_view xform to prior frames running xforms
             for i in range(len(self.prior_xforms)):
                 self.prior_xforms[i] = matrix.multiply(world_view, self.prior_xforms[i])
@@ -606,37 +606,35 @@ class Animator:
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
                 wvp = matrix.multiply(projection, self.prior_xforms[i])
-                ops = [
-                    generation.TransformOperation(depth_calc=generation.TransformDepthCalc(
-                        blend_weight=args.midas_weight,
-                        export=False,
-                        blur_radius=5
-                    )),
-                    generation.TransformOperation(
-                        resample=generation.TransformResample(
-                            border_mode=border_mode_from_str_3d(args.border),
-                            transform=generation.TransformMatrix(data=sum(wvp, [])),
-                            prev_transform=generation.TransformMatrix(data=sum(projection, [])),
-                            depth_warp=1.0,
-                            export_mask=False,
-                        )
-                    ),
-                ]
-                xformed, mask = self.api.transform([self.prior_diffused[i]], ops)
+                depth_calc=generation.TransformDepthCalc(
+                    blend_weight=args.midas_weight,
+                    blur_radius=5
+                )
+                resample=generation.TransformResample(
+                    border_mode=border_mode_from_str_3d(args.border),
+                    transform=generation.TransformMatrix(data=sum(wvp, [])),
+                    prev_transform=generation.TransformMatrix(data=sum(projection, [])),
+                    depth_warp=1.0,
+                    export_mask=args.inpaint_border
+                )
+                xformed, mask = self.api.transform_resample_3d([self.prior_diffused[i]], depth_calc, resample)
                 self.prior_frames[i] = xformed[0]
 
             return mask
         else:
-            ops = [
-                depthcalc_op(blend_weight=args.midas_weight),
-                warp3d_op(
-                    border_mode = args.border,
-                    translate_x = dx, translate_y = dy, translate_z = dz,
-                    rotate_x = rx, rotate_y = ry, rotate_z = rz,
-                    near_plane = near, far_plane = far, fov = fov
-                )
-            ]
-            self.prior_frames, mask = self.api.transform(self.prior_frames, ops)
+            wvp = matrix.multiply(projection, world_view)
+            depth_calc = generation.TransformDepthCalc(
+                blend_weight=args.midas_weight,
+                blur_radius=5
+            )
+            resample = generation.TransformResample(
+                border_mode=border_mode_from_str_3d(args.border),
+                transform=generation.TransformMatrix(data=sum(wvp, [])),
+                prev_transform=generation.TransformMatrix(data=sum(projection, [])),
+                depth_warp=1.0,
+                export_mask=args.inpaint_border
+            )
+            self.prior_frames, mask = self.api.transform_resample_3d(self.prior_frames, depth_calc, resample)
             return mask
 
     def transform_video(self, frame_idx) -> Optional[np.ndarray]:
@@ -661,7 +659,8 @@ class Animator:
             self.video_prev_frame = video_next_frame
             self.color_match_image = video_next_frame
 
-            self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
-            return mask
+            if op is not None and video_next_frame is not None:
+                self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
+                return mask
         return None
 
