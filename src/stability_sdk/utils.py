@@ -23,6 +23,8 @@ from PIL import Image
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+from stability_sdk.matrix import Matrix
+
 
 SAMPLERS: Dict[str, int] = {
     "ddim": generation.SAMPLER_DDIM,
@@ -50,7 +52,7 @@ COLOR_SPACES =  {
     "rgb": generation.COLOR_MATCH_RGB,
 }
 
-BORDER_MODES_2D = {
+BORDER_MODES = {
     'replicate': generation.BORDER_REPLICATE,
     'reflect': generation.BORDER_REFLECT,
     'wrap': generation.BORDER_WRAP,
@@ -64,26 +66,14 @@ INTERP_MODES = {
     'vae-slerp': generation.INTERPOLATE_VAE_SLERP,
 }
 
-_2d_only_modes = ['wrap']
-BORDER_MODES_3D = {
-    k:v for k,v in BORDER_MODES_2D.items() 
-    if k not in _2d_only_modes
-    }
-
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 # note: we need to decide on a convention between _str and _string
 
-def border_mode_from_str_2d(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES_2D.get(s.lower().strip())
+def border_mode_from_str(s: str) -> generation.BorderMode:
+    repr = BORDER_MODES.get(s.lower().strip())
     if repr is None:
-        raise ValueError(f"invalid 2d border mode {s}")
-    return repr
-
-def border_mode_from_str_3d(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES_3D.get(s.lower().strip())
-    if repr is None:
-        raise ValueError(f"invalid 3d border mode {s}")
+        raise ValueError(f"invalid border mode {s}")
     return repr
 
 def color_match_from_string(s: str) -> generation.ColorMatchMode:
@@ -273,7 +263,37 @@ def key_frame_parse(string, prompt_parser=None):
 #  - move to their own submodule
 #  - add doc strings giving details on parameters
 
-def colormatch_op(
+def blend_op(
+    amount:float,
+    target:np.ndarray,
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        blend=generation.TransformBlend(
+            amount=amount, 
+            target=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE,
+                binary=image_to_jpg_bytes(target),
+            )
+        )
+    )
+
+def color_adjust_op(
+    brightness:float=1.0,
+    contrast:float=1.0,
+    hue:float=0.0,
+    saturation:float=1.0,
+    lightness:float=0.0,
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        color_adjust=generation.TransformColorAdjust(
+            brightness=brightness,
+            contrast=contrast,
+            hue=hue,
+            saturation=saturation,
+            lightness=lightness
+        ))
+
+def color_match_op(
     palette_image:np.ndarray,
     color_mode:str='LAB',
 ) -> generation.TransformParameters:
@@ -298,6 +318,23 @@ def depthcalc_op(
         )
     )
 
+def resample_op(
+    border_mode:str,
+    transform:Matrix,
+    prev_transform:Optional[Matrix]=None,
+    depth_warp:float=1.0,
+    export_mask:bool=False
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        resample=generation.TransformResample(
+            border_mode=border_mode_from_str(border_mode),
+            transform=generation.TransformMatrix(data=sum(transform, [])),
+            prev_transform=generation.TransformMatrix(data=sum(prev_transform, [])) if prev_transform else None,
+            depth_warp=depth_warp,
+            export_mask=export_mask
+        )
+    )
+
 def warpflow_op(
     prev_frame:np.ndarray,
     next_frame:np.ndarray,
@@ -314,27 +351,3 @@ def warpflow_op(
             next_frame=im_next,
         )
     )
-
-def blend_op(
-    amount:float,
-    target:np.ndarray,
-) -> generation.TransformParameters:
-    return generation.TransformParameters(
-        blend=generation.TransformBlend(
-            amount=amount, 
-            target=generation.Artifact(
-                type=generation.ARTIFACT_IMAGE,
-                binary=image_to_jpg_bytes(target),
-            )
-        )
-    )
-
-def contrast_op(
-    brightness: float,
-    contrast: float,
-) -> generation.TransformParameters:
-    return generation.TransformParameters(
-        contrast=generation.TransformContrast(
-            brightness=brightness,
-            contrast=contrast,
-        ))

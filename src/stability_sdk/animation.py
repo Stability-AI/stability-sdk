@@ -1,3 +1,4 @@
+import base64
 import bisect
 import cv2
 import json
@@ -24,15 +25,15 @@ import stability_sdk.matrix as matrix
 
 from stability_sdk.utils import (
     blend_op,
-    border_mode_from_str_2d,
-    border_mode_from_str_3d,
-    colormatch_op,
-    contrast_op,
+    color_match_op,
+    color_adjust_op,
     depthcalc_op,
     guidance_from_string,
+    image_to_png_bytes,
     interp_mode_from_str,
     key_frame_inbetweens,
     key_frame_parse,
+    resample_op,
     sampler_from_string,
     warpflow_op,
 )
@@ -98,8 +99,6 @@ class KeyframedSettings(param.Parameterized):
     rotation_x = param.String(default="0:(0)", doc="Euler angle in radians")
     rotation_y = param.String(default="0:(0)", doc="Euler angle in radians")
     rotation_z = param.String(default="0:(0)", doc="Euler angle in radians")
-    brightness_curve = param.String(default="0:(1.0)")
-    contrast_curve = param.String(default="0:(1.0)")
     noise_scale_curve = param.String(default="0:(1.02)")
     steps_curve = param.String(default="0:(50)", doc="Diffusion steps")
     strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
@@ -108,19 +107,28 @@ class KeyframedSettings(param.Parameterized):
 # should diffusion cadence be moved up to the keyframed settings?
 # if not, maybe stuff like steps and strength should be moved elsewhere?
 class CoherenceSettings(param.Parameterized):
-    color_coherence = param.ObjectSelector(default='LAB', objects=['None', 'HSV', 'LAB', 'RGB'], doc="Color space that will be used for inter-frame color adjustments.")
     diffusion_cadence_curve = param.String(default="0:(4)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
     accumulate_xforms = param.Boolean(default=True)
     cadence_interp = param.ObjectSelector(default='mix', objects=['mix', 'rife', 'vae-lerp', 'vae-slerp'])
 
 
+class ColorSettings(param.Parameterized):
+    color_coherence = param.ObjectSelector(default='LAB', objects=['None', 'HSV', 'LAB', 'RGB'], doc="Color space that will be used for inter-frame color adjustments.")
+    brightness_curve = param.String(default="0:(1.0)")
+    contrast_curve = param.String(default="0:(1.0)")
+    hue_curve = param.String(default="0:(0.0)")
+    saturation_curve = param.String(default="0:(1.0)")
+    lightness_curve = param.String(default="0:(0.0)")
+
+
 # TO DO: change to a generic `depth_weight` rather than specifying model name in the parameter
 class DepthwarpSettings(param.Parameterized):
-    #use_depth_warping = True #@param {type:"boolean"}
     midas_weight = param.Number(default=0.3, softbounds=(0,1), doc="Strength of depth model influence.")
     near_plane = param.Number(default=200, doc="Distance to nearest plane of camera view volume.")
     far_plane = param.Number(default=10000, doc="Distance to furthest plane of camera view volume.")
     fov_curve = param.String(default="0:(25)", doc="FOV angle of camera volume in degrees.")
+    depth_blur_curve = param.String(default="0:(0.0)", doc="Blur strength of depth map.")
+    depth_warp_curve = param.String(default="0:(0.0)", doc="Depth warp strength.")
     save_depth_maps = param.Boolean(default=False)
 
 
@@ -136,6 +144,7 @@ class AnimationArgs(
     AnimationSettings,
     KeyframedSettings,
     CoherenceSettings,
+    ColorSettings,
     DepthwarpSettings,
     VideoInputSettings,
 ):
@@ -296,11 +305,16 @@ class Animator:
             rotation_z_series = curve_to_series(args.rotation_z),
             brightness_series = curve_to_series(args.brightness_curve),
             contrast_series = curve_to_series(args.contrast_curve),
+            hue_series = curve_to_series(args.hue_curve),
+            saturation_series = curve_to_series(args.saturation_curve),
+            lightness_series = curve_to_series(args.lightness_curve),
             noise_scale_series = curve_to_series(args.noise_scale_curve),
             steps_series = curve_to_series(args.steps_curve),
             strength_series = curve_to_series(args.strength_curve),
             diffusion_cadence_series = curve_to_series(args.diffusion_cadence_curve),
             fov_series = curve_to_series(args.fov_curve),
+            depth_blur_series = curve_to_series(args.depth_blur_curve),
+            depth_warp_series = curve_to_series(args.depth_warp_curve),
             video_mix_in_series = curve_to_series(args.video_mix_in_curve),
         ))
 
@@ -400,11 +414,14 @@ class Animator:
         args, frame_args = self.args, self.frame_args
         brightness = frame_args.brightness_series[frame_idx]
         contrast = frame_args.contrast_series[frame_idx]
+        hue = frame_args.hue_series[frame_idx]
+        saturation = frame_args.saturation_series[frame_idx]
+        lightness = frame_args.lightness_series[frame_idx]
         mix_in = frame_args.video_mix_in_series[frame_idx]
 
         init_ops: List[generation.TransformParameters] = []
         if args.color_coherence != 'None' and self.color_match_image is not None:                    
-            init_ops.append(colormatch_op(
+            init_ops.append(color_match_op(
                 palette_image=self.color_match_image,
                 color_mode=args.color_coherence,
             ))
@@ -413,10 +430,13 @@ class Animator:
                 amount=mix_in, 
                 target=self.video_prev_frame
             ))
-        if brightness != 1.0 or contrast != 1.0:
-            init_ops.append(contrast_op(
+        if brightness != 1.0 or contrast != 1.0 or hue != 0.0 or saturation != 1.0 or lightness != 0.0:
+            init_ops.append(color_adjust_op(
                 brightness=brightness,
                 contrast=contrast,
+                hue=hue,
+                saturation=saturation,
+                lightness=lightness
             ))
 
         if len(init_ops):
@@ -552,26 +572,13 @@ class Animator:
 
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
-                matrix_flat = sum(to_3x3(self.prior_xforms[i]), [])
-                params = generation.TransformParameters(
-                    resample=generation.TransformResample(
-                        border_mode=border_mode_from_str_2d(args.border),
-                        transform=generation.TransformMatrix(data=matrix_flat),
-                        export_mask=False
-                    )
-                )
-                xformed, _ = self.api.transform([self.prior_diffused[i]], params)
+                params = resample_op(args.border, to_3x3(self.prior_xforms[i]), export_mask=args.inpaint_border)
+                xformed, mask = self.api.transform([self.prior_diffused[i]], params)
                 self.prior_frames[i] = xformed[0]
 
-            return None
+            return mask
         else:
-            params = generation.TransformParameters(
-                resample=generation.TransformResample(
-                    border_mode=border_mode_from_str_2d(args.border),
-                    transform=generation.TransformMatrix(data=sum(to_3x3(xform), [])),
-                    export_mask=False
-                )
-            )
+            params = resample_op(args.border, to_3x3(xform), export_mask=args.inpaint_border)
             self.prior_frames, mask = self.api.transform(self.prior_frames, params)
             return mask
 
@@ -589,6 +596,8 @@ class Animator:
         rz = frame_args.rotation_z_series[frame_idx]
         near, far = args.near_plane, args.far_plane
         fov = frame_args.fov_series[frame_idx]
+        depth_blur = self.args.depth_blur_series[frame_idx]
+        depth_warp = self.args.depth_warp_series[frame_idx]
 
         TRANSLATION_SCALE = 1.0/200.0 # matches Disco
         dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
@@ -606,34 +615,16 @@ class Animator:
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
                 wvp = matrix.multiply(projection, self.prior_xforms[i])
-                depth_calc=generation.TransformDepthCalc(
-                    blend_weight=args.midas_weight,
-                    blur_radius=5
-                )
-                resample=generation.TransformResample(
-                    border_mode=border_mode_from_str_3d(args.border),
-                    transform=generation.TransformMatrix(data=sum(wvp, [])),
-                    prev_transform=generation.TransformMatrix(data=sum(projection, [])),
-                    depth_warp=1.0,
-                    export_mask=args.inpaint_border
-                )
+                depth_calc = depthcalc_op(args.midas_weight, depth_blur)
+                resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
                 xformed, mask = self.api.transform_resample_3d([self.prior_diffused[i]], depth_calc, resample)
                 self.prior_frames[i] = xformed[0]
 
             return mask
         else:
             wvp = matrix.multiply(projection, world_view)
-            depth_calc = generation.TransformDepthCalc(
-                blend_weight=args.midas_weight,
-                blur_radius=5
-            )
-            resample = generation.TransformResample(
-                border_mode=border_mode_from_str_3d(args.border),
-                transform=generation.TransformMatrix(data=sum(wvp, [])),
-                prev_transform=generation.TransformMatrix(data=sum(projection, [])),
-                depth_warp=1.0,
-                export_mask=args.inpaint_border
-            )
+            depth_calc = depthcalc_op(args.midas_weight, depth_blur)
+            resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
             self.prior_frames, mask = self.api.transform_resample_3d(self.prior_frames, depth_calc, resample)
             return mask
 
@@ -660,7 +651,11 @@ class Animator:
             self.color_match_image = video_next_frame
 
             if op is not None and video_next_frame is not None:
-                self.prior_frames, mask = self.api.transform(self.prior_frames, [op])
+                # warp_flow is in `extras` and will change in the future
+                prev_b64 = base64.b64encode(image_to_png_bytes(self.prior_frames[0])).decode('utf-8')
+                next_b64 = base64.b64encode(image_to_png_bytes(self.prior_frames[1])).decode('utf-8')
+                extras = { "warp_flow": { "prev_frame": prev_b64, "next_frame": next_b64} }
+                self.prior_frames, mask = self.api.transform(self.prior_frames, None, extras=extras)
                 return mask
         return None
 

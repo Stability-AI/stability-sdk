@@ -2,7 +2,7 @@
 
 # fmt: off
 
-from argparse import ArgumentParser, Namespace
+import grpc
 import io
 import logging
 import mimetypes
@@ -11,13 +11,15 @@ import pathlib
 import random
 import sys
 import time
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 import uuid
 import warnings
 
+from argparse import ArgumentParser, Namespace
 from google.protobuf.json_format import MessageToJson
-import grpc
+from google.protobuf.struct_pb2 import Struct
 from PIL import Image
+from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
+
 
 try:
     import numpy as np
@@ -326,7 +328,8 @@ class Api:
     def transform(
         self,
         images: List[np.ndarray],
-        params: Union[generation.TransformParameters, List[generation.TransformParameters]]
+        params: Union[generation.TransformParameters, List[generation.TransformParameters]],
+        extras: Optional[Dict] = None
     ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
         """
         Transform images
@@ -337,15 +340,14 @@ class Api:
         """
         assert len(images)
         assert isinstance(images[0], np.ndarray)
-        
-        if isinstance(params, generation.TransformParameters):
-            rq = generation.Request(
-                engine_id=self._transform.engine_id,
-                prompt=[image_to_prompt(image) for image in images],
-                transform=params
-            )
-            responses = self._transform.stub.Generate(rq, wait_for_ready=True)
-        else:
+
+        extras_struct = None
+        if extras is not None:
+            extras_struct = Struct()
+            extras_struct.update(extras)
+
+        if isinstance(params, List) and len(params) > 1:
+            assert extras is None
             stages = []
             for idx, param in enumerate(params):
                 final = idx == len(params) - 1
@@ -364,16 +366,23 @@ class Api:
                 ))
             chain_rq = generation.ChainRequest(request_id="xform_chain", stage=stages)
             responses = self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True)
+        else:
+            rq = generation.Request(
+                engine_id=self._transform.engine_id,
+                prompt=[image_to_prompt(image) for image in images],
+                transform=params[0] if isinstance(params, List) else params,
+                extras=extras_struct
+            )
+            responses = self._transform.stub.Generate(rq, wait_for_ready=True)
 
         results = self._process_response(responses)
         return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
 
-
     def transform_resample_3d(
         self, 
         images: List[np.ndarray], 
-        depth_calc: generation.TransformDepthCalc,
-        resample: generation.TransformResample
+        depth_calc: generation.TransformParameters,
+        resample: generation.TransformParameters
     ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
         assert len(images)
         assert isinstance(images[0], np.ndarray)
@@ -382,12 +391,12 @@ class Api:
             engine_id=self._transform.engine_id,
             requested_type=generation.ARTIFACT_TENSOR,
             prompt=[image_to_prompt(image) for image in images],
-            transform=generation.TransformParameters(depth_calc=depth_calc)
+            transform=depth_calc
         )
         rq_resample = generation.Request(
             engine_id=self._transform.engine_id,
             prompt=[image_to_prompt(image) for image in images],
-            transform=generation.TransformParameters(resample=resample)
+            transform=resample
         )
 
         chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
