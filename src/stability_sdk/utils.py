@@ -309,7 +309,7 @@ def color_match_op(
 
 def depthcalc_op(
     blend_weight:float,
-    blur_radius:float=0.0,
+    blur_radius:int=0,
 ) -> generation.TransformParameters:
     return generation.TransformParameters(                    
         depth_calc=generation.TransformDepthCalc(

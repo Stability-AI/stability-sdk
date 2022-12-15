@@ -596,8 +596,8 @@ class Animator:
         rz = frame_args.rotation_z_series[frame_idx]
         near, far = args.near_plane, args.far_plane
         fov = frame_args.fov_series[frame_idx]
-        depth_blur = self.args.depth_blur_series[frame_idx]
-        depth_warp = self.args.depth_warp_series[frame_idx]
+        depth_blur = int(frame_args.depth_blur_series[frame_idx])
+        depth_warp = frame_args.depth_warp_series[frame_idx]
 
         TRANSLATION_SCALE = 1.0/200.0 # matches Disco
         dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE

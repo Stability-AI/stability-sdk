@@ -130,6 +130,7 @@ class Api:
         self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
+        self._debug_no_chains = False
 
     def generate(
         self,
@@ -347,6 +348,11 @@ class Api:
             extras_struct.update(extras)
 
         if isinstance(params, List) and len(params) > 1:
+            if self._debug_no_chains:
+                for param in params:
+                    images, mask = self.transform(images, param, extras)
+                return images, mask
+
             assert extras is None
             stages = []
             for idx, param in enumerate(params):
@@ -387,45 +393,69 @@ class Api:
         assert len(images)
         assert isinstance(images[0], np.ndarray)
 
-        rq_depth = generation.Request(
-            engine_id=self._transform.engine_id,
-            requested_type=generation.ARTIFACT_TENSOR,
-            prompt=[image_to_prompt(image) for image in images],
-            transform=depth_calc
-        )
-        rq_resample = generation.Request(
-            engine_id=self._transform.engine_id,
-            prompt=[image_to_prompt(image) for image in images],
-            transform=resample
-        )
+        # because only linear chains are currently supported and we want to use
+        # the same depth for each, we have to do this in two passes right now
 
-        chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
-            generation.Stage(
-                id="depth_calc",
-                request=rq_depth, 
-                on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target="resample")]
-            ),
-            generation.Stage(
-                id="resample",
-                request=rq_resample, 
-                on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
-            ) 
-        ])
+        image_prompts = [image_to_prompt(image) for image in images]
+        warped_images = []
+        warp_mask = None
 
-        results = self._process_response(self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True))
-        return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
+        for image_prompt in image_prompts:
+            rq_depth = generation.Request(
+                engine_id=self._transform.engine_id,
+                requested_type=generation.ARTIFACT_TENSOR,
+                prompt=[image_prompts[0]], # use same input image for each depth calc
+                transform=depth_calc
+            )
+            rq_resample = generation.Request(
+                engine_id=self._transform.engine_id,
+                prompt=[image_prompt],
+                transform=resample
+            )
+
+            if self._debug_no_chains:
+                results = self._process_response(self._transform.stub.Generate(rq_depth, wait_for_ready=True))
+                rq_resample.prompt.append(                
+                    generation.Prompt(
+                        artifact=generation.Artifact(
+                            type=generation.ARTIFACT_TENSOR,
+                            tensor=results[generation.ARTIFACT_TENSOR][0]
+                        )
+                    )
+                )
+                results = self._process_response(self._transform.stub.Generate(rq_resample, wait_for_ready=True))
+            else:
+                chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
+                    generation.Stage(
+                        id="depth_calc",
+                        request=rq_depth, 
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target="resample")]
+                    ),
+                    generation.Stage(
+                        id="resample",
+                        request=rq_resample, 
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
+                    ) 
+                ])
+
+                results = self._process_response(self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True))
+            warped_images.append(results[generation.ARTIFACT_IMAGE][0])
+            warp_mask = results.get(generation.ARTIFACT_MASK, None)
+
+        return warped_images, warp_mask
 
     def _process_response(self, response) -> Dict[int, List[np.ndarray]]:
         results = {}
         for resp in response:
             for artifact in resp.artifacts:
+                if artifact.type not in results:
+                    results[artifact.type] = []
                 if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
                     nparr = np.frombuffer(artifact.binary, np.uint8)
                     im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-                    if artifact.type not in results:
-                        results[artifact.type] = []
                     results[artifact.type].append(im)
+                elif artifact.type == generation.ARTIFACT_TENSOR:
+                    results[artifact.type].append(artifact.tensor)
         return results
 
 
