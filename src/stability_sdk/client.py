@@ -69,6 +69,7 @@ def process_artifacts_from_answers(
     ],
     write: bool = True,
     verbose: bool = False,
+    filter_types: Optional[List[str]] = None,
 ) -> Generator[Tuple[str, generation.Artifact], None, None]:
     """
     Process the Artifacts from the Answers.
@@ -98,7 +99,8 @@ def process_artifacts_from_answers(
                 ext = ".pb"
                 contents = artifact.SerializeToString()
             out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
-            if write:
+            is_allowed_type = filter_types is None or artifact_type_to_str(artifact.type) in filter_types
+            if write and is_allowed_type:
                 with open(out_p, "wb") as f:
                     f.write(bytes(contents))
                     if verbose:
@@ -333,7 +335,7 @@ class StabilityInference:
                         for artifact in answer.artifacts
                     ]
                     logger.info(
-                        f"Got {answer.answer_id} with {artifact_ts} in "
+                        f"Got answer {answer.answer_id} with artifact types {artifact_ts} in "
                         f"{duration:0.2f}s"
                     )
                 else:
@@ -419,6 +421,13 @@ if __name__ == "__main__":
         help="output prefixes for artifacts",
     )
     parser.add_argument(
+        "--artifact_type",
+        "-t",
+        action='append',
+        type=str,
+        help="filter artifacts by type (ARTIFACT_IMAGE, ARTIFACT_TEXT, ARTIFACT_CLASSIFICATIONS, etc)"
+    )
+    parser.add_argument(
         "--no-store", action="store_true", help="do not write out artifacts"
     )
     parser.add_argument(
@@ -484,7 +493,8 @@ if __name__ == "__main__":
 
     answers = stability_api.generate(args.prompt, **request)
     artifacts = process_artifacts_from_answers(
-        args.prefix, args.prompt, answers, write=not args.no_store, verbose=True
+        args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
+        filter_types=args.artifact_types,
     )
     if args.show:
         for artifact in open_images(artifacts, verbose=True):
