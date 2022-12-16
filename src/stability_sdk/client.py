@@ -98,14 +98,18 @@ def process_artifacts_from_answers(
             else:
                 ext = ".pb"
                 contents = artifact.SerializeToString()
-            out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)           
+            out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
             is_allowed_type = filter_types is None or artifact_type_to_str(artifact.type) in filter_types
-            if write and is_allowed_type:
-                with open(out_p, "wb") as f:
-                    f.write(bytes(contents))
+            if write:
+                if is_allowed_type:
+                    with open(out_p, "wb") as f:
+                        f.write(bytes(contents))
+                        if verbose:
+                            logger.info(f"wrote {artifact_type_to_str(artifact.type)} to {out_p}")
+                else:
                     if verbose:
-                        artifact_t = artifact_type_to_str(artifact.type)
-                        logger.info(f"wrote {artifact_t} to {out_p}")
+                        logger.info(
+                            f"skipping {artifact_type_to_str(artifact.type)} due to artifact type filter")
 
             yield (out_p, artifact)
             idx += 1
