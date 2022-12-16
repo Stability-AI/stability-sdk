@@ -98,7 +98,7 @@ def process_artifacts_from_answers(
             else:
                 ext = ".pb"
                 contents = artifact.SerializeToString()
-            out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
+            out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)           
             is_allowed_type = filter_types is None or artifact_type_to_str(artifact.type) in filter_types
             if write and is_allowed_type:
                 with open(out_p, "wb") as f:
@@ -421,7 +421,7 @@ if __name__ == "__main__":
         help="output prefixes for artifacts",
     )
     parser.add_argument(
-        "--artifact_type",
+        "--artifact_types",
         "-t",
         action='append',
         type=str,

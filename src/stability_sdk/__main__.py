@@ -114,7 +114,7 @@ parser.add_argument(
     help="output prefixes for artifacts",
 )
 parser.add_argument(
-    "--artifact_type",
+    "--artifact_types",
     "-t",
     action='append',
     type=str,
