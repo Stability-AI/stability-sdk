@@ -15,6 +15,9 @@ from PIL import Image
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
+logger = logging.getLogger(__name__)
+logger.setLevel(level=logging.INFO)
+
 SAMPLERS: Dict[str, int] = {
     "ddim": generation.SAMPLER_DDIM,
     "plms": generation.SAMPLER_DDPM,
@@ -27,7 +30,6 @@ SAMPLERS: Dict[str, int] = {
     "k_dpmpp_2m": generation.SAMPLER_K_DPMPP_2M,
     "k_dpmpp_2s_ancestral": generation.SAMPLER_K_DPMPP_2S_ANCESTRAL
 }
-
     
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
