@@ -128,7 +128,7 @@ class Api:
     def __init__(self, stub):
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')
-        self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
+        self._interpolate = ApiEndpoint(stub, 'interpolate-server-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
 
@@ -145,6 +145,7 @@ class Api:
         init_image: Optional[np.ndarray] = None,
         init_strength: float = 0.0,
         init_noise_scale: float = 1.0,
+        init_depth: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
@@ -177,7 +178,9 @@ class Api:
         if init_image is not None:
             p.append(image_to_prompt(init_image))
             if mask is not None:
-                p.append(image_to_prompt(mask, is_mask=True))
+                p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
+        if init_depth is not None:
+            p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
 
         step_parameters = {
             "scaled_step": 0,
@@ -270,7 +273,7 @@ class Api:
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         p.extend([
             image_to_prompt(image),
-            image_to_prompt(mask, is_mask=True)
+            image_to_prompt(mask, type=generation.ARTIFACT_MASK)
         ])
         rq = generation.Request(
             engine_id=self._inpaint.engine_id,
@@ -571,7 +574,7 @@ class StabilityInference:
             prompts += [image_to_prompt(init_image)]
 
             if mask_image is not None:
-                prompts += [image_to_prompt(mask_image, is_mask=True)]
+                prompts += [image_to_prompt(mask_image, type=generation.ARTIFACT_MASK)]
 
         
         if guidance_prompt:

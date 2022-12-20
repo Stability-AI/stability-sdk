@@ -200,7 +200,7 @@ def pil_image_to_png_bytes(image: Image.Image):
 
 def image_to_prompt(
     image: Union[np.ndarray, Image.Image],
-    is_mask: bool = False
+    type: generation.ArtifactType=generation.ARTIFACT_IMAGE
 ) -> generation.Prompt:
     if isinstance(image, np.ndarray):
         image = image_to_png_bytes(image)
@@ -211,10 +211,9 @@ def image_to_prompt(
         raise NotImplementedError
     
     return generation.Prompt(
-        parameters=generation.PromptParameters(init=not is_mask),
-        artifact=generation.Artifact(
-            type=generation.ARTIFACT_MASK if is_mask else generation.ARTIFACT_IMAGE,
-            binary=image))
+        parameters=generation.PromptParameters(init=True),
+        artifact=generation.Artifact(type=type,binary=image)
+    )
 
 
 ##############################################

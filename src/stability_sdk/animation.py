@@ -41,6 +41,7 @@ from stability_sdk.utils import (
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
+DEFAULT_MODEL = 'stable-diffusion-v1-5'
 
 docstring_bordermode = ( 
     "Method that will be used to fill empty regions, e.g. after a rotation transform."
@@ -59,7 +60,7 @@ class BasicSettings(param.Parameterized):
     height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"])
-    model = param.ObjectSelector(default='stable-diffusion-v1-5', objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1"])
+    model = param.ObjectSelector(default=DEFAULT_MODEL, objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1", "stable-diffusion-depth-v2-0"])
     seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
@@ -174,7 +175,6 @@ def cv2_to_pil(img):
     assert img is not None
     return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
-
 def make_xform_2d(
     w: float, h: float,
     rotate: float, # in radians
@@ -191,6 +191,8 @@ def make_xform_2d(
     translate = matrix.translation(translate_x, translate_y, 0)
     return matrix.multiply(rotate_scale, translate)
 
+def model_requires_depth(model_name: str) -> bool:
+    return model_name == 'stable-diffusion-depth-v2-0'
 
 def to_3x3(m: matrix.Matrix) -> matrix.Matrix:
     # convert 4x4 matrix with 2D rotation, scale, and translation to 3x3 matrix
@@ -247,7 +249,7 @@ class Animator:
         params = generation.TransformParameters(                    
             depth_calc=generation.TransformDepthCalc(
                 blend_weight=self.args.midas_weight,
-                blur_radius=0.0
+                blur_radius=0
             )
         )
         results, _ = self.api.transform([image], params)
@@ -449,6 +451,10 @@ class Animator:
         seed = args.seed
 
         for frame_idx in range(self.start_frame_idx, args.max_frames):
+            self.api._generate.engine_id = args.model
+            if model_requires_depth(args.model) and not self.prior_frames:
+                self.api._generate.engine_id = DEFAULT_MODEL
+
             diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
             steps = int(self.frame_args.steps_series[frame_idx])
             strength = max(0.0, self.frame_args.strength_series[frame_idx])
@@ -488,6 +494,12 @@ class Animator:
                 init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
                 init_image = self.prepare_init(init_image, frame_idx, seed)
 
+                # when using depth model, compute a depth init image
+                init_depth = None
+                if init_image is not None and model_requires_depth(args.model):
+                    init_depth = self.generate_depth_image(init_image)
+                    init_depth = 255 - cv2.cvtColor(init_depth, cv2.COLOR_BGR2GRAY)
+
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
                 guidance = guidance_from_string(args.clip_guidance)
@@ -502,6 +514,7 @@ class Animator:
                     init_image=init_image, 
                     init_strength=strength,
                     init_noise_scale=noise_scale, 
+                    init_depth=init_depth,
                     mask = self.mask,
                     masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                     guidance_preset=guidance,
