@@ -128,7 +128,7 @@ class Api:
     def __init__(self, stub):
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')
-        self._interpolate = ApiEndpoint(stub, 'interpolate-server-v1')
+        self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
 
