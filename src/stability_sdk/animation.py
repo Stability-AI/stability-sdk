@@ -271,6 +271,21 @@ class Animator:
         prefix = "depth" if depth else "frame"
         return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png")
 
+    def image_resize(self, img: np.ndarray, mode: str='stretch') -> np.ndarray:
+        height, width, _ = img.shape
+        if mode == 'cover':
+            scale = max(self.args.width / width, self.args.height / height)
+            img = cv2.resize(img, (int(width * scale), int(height * scale))) # add interp
+            x = (img.shape[1] - self.args.width) // 2
+            y = (img.shape[0] - self.args.height) // 2
+            img = img[y:y+self.args.height, x:x+self.args.width]
+        elif mode == 'stretch':
+            img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+        else: # 'resize-canvas'
+            width, height = map(lambda x: x - x % 64, (width, height))
+            self.args.width, self.args.height = width, height
+        return img
+
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename)
         with open(settings_filepath, "w+", encoding="utf-8") as f:
@@ -351,19 +366,8 @@ class Animator:
             fpath =  self.args.init_image
         if not fpath:
             return
-        img = cv2.imread(fpath)
-        height, width, _ = img.shape
-        if self.args.init_sizing == 'cover':
-            scale = max(self.args.width / width, self.args.height / height)
-            img = cv2.resize(img, (int(width * scale), int(height * scale)))
-            x = (img.shape[1] - self.args.width) // 2
-            y = (img.shape[0] - self.args.height) // 2
-            img = img[y:y+self.args.height, x:x+self.args.width]
-        elif self.args.init_sizing == 'stretch':
-            img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
-        else: # 'resize-canvas'
-            width, height = map(lambda x: x - x % 64, (width, height))
-            self.args.width, self.args.height = width, height
+
+        img = self.image_resize(cv2.imread(fpath), self.args.init_sizing)
             
         self.prior_frames = [img, img]
         self.prior_diffused = [img, img]
@@ -394,7 +398,7 @@ class Animator:
             success, image = self.video_reader.read()
             if not success:
                 raise Exception(f"Failed to read first frame from {self.args.video_init_path}")
-            self.video_prev_frame = cv2.resize(image, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
+            self.video_prev_frame = self.image_resize(image, 'cover')
             self.prior_frames = [self.video_prev_frame, self.video_prev_frame]
             self.prior_diffused = [self.video_prev_frame, self.video_prev_frame]
 
@@ -497,8 +501,15 @@ class Animator:
                 # when using depth model, compute a depth init image
                 init_depth = None
                 if init_image is not None and model_requires_depth(args.model):
-                    init_depth = self.generate_depth_image(init_image)
-                    init_depth = 255 - cv2.cvtColor(init_depth, cv2.COLOR_BGR2GRAY)
+                    depth_source = self.video_prev_frame if self.video_prev_frame is not None else init_image
+                    params = generation.TransformParameters(                    
+                        depth_calc=generation.TransformDepthCalc(
+                            blend_weight=1.1, blur_radius=0
+                        )
+                    )
+                    results, _ = self.api.transform([depth_source], params)
+                    init_depth = results[0]
+                    init_depth = cv2.cvtColor(init_depth, cv2.COLOR_BGR2GRAY)
 
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
@@ -650,25 +661,16 @@ class Animator:
         for _ in range(args.extract_nth_frame):
             success, video_next_frame = self.video_reader.read()
         if success:
-            video_next_frame = cv2.resize(
-                video_next_frame,
-                (args.width, args.height),
-                interpolation=cv2.INTER_LANCZOS4
-            )
-            if args.video_flow_warp:
-                op = warpflow_op(
-                    prev_frame=self.video_prev_frame,
-                    next_frame=video_next_frame,
-                )
-            self.video_prev_frame = video_next_frame
-            self.color_match_image = video_next_frame
-
-            if op is not None and video_next_frame is not None:
+            video_next_frame = self.image_resize(video_next_frame, 'cover')
+            mask = None
+            if args.video_flow_warp and video_next_frame is not None:
                 # warp_flow is in `extras` and will change in the future
-                prev_b64 = base64.b64encode(image_to_png_bytes(self.prior_frames[0])).decode('utf-8')
-                next_b64 = base64.b64encode(image_to_png_bytes(self.prior_frames[1])).decode('utf-8')
+                prev_b64 = base64.b64encode(image_to_png_bytes(self.video_prev_frame)).decode('utf-8')
+                next_b64 = base64.b64encode(image_to_png_bytes(video_next_frame)).decode('utf-8')
                 extras = { "warp_flow": { "prev_frame": prev_b64, "next_frame": next_b64} }
                 self.prior_frames, mask = self.api.transform(self.prior_frames, None, extras=extras)
-                return mask
+            self.video_prev_frame = video_next_frame
+            self.color_match_image = video_next_frame
+            return mask
         return None
 
