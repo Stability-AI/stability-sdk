@@ -186,33 +186,36 @@ def image_mix(img_a: np.ndarray, img_b: np.ndarray, ratio: Union[float, np.ndarr
         
     return (img_a.astype(np.float32)*(1.0-ratio) + img_b.astype(np.float32)*ratio).astype(img_a.dtype)
 
-def image_to_jpg_bytes(image: np.ndarray, quality: int=90):
-    return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
+def image_to_jpg_bytes(image: Union[Image.Image, np.ndarray], quality: int=90) -> bytes:
+    if isinstance(image, Image.Image):
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=quality)
+        buf.seek(0)
+        return buf.getvalue()
+    elif isinstance(image, np.ndarray):        
+        return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
+    else:
+        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
 
-def image_to_png_bytes(image: np.ndarray):
-    return cv2.imencode('.png', image)[1].tobytes()
-
-def pil_image_to_png_bytes(image: Image.Image):
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    buf.seek(0)
-    return buf.getvalue()
+def image_to_png_bytes(image: Union[Image.Image, np.ndarray]) -> bytes:
+    if isinstance(image, Image.Image):
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        buf.seek(0)
+        return buf.getvalue()
+    elif isinstance(image, np.ndarray):
+        return cv2.imencode('.png', image)[1].tobytes()
+    else:
+        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
 
 def image_to_prompt(
-    image: Union[np.ndarray, Image.Image],
+    image: Union[Image.Image, np.ndarray],
     type: generation.ArtifactType=generation.ARTIFACT_IMAGE
 ) -> generation.Prompt:
-    if isinstance(image, np.ndarray):
-        image = image_to_png_bytes(image)
-    elif isinstance(image, Image.Image):
-        image = pil_image_to_png_bytes(image)
-    else:
-        print(type(image))
-        raise NotImplementedError
-    
+    png = image_to_png_bytes(image)    
     return generation.Prompt(
         parameters=generation.PromptParameters(init=True),
-        artifact=generation.Artifact(type=type,binary=image)
+        artifact=generation.Artifact(type=type, binary=png)
     )
 
 
