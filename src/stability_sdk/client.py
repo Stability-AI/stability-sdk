@@ -3,11 +3,10 @@
 # fmt: off
 
 import grpc
-import io
+import json
 import logging
 import mimetypes
 import os
-import pathlib
 import random
 import sys
 import time
@@ -41,12 +40,15 @@ else:
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_sdk.interfaces.gooseai.project.project_pb2 as project
+import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
 
 from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
     artifact_type_to_str,
     image_mix,
+    image_to_png_bytes,
     image_to_prompt,
     open_images,
     sampler_from_string,
@@ -57,6 +59,17 @@ from stability_sdk.utils import (
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
+
+def open_channel(host: str, api_key: str = None) -> grpc.Channel:
+    if host.endswith(":443"):
+        call_credentials = [grpc.access_token_call_credentials(api_key)]
+        channel_credentials = grpc.composite_channel_credentials(
+            grpc.ssl_channel_credentials(), *call_credentials
+        )
+        channel = grpc.secure_channel(host, channel_credentials)
+    else:
+        channel = grpc.insecure_channel(host)
+    return channel
 
 def process_artifacts_from_answers(
     prefix: str,
@@ -106,29 +119,143 @@ def process_artifacts_from_answers(
             idx += 1
 
 
-def open_channel(host: str, api_key: str = None) -> generation_grpc.GenerationServiceStub:
-    print(f"Opening channel {host}")
-    if host.endswith(":443"):
-        call_credentials = [grpc.access_token_call_credentials(api_key)]
-        channel_credentials = grpc.composite_channel_credentials(
-            grpc.ssl_channel_credentials(), *call_credentials
-        )
-        channel = grpc.secure_channel(host, channel_credentials)
-    else:
-        channel = grpc.insecure_channel(host)
-    return generation_grpc.GenerationServiceStub(channel)
-
 
 class ApiEndpoint:
     def __init__(self, stub, engine_id):
         self.stub = stub
         self.engine_id = engine_id
 
+class Project():
+    def __init__(self, api: 'Api', project: project.Project):
+        self.api = api
+        self.id = project.id
+        self.file_id = project.file.id
+        self.title = project.title
+
+    @staticmethod
+    def create(
+        api: 'Api', 
+        title: str, 
+        access: project.ProjectAccess=project.PROJECT_ACCESS_PRIVATE,
+        status: project.ProjectStatus=project.PROJECT_STATUS_ACTIVE
+    ) -> 'Project':
+        req = project.CreateProjectRequest(title=title, access=access, status=status)
+        proj: project.Project = api._proj_stub.Create(req, wait_for_ready=True)
+        return Project(api, proj)
+
+    def delete(self):
+        self.api._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
+
+    @staticmethod
+    def list_projects(api: 'Api') -> List['Project']:
+        list_req = project.ListProjectRequest(owner_id="")
+        results = []
+        for proj in api._proj_stub.List(list_req, wait_for_ready=True):
+            results.append(Project(api, proj))
+        return results
+
+    def load_settings(self) -> dict:
+        request = generation.Request(
+            engine_id=self.api._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(
+                    type=generation.ARTIFACT_TEXT,
+                    mime="application/json",
+                    uuid=self.file_id,
+                )
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_GET, 
+                project_id=self.id,
+                use=generation.ASSET_USE_PROJECT
+            )
+        )
+        for resp in self.api._asset.stub.Generate(request, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_TEXT:
+                    return json.loads(artifact.text)
+        raise Exception(f"Failed to load project file for {self.id}")
+
+    def save_settings(self, data: dict) -> str:
+        contents = json.dumps(data)
+        request = generation.Request(
+            engine_id=self.api._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(
+                    type=generation.ARTIFACT_TEXT,
+                    text=contents,
+                    mime="application/json",
+                    uuid=self.file_id
+                )
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_PUT, 
+                project_id=self.id, 
+                use=generation.ASSET_USE_PROJECT
+            )
+        )
+        for resp in self.api._asset.stub.Generate(request, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_TEXT:
+                    self.update(file_id=artifact.uuid, file_uri=artifact.text)
+                    print(f"Saved project file {artifact.uuid} for {self.id}")
+                    return artifact.uuid
+        raise Exception(f"Failed to save project file for {self.id}")
+
+    def put_image_asset(
+        self, 
+        image: Union[Image.Image, np.ndarray],
+        use: generation.AssetUse=generation.ASSET_USE_OUTPUT
+    ):
+        prompt = generation.Prompt(
+            parameters=generation.PromptParameters(init=True),
+            artifact=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE,
+                binary=image_to_png_bytes(image)
+            )
+        )
+
+        store_rq = generation.Request(
+            engine_id=self.api._asset.engine_id,
+            prompt=[prompt],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_PUT, 
+                project_id=self.id, 
+                use=use
+            )
+        )
+
+        for resp in self.api._asset.stub.Generate(store_rq, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_TEXT:
+                    return artifact.uuid
+        raise Exception(f"Failed to store image asset for project {self.id}")
+
+    def update(self, title:str=None, file_id:str=None, file_uri:str=None):
+        file = project.ProjectAsset(
+            id=file_id,
+            uri=file_uri,
+            use=project.PROJECT_ASSET_USE_PROJECT,
+        ) if file_id and file_uri else None
+        updated_project = self.api._proj_stub.Update(project.UpdateProjectRequest(
+            id=self.id, 
+            title=title,
+            file=file
+        ))
+        print(f"Updated project {self.id} with {updated_project}")
+        if title:
+            self.title = title
+        if file_id:
+            self.file_id = file_id
+
 class Api:
-    def __init__(self, stub):
+    def __init__(self, channel: grpc.Channel):
+        stub = generation_grpc.GenerationServiceStub(channel)
+        self._proj_stub = project_grpc.ProjectServiceStub(channel)
+        self._asset = ApiEndpoint(stub, 'asset-service')
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')
-        self._interpolate = ApiEndpoint(stub, 'interpolate-server-v1')
+        self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
 
