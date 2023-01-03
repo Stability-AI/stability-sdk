@@ -4,16 +4,14 @@ import pytest
 from typing import ByteString
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
+import stability_sdk.matrix as matrix
 from stability_sdk.utils import (
-    _2d_only_modes,
-    BORDER_MODES_2D,
-    BORDER_MODES_3D,
+    BORDER_MODES,
     COLOR_SPACES,
     GUIDANCE_PRESETS,
     SAMPLERS,
     artifact_type_to_str,
-    border_mode_from_str_2d,
-    border_mode_from_str_3d,
+    border_mode_from_str,
     color_match_from_string,
     get_sampler_from_str,
     guidance_from_string,
@@ -29,31 +27,20 @@ from stability_sdk.utils import (
     key_frame_parse,
     #########
     blend_op,
-    colormatch_op,
-    contrast_op,
+    color_match_op,
+    color_adjust_op,
     depthcalc_op,
-    warp2d_op,
-    warp3d_op,
-    warpflow_op,
+    resample_op
 )
 
-@pytest.mark.parametrize("border", BORDER_MODES_2D.keys())
+@pytest.mark.parametrize("border", BORDER_MODES.keys())
 def test_border_mode_from_str_2d_valid(border):
-    border_mode_from_str_2d(s=border)
+    border_mode_from_str(s=border)
     assert True
 
 def test_border_mode_from_str_2d_invalid():
-    with pytest.raises(ValueError, match="invalid 2d border mode"):
-        border_mode_from_str_2d(s='not a real border mode')
-
-@pytest.mark.parametrize("border", BORDER_MODES_3D.keys())
-def test_border_mode_from_str_3d_valid(border):
-    border_mode_from_str_3d(s=border)
-    assert True
-
-def test_border_mode_from_str_3d_invalid():
-    with pytest.raises(ValueError, match="invalid 3d border mode"):
-        border_mode_from_str_3d(s='not a real border mode')
+    with pytest.raises(ValueError, match="invalid border mode"):
+        border_mode_from_str(s='not a real border mode')
 
 @pytest.mark.parametrize("artifact_type", generation.ArtifactType.values())
 def test_artifact_type_to_str_valid(artifact_type):
@@ -160,120 +147,45 @@ def test_image_to_prompt(np_image):
     assert outv.artifact.type == generation.ARTIFACT_IMAGE
 
 def test_image_to_prompt_mask(np_image):
-    outv = image_to_prompt(np_image, is_mask=True)
+    outv = image_to_prompt(np_image, type=generation.ARTIFACT_MASK)
     assert isinstance(outv, generation.Prompt)
     assert outv.artifact.type == generation.ARTIFACT_MASK
 
 ########################################
 
-    # warp2d_op,
-    # warp3d_op,
-    # colormatch_op,
-    # depthcalc_op,
-    # warpflow_op,
-
-# should a null transform op even return a transform op?
-# would probably be better if this actually returned None or an empty list or 
-# some sort of NOOP
-@pytest.mark.parametrize("border_mode", BORDER_MODES_2D.keys())
-def test_warp2d_op_valid(border_mode):
-    op = warp2d_op(
-        border_mode = border_mode,
-        rotate = 0,
-        scale = 0,
-        translate_x = 0,
-        translate_y = 0,
-    )
-    assert isinstance(op, generation.TransformOperation)
-
-@pytest.mark.parametrize("border_mode", ['not a border mode'])
-def test_warp2d_op_invalid(border_mode):
-    with pytest.raises(ValueError, match="invalid 2d border mode"):
-        op = warp2d_op(
-            border_mode = border_mode,
-            rotate = 0,
-            scale = 0,
-            translate_x = 0,
-            translate_y = 0,
-        )
-
-
-@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
-def test_warp3d_op_valid(border_mode):
-    op = warp3d_op(
-        border_mode=border_mode,
-        translate_x=0,
-        translate_y=0,
-        translate_z=0,
-        rotate_x=0,
-        rotate_y=0,
-        rotate_z=0,
-        near_plane=200,
-        far_plane=10000,
-        fov=30, 
-    )
-    assert isinstance(op, generation.TransformOperation)
-
-
-@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
-def test_warp3d_op_invalid_nearfar(border_mode):
-    with pytest.raises(ValueError, match='Invalid camera volume: must satisfy near < far'):
-        op = warp3d_op(
-            border_mode=border_mode,
-            translate_x=0,
-            translate_y=0,
-            translate_z=0,
-            rotate_x=0,
-            rotate_y=0,
-            rotate_z=0,
-            near_plane=0,
-            far_plane=0,
-            fov=30, 
-        )
-
-@pytest.mark.parametrize("border_mode", BORDER_MODES_3D.keys())
-def test_warp3d_op_invalid_fov(border_mode):
-    with pytest.raises(ValueError, match='Invalid camera volume: fov'):
-        op = warp3d_op(
-            border_mode=border_mode,
-            translate_x=0,
-            translate_y=0,
-            translate_z=0,
-            rotate_x=0,
-            rotate_y=0,
-            rotate_z=0,
-            near_plane=200,
-            far_plane=10000,
-            fov=0, 
-        )
-
-@pytest.mark.parametrize("border_mode", ['not a border mode'] + _2d_only_modes)
-def test_warp3d_op_invalid(border_mode):
-    with pytest.raises(ValueError, match="invalid 3d border mode"):
-        op = warp3d_op(
-            border_mode=border_mode,
-            translate_x=0,
-            translate_y=0,
-            translate_z=0,
-            rotate_x=0,
-            rotate_y=0,
-            rotate_z=0,
-            near_plane=200,
-            far_plane=10000,
-            fov=30, 
-        )
-
 @pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
 def test_colormatch_op_valid(np_image, color_mode):
-    op = colormatch_op(
+    op = color_match_op(
         palette_image=np_image,
         color_mode=color_mode
     )
-    assert isinstance(op, generation.TransformOperation)
+    assert isinstance(op, generation.TransformParameters)
 
 def test_colormatch_op_invalid(np_image):
     with pytest.raises(ValueError, match="invalid color space"):
-        op = colormatch_op(
-        palette_image=np_image,
-        color_mode="not a real color mode",
+        _ = color_match_op(
+            palette_image=np_image,
+            color_mode="not a real color mode",
+        )
+
+@pytest.mark.parametrize("border_mode", BORDER_MODES.keys())
+def test_resample_op_valid(border_mode):
+    op = resample_op(
+        border_mode=border_mode, 
+        transform=matrix.identity, 
+        prev_transform=matrix.identity, 
+        depth_warp=1.0, 
+        export_mask=False
     )
+    assert isinstance(op, generation.TransformParameters)
+
+@pytest.mark.parametrize("border_mode", ['not a border mode'])
+def test_resample_op_invalid(border_mode):
+    with pytest.raises(ValueError, match="invalid border mode"):
+        _ = resample_op(
+            border_mode=border_mode, 
+            transform=matrix.identity, 
+            prev_transform=matrix.identity, 
+            depth_warp=1.0, 
+            export_mask=False
+        )

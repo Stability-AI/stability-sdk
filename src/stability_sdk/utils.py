@@ -73,7 +73,7 @@ MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 def border_mode_from_str(s: str) -> generation.BorderMode:
     repr = BORDER_MODES.get(s.lower().strip())
     if repr is None:
-        raise ValueError(f"invalid border mode {s}")
+        raise ValueError(f"invalid border mode: {s}")
     return repr
 
 def color_match_from_string(s: str) -> generation.ColorMatchMode:
@@ -334,22 +334,5 @@ def resample_op(
             prev_transform=generation.TransformMatrix(data=sum(prev_transform, [])) if prev_transform else None,
             depth_warp=depth_warp,
             export_mask=export_mask
-        )
-    )
-
-def warpflow_op(
-    prev_frame:np.ndarray,
-    next_frame:np.ndarray,
-) -> generation.TransformParameters:
-    im_prev=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(prev_frame))
-    im_next=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(next_frame))
-    return generation.TransformParameters(
-        warp_flow=generation.TransformWarpFlow(
-            prev_frame=im_prev,
-            next_frame=im_next,
         )
     )

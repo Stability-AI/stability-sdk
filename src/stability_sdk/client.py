@@ -249,9 +249,12 @@ class Project():
             self.file_id = file_id
 
 class Api:
-    def __init__(self, channel: grpc.Channel):
-        stub = generation_grpc.GenerationServiceStub(channel)
-        self._proj_stub = project_grpc.ProjectServiceStub(channel)
+    def __init__(self, channel: Optional[grpc.Channel]=None, stub: Optional[generation_grpc.GenerationServiceStub]=None):
+        if channel is None and stub is None:
+            raise Exception("Must provide either a channel or a RPC stub to Api")
+        if stub is None:
+            stub = generation_grpc.GenerationServiceStub(channel)
+        self._proj_stub = project_grpc.ProjectServiceStub(channel) if channel else None
         self._asset = ApiEndpoint(stub, 'asset-service')
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')

@@ -59,14 +59,14 @@ class MockStub:
 
 
 def test_api_generate():
-    api = client.Api(MockStub())
+    api = client.Api(stub=MockStub())
     width, height = 512, 768
     result = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height)
     assert isinstance(result, np.ndarray)
     assert result.shape == (height, width, 3)
 
 def test_api_inpaint():
-    api = client.Api(MockStub())
+    api = client.Api(stub=MockStub())
     width, height = 512, 768
     image = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
     mask = np.random.randint(0, 255, (height, width), dtype=np.uint8)
@@ -75,7 +75,7 @@ def test_api_inpaint():
     assert result.shape == (height, width, 3)
 
 def test_api_interpolate():
-    api = client.Api(MockStub())
+    api = client.Api(stub=MockStub())
     width, height = 512, 768
     image_a = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
     image_b = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
@@ -83,7 +83,7 @@ def test_api_interpolate():
     assert len(results) == 3
 
 def test_api_transform():
-    api = client.Api(MockStub())
+    api = client.Api(stub=MockStub())
     # TODO: implement transform tests after API finalized
 
 def test_client_import():
@@ -105,7 +105,7 @@ def test_image_to_prompt_init():
 
 def test_image_to_prompt_mask():
     im = Image.new('RGB', (1,1))
-    prompt = client.image_to_prompt(im, is_mask=True)
+    prompt = client.image_to_prompt(im, type=generation.ARTIFACT_MASK)
     assert isinstance(prompt, generation.Prompt)
 
 def test_server_mocking(grpc_server, grpc_addr):
