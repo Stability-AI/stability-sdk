@@ -511,7 +511,7 @@ class Animator:
                     )
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
-                    init_depth = cv2.cvtColor(init_depth, cv2.COLOR_BGR2GRAY)
+                    init_depth = 255 - cv2.cvtColor(init_depth, cv2.COLOR_BGR2GRAY)
 
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
