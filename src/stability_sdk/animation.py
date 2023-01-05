@@ -65,16 +65,18 @@ class BasicSettings(param.Parameterized):
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
     init_sizing = param.ObjectSelector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
-    steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
     mask_path = param.String(default="", doc="Path to image or video mask")
     mask_invert = param.Boolean(default=False, doc="White in mask marks areas to change by default.")
-    ####
-    # missing param: n_samples = param.Integer(1, bounds=(1,9))
 
 class AnimationSettings(param.Parameterized):
     animation_mode = param.ObjectSelector(default='3D', objects=['2D', '3D', 'Video Input'])
     max_frames = param.Integer(default=60, doc="Force stop of animation job after this many frames are generated.")
+    fps = param.Integer(default=24, doc="Frame rate to use when generating video output.")
     border = param.ObjectSelector(default='replicate', objects=['reflect', 'replicate', 'wrap', 'zero'], doc=docstring_bordermode)
+    noise_scale_curve = param.String(default="0:(1.02)")
+    strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
+    steps_curve = param.String(default="0:(50)", doc="Diffusion steps")
+    steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
     inpaint_border = param.Boolean(default=False, doc="Use inpainting on top of border regions. Defaults to False")
     interpolate_prompts = param.Boolean(default=False, doc="Smoothly interpolate prompts between keyframes. Defaults to False")
     locked_seed = param.Boolean(default=False)
@@ -99,17 +101,14 @@ class KeyframedSettings(param.Parameterized):
     rotation_x = param.String(default="0:(0)", doc="Euler angle in radians")
     rotation_y = param.String(default="0:(0)", doc="Euler angle in radians")
     rotation_z = param.String(default="0:(0)", doc="Euler angle in radians")
-    noise_scale_curve = param.String(default="0:(1.02)")
-    steps_curve = param.String(default="0:(50)", doc="Diffusion steps")
-    strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
 
 
 # should diffusion cadence be moved up to the keyframed settings?
 # if not, maybe stuff like steps and strength should be moved elsewhere?
 class CoherenceSettings(param.Parameterized):
     diffusion_cadence_curve = param.String(default="0:(4)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
-    accumulate_xforms = param.Boolean(default=True)
     cadence_interp = param.ObjectSelector(default='mix', objects=['mix', 'rife', 'vae-lerp', 'vae-slerp'])
+    accumulate_xforms = param.Boolean(default=True)
 
 
 class ColorSettings(param.Parameterized):
@@ -228,6 +227,10 @@ class Animator:
         self.start_frame_idx: int = 0
         self.video_prev_frame: Optional[np.ndarray] = None
         self.video_reader = None
+
+        # 3D accumulate_xforms not ready yet
+        if args.animation_mode == '3D' and args.accumulate_xforms:
+            args.accumulate_xforms = False
 
         self.setup_animation(resume)
 
