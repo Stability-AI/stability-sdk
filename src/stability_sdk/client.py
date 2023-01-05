@@ -198,7 +198,7 @@ class Project():
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_TEXT:
                     self.update(file_id=artifact.uuid, file_uri=artifact.text)
-                    print(f"Saved project file {artifact.uuid} for {self.id}")
+                    logger.info(f"Saved project file {artifact.uuid} for {self.id}")
                     return artifact.uuid
         raise Exception(f"Failed to save project file for {self.id}")
 
@@ -242,7 +242,6 @@ class Project():
             title=title,
             file=file
         ))
-        print(f"Updated project {self.id} with {updated_project}")
         if title:
             self.title = title
         if file_id:

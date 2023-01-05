@@ -127,7 +127,7 @@ class DepthwarpSettings(param.Parameterized):
     far_plane = param.Number(default=10000, doc="Distance to furthest plane of camera view volume.")
     fov_curve = param.String(default="0:(25)", doc="FOV angle of camera volume in degrees.")
     depth_blur_curve = param.String(default="0:(0.0)", doc="Blur strength of depth map.")
-    depth_warp_curve = param.String(default="0:(0.0)", doc="Depth warp strength.")
+    depth_warp_curve = param.String(default="0:(1.0)", doc="Depth warp strength.")
     save_depth_maps = param.Boolean(default=False)
 
 
@@ -248,11 +248,9 @@ class Animator:
             )
 
     def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
-        params = generation.TransformParameters(                    
-            depth_calc=generation.TransformDepthCalc(
-                blend_weight=self.args.midas_weight,
-                blur_radius=0
-            )
+        params = depthcalc_op(
+            blend_weight=self.args.midas_weight,
+            blur_radius=0
         )
         results, _ = self.api.transform([image], params)
         return results[0]
@@ -277,7 +275,7 @@ class Animator:
         height, width, _ = img.shape
         if mode == 'cover':
             scale = max(self.args.width / width, self.args.height / height)
-            img = cv2.resize(img, (int(width * scale), int(height * scale))) # add interp
+            img = cv2.resize(img, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_LANCZOS4)
             x = (img.shape[1] - self.args.width) // 2
             y = (img.shape[0] - self.args.height) // 2
             img = img[y:y+self.args.height, x:x+self.args.width]
@@ -504,13 +502,10 @@ class Animator:
                 init_depth = None
                 if init_image is not None and model_requires_depth(args.model):
                     depth_source = self.video_prev_frame if self.video_prev_frame is not None else init_image
-                    params = generation.TransformParameters(                    
-                        depth_calc=generation.TransformDepthCalc(
-                            blend_weight=1.1, blur_radius=0
-                        )
-                    )
+                    params = depthcalc_op(blend_weight=1.0, blur_radius=0)
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
+                    # TODO: signal to transform server we want depth where white is near and black is far
                     init_depth = 255 - cv2.cvtColor(init_depth, cv2.COLOR_BGR2GRAY)
 
                 # generate the next frame
