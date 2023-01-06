@@ -1,6 +1,8 @@
 """
 Minimal set of 4x4 column-major matrix functions for building transforms 
-compatible with the animation transform API.
+compatible with the animation transform API. This serves as reference 
+implementation for the different languages we will support so only basic
+types and no external libraries are used. 
 
     [sx, 10, 20, tx]   [x]
     [01, sy, 21, ty] . [y]

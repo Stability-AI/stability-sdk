@@ -127,10 +127,20 @@ class ApiEndpoint:
 
 class Project():
     def __init__(self, api: 'Api', project: project.Project):
-        self.api = api
-        self.id = project.id
-        self.file_id = project.file.id
-        self.title = project.title
+        self._api = api
+        self._project = project
+
+    @property
+    def id(self) -> str:
+        return self._project.id
+
+    @property
+    def file_id(self) -> str:
+        return self._project.file.id
+
+    @property
+    def title(self) -> str:
+        return self._project.title
 
     @staticmethod
     def create(
@@ -144,7 +154,7 @@ class Project():
         return Project(api, proj)
 
     def delete(self):
-        self.api._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
+        self._api._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
 
     @staticmethod
     def list_projects(api: 'Api') -> List['Project']:
@@ -156,7 +166,7 @@ class Project():
 
     def load_settings(self) -> dict:
         request = generation.Request(
-            engine_id=self.api._asset.engine_id,
+            engine_id=self._api._asset.engine_id,
             prompt=[generation.Prompt(
                 artifact=generation.Artifact(
                     type=generation.ARTIFACT_TEXT,
@@ -170,7 +180,7 @@ class Project():
                 use=generation.ASSET_USE_PROJECT
             )
         )
-        for resp in self.api._asset.stub.Generate(request, wait_for_ready=True):
+        for resp in self._api._asset.stub.Generate(request, wait_for_ready=True):
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_TEXT:
                     return json.loads(artifact.text)
@@ -179,7 +189,7 @@ class Project():
     def save_settings(self, data: dict) -> str:
         contents = json.dumps(data)
         request = generation.Request(
-            engine_id=self.api._asset.engine_id,
+            engine_id=self._api._asset.engine_id,
             prompt=[generation.Prompt(
                 artifact=generation.Artifact(
                     type=generation.ARTIFACT_TEXT,
@@ -194,7 +204,7 @@ class Project():
                 use=generation.ASSET_USE_PROJECT
             )
         )
-        for resp in self.api._asset.stub.Generate(request, wait_for_ready=True):
+        for resp in self._api._asset.stub.Generate(request, wait_for_ready=True):
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_TEXT:
                     self.update(file_id=artifact.uuid, file_uri=artifact.text)
@@ -207,17 +217,9 @@ class Project():
         image: Union[Image.Image, np.ndarray],
         use: generation.AssetUse=generation.ASSET_USE_OUTPUT
     ):
-        prompt = generation.Prompt(
-            parameters=generation.PromptParameters(init=True),
-            artifact=generation.Artifact(
-                type=generation.ARTIFACT_IMAGE,
-                binary=image_to_png_bytes(image)
-            )
-        )
-
         store_rq = generation.Request(
-            engine_id=self.api._asset.engine_id,
-            prompt=[prompt],
+            engine_id=self._api._asset.engine_id,
+            prompt=[image_to_prompt(image)],
             asset=generation.AssetParameters(
                 action=generation.ASSET_PUT, 
                 project_id=self.id, 
@@ -225,7 +227,7 @@ class Project():
             )
         )
 
-        for resp in self.api._asset.stub.Generate(store_rq, wait_for_ready=True):
+        for resp in self._api._asset.stub.Generate(store_rq, wait_for_ready=True):
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_TEXT:
                     return artifact.uuid
@@ -237,15 +239,12 @@ class Project():
             uri=file_uri,
             use=project.PROJECT_ASSET_USE_PROJECT,
         ) if file_id and file_uri else None
-        updated_project = self.api._proj_stub.Update(project.UpdateProjectRequest(
+        
+        self._project = self._api._proj_stub.Update(project.UpdateProjectRequest(
             id=self.id, 
             title=title,
             file=file
         ))
-        if title:
-            self.title = title
-        if file_id:
-            self.file_id = file_id
 
 class Api:
     def __init__(self, channel: Optional[grpc.Channel]=None, stub: Optional[generation_grpc.GenerationServiceStub]=None):
@@ -468,7 +467,7 @@ class Api:
         Transform images
 
         :param images: One or more images to transform
-        :param ops: Transform operations to apply to each image
+        :param params: Transform operations to apply to each image
         :return: One image artifact for each image and one transform dependent mask
         """
         assert len(images)
