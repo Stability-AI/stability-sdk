@@ -23,6 +23,8 @@ from PIL import Image
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+from stability_sdk.matrix import Matrix
+
 
 SAMPLERS: Dict[str, int] = {
     "ddim": generation.SAMPLER_DDIM,
@@ -33,6 +35,8 @@ SAMPLERS: Dict[str, int] = {
     "k_dpm_2": generation.SAMPLER_K_DPM_2,
     "k_dpm_2_ancestral": generation.SAMPLER_K_DPM_2_ANCESTRAL,
     "k_lms": generation.SAMPLER_K_LMS,
+    "k_dpmpp_2m": generation.SAMPLER_K_DPMPP_2M,
+    "k_dpmpp_2s_ancestral": generation.SAMPLER_K_DPMPP_2S_ANCESTRAL
 }
 
 GUIDANCE_PRESETS: Dict[str, int] = {
@@ -48,7 +52,7 @@ COLOR_SPACES =  {
     "rgb": generation.COLOR_MATCH_RGB,
 }
 
-BORDER_MODES_2D = {
+BORDER_MODES = {
     'replicate': generation.BORDER_REPLICATE,
     'reflect': generation.BORDER_REFLECT,
     'wrap': generation.BORDER_WRAP,
@@ -62,26 +66,14 @@ INTERP_MODES = {
     'vae-slerp': generation.INTERPOLATE_VAE_SLERP,
 }
 
-_2d_only_modes = ['wrap']
-BORDER_MODES_3D = {
-    k:v for k,v in BORDER_MODES_2D.items() 
-    if k not in _2d_only_modes
-    }
-
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 # note: we need to decide on a convention between _str and _string
 
-def border_mode_from_str_2d(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES_2D.get(s.lower().strip())
+def border_mode_from_str(s: str) -> generation.BorderMode:
+    repr = BORDER_MODES.get(s.lower().strip())
     if repr is None:
-        raise ValueError(f"invalid 2d border mode {s}")
-    return repr
-
-def border_mode_from_str_3d(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES_3D.get(s.lower().strip())
-    if repr is None:
-        raise ValueError(f"invalid 3d border mode {s}")
+        raise ValueError(f"invalid border mode: {s}")
     return repr
 
 def color_match_from_string(s: str) -> generation.ColorMatchMode:
@@ -194,35 +186,37 @@ def image_mix(img_a: np.ndarray, img_b: np.ndarray, ratio: Union[float, np.ndarr
         
     return (img_a.astype(np.float32)*(1.0-ratio) + img_b.astype(np.float32)*ratio).astype(img_a.dtype)
 
-def image_to_jpg_bytes(image: np.ndarray, quality: int=90):
-    return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
+def image_to_jpg_bytes(image: Union[Image.Image, np.ndarray], quality: int=90) -> bytes:
+    if isinstance(image, Image.Image):
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=quality)
+        buf.seek(0)
+        return buf.getvalue()
+    elif isinstance(image, np.ndarray):        
+        return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
+    else:
+        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
 
-def image_to_png_bytes(image: np.ndarray):
-    return cv2.imencode('.png', image)[1].tobytes()
-
-def pil_image_to_png_bytes(image: Image.Image):
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    buf.seek(0)
-    return buf.getvalue()
+def image_to_png_bytes(image: Union[Image.Image, np.ndarray]) -> bytes:
+    if isinstance(image, Image.Image):
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        buf.seek(0)
+        return buf.getvalue()
+    elif isinstance(image, np.ndarray):
+        return cv2.imencode('.png', image)[1].tobytes()
+    else:
+        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
 
 def image_to_prompt(
-    image: Union[np.ndarray, Image.Image],
-    is_mask: bool = False
+    image: Union[Image.Image, np.ndarray],
+    type: generation.ArtifactType=generation.ARTIFACT_IMAGE
 ) -> generation.Prompt:
-    if isinstance(image, np.ndarray):
-        image = image_to_png_bytes(image)
-    elif isinstance(image, Image.Image):
-        image = pil_image_to_png_bytes(image)
-    else:
-        print(type(image))
-        raise NotImplementedError
-    
+    png = image_to_png_bytes(image)    
     return generation.Prompt(
-        parameters=generation.PromptParameters(init=not is_mask),
-        artifact=generation.Artifact(
-            type=generation.ARTIFACT_MASK if is_mask else generation.ARTIFACT_IMAGE,
-            binary=image))
+        parameters=generation.PromptParameters(init=True),
+        artifact=generation.Artifact(type=type, binary=png)
+    )
 
 
 ##############################################
@@ -271,122 +265,74 @@ def key_frame_parse(string, prompt_parser=None):
 #  - move to their own submodule
 #  - add doc strings giving details on parameters
 
-# is call signature of generation.TransformWarp_d inconsistent? 
-# or did I ust shuffle them here?
-def warp2d_op(
-    border_mode:str,
-    rotate:float,
-    scale:float,
-    translate_x:float,
-    translate_y:float,
-) -> generation.TransformOperation:
-    return generation.TransformOperation(
-        warp2d=generation.TransformWarp2d(
-            border_mode = border_mode_from_str_2d(border_mode),
-            rotate = rotate,
-            scale = scale,
-            translate_x = translate_x,
-            translate_y = translate_y,
-        ))
-
-# to do: defaults. None?
-def warp3d_op(
-    border_mode:str,
-    translate_x:float,
-    translate_y:float,
-    translate_z:float,
-    rotate_x:float,
-    rotate_y:float,
-    rotate_z:float,
-    near_plane:float,
-    far_plane:float,
-    fov:float, 
-) -> generation.TransformOperation:
-    if not (near_plane < far_plane):
-        raise ValueError(
-            "Invalid camera volume: must satisfy near < far, "
-            f"got near={near_plane}, far={far_plane}"
-        )
-    if not (fov > 0):
-        raise ValueError(
-            "Invalid camera volume: fov must be greater than 0, "
-            f"got fov={fov}"
-        )
-    return generation.TransformOperation(
-        warp3d=generation.TransformWarp3d(
-            border_mode = border_mode_from_str_3d(border_mode),
-            translate_x = translate_x,
-            translate_y = translate_y,
-            translate_z = translate_z,
-            rotate_x = rotate_x,
-            rotate_y = rotate_y,
-            rotate_z = rotate_z,
-            near_plane = near_plane,
-            far_plane = far_plane,
-            fov = fov,
-            ))
-    
-def colormatch_op(
-    palette_image:np.ndarray,
-    color_mode:str='LAB',
-) -> generation.TransformOperation:
-    im = generation.Artifact(
-        type=generation.ARTIFACT_IMAGE, 
-        binary=image_to_jpg_bytes(palette_image),
-    )
-    return generation.TransformOperation(
-        color_match=generation.TransformColorMatch(
-            color_mode=color_match_from_string(color_mode),
-            image= im))
-
-def depthcalc_op(
-    blend_weight:float,
-    export:bool = False,
-) -> generation.TransformOperation:
-    return generation.TransformOperation(                    
-        depth_calc=generation.TransformDepthCalc(
-            blend_weight=blend_weight,
-            export=export
-        )
-    )
-
-def warpflow_op(
-    prev_frame:np.ndarray,
-    next_frame:np.ndarray,
-) -> generation.TransformOperation:
-    im_prev=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(prev_frame))
-    im_next=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(next_frame))
-    return generation.TransformOperation(
-        warp_flow=generation.TransformWarpFlow(
-            prev_frame=im_prev,
-            next_frame=im_next,
-        )
-    )
-
 def blend_op(
     amount:float,
     target:np.ndarray,
-) -> generation.TransformOperation:
-    im=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(target),
-    )
-    return generation.TransformOperation(
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
         blend=generation.TransformBlend(
             amount=amount, 
-            target=im,
-        ))
+            target=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE,
+                binary=image_to_jpg_bytes(target),
+            )
+        )
+    )
 
-def contrast_op(
-    brightness: float,
-    contrast: float,
-) -> generation.TransformOperation:
-    return generation.TransformOperation(
-        contrast=generation.TransformContrast(
+def color_adjust_op(
+    brightness:float=1.0,
+    contrast:float=1.0,
+    hue:float=0.0,
+    saturation:float=1.0,
+    lightness:float=0.0,
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        color_adjust=generation.TransformColorAdjust(
             brightness=brightness,
             contrast=contrast,
+            hue=hue,
+            saturation=saturation,
+            lightness=lightness
         ))
+
+def color_match_op(
+    palette_image:np.ndarray,
+    color_mode:str='LAB',
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        color_match=generation.TransformColorMatch(
+            color_mode=color_match_from_string(color_mode),
+            image=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE,
+                binary=image_to_jpg_bytes(palette_image),
+            )
+        )
+    )
+
+def depthcalc_op(
+    blend_weight:float,
+    blur_radius:int=0,
+) -> generation.TransformParameters:
+    return generation.TransformParameters(                    
+        depth_calc=generation.TransformDepthCalc(
+            blend_weight=blend_weight,
+            blur_radius=blur_radius,
+        )
+    )
+
+def resample_op(
+    border_mode:str,
+    transform:Matrix,
+    prev_transform:Optional[Matrix]=None,
+    depth_warp:float=1.0,
+    export_mask:bool=False
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        resample=generation.TransformResample(
+            border_mode=border_mode_from_str(border_mode),
+            transform=generation.TransformMatrix(data=sum(transform, [])),
+            prev_transform=generation.TransformMatrix(data=sum(prev_transform, [])) if prev_transform else None,
+            depth_warp=depth_warp,
+            export_mask=export_mask
+        )
+    )

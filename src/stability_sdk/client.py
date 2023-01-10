@@ -2,22 +2,23 @@
 
 # fmt: off
 
-from argparse import ArgumentParser, Namespace
-import io
+import grpc
+import json
 import logging
 import mimetypes
 import os
-import pathlib
 import random
 import sys
 import time
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 import uuid
 import warnings
 
+from argparse import ArgumentParser, Namespace
 from google.protobuf.json_format import MessageToJson
-import grpc
+from google.protobuf.struct_pb2 import Struct
 from PIL import Image
+from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
+
 
 try:
     import numpy as np
@@ -39,12 +40,15 @@ else:
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_sdk.interfaces.gooseai.project.project_pb2 as project
+import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
 
 from stability_sdk.utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
     artifact_type_to_str,
     image_mix,
+    image_to_png_bytes,
     image_to_prompt,
     open_images,
     sampler_from_string,
@@ -55,6 +59,17 @@ from stability_sdk.utils import (
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
+
+def open_channel(host: str, api_key: str = None) -> grpc.Channel:
+    if host.endswith(":443"):
+        call_credentials = [grpc.access_token_call_credentials(api_key)]
+        channel_credentials = grpc.composite_channel_credentials(
+            grpc.ssl_channel_credentials(), *call_credentials
+        )
+        channel = grpc.secure_channel(host, channel_credentials)
+    else:
+        channel = grpc.insecure_channel(host)
+    return channel
 
 def process_artifacts_from_answers(
     prefix: str,
@@ -104,30 +119,146 @@ def process_artifacts_from_answers(
             idx += 1
 
 
-def open_channel(host: str, api_key: str = None) -> generation_grpc.GenerationServiceStub:
-    print(f"Opening channel {host}")
-    if host.endswith(":443"):
-        call_credentials = [grpc.access_token_call_credentials(api_key)]
-        channel_credentials = grpc.composite_channel_credentials(
-            grpc.ssl_channel_credentials(), *call_credentials
-        )
-        channel = grpc.secure_channel(host, channel_credentials)
-    else:
-        channel = grpc.insecure_channel(host)
-    return generation_grpc.GenerationServiceStub(channel)
-
 
 class ApiEndpoint:
     def __init__(self, stub, engine_id):
         self.stub = stub
         self.engine_id = engine_id
 
+class Project():
+    def __init__(self, api: 'Api', project: project.Project):
+        self._api = api
+        self._project = project
+
+    @property
+    def id(self) -> str:
+        return self._project.id
+
+    @property
+    def file_id(self) -> str:
+        return self._project.file.id
+
+    @property
+    def title(self) -> str:
+        return self._project.title
+
+    @staticmethod
+    def create(
+        api: 'Api', 
+        title: str, 
+        access: project.ProjectAccess=project.PROJECT_ACCESS_PRIVATE,
+        status: project.ProjectStatus=project.PROJECT_STATUS_ACTIVE
+    ) -> 'Project':
+        req = project.CreateProjectRequest(title=title, access=access, status=status)
+        proj: project.Project = api._proj_stub.Create(req, wait_for_ready=True)
+        return Project(api, proj)
+
+    def delete(self):
+        self._api._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
+
+    @staticmethod
+    def list_projects(api: 'Api') -> List['Project']:
+        list_req = project.ListProjectRequest(owner_id="")
+        results = []
+        for proj in api._proj_stub.List(list_req, wait_for_ready=True):
+            results.append(Project(api, proj))
+        return results
+
+    def load_settings(self) -> dict:
+        request = generation.Request(
+            engine_id=self._api._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(
+                    type=generation.ARTIFACT_TEXT,
+                    mime="application/json",
+                    uuid=self.file_id,
+                )
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_GET, 
+                project_id=self.id,
+                use=generation.ASSET_USE_PROJECT
+            )
+        )
+        for resp in self._api._asset.stub.Generate(request, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_TEXT:
+                    return json.loads(artifact.text)
+        raise Exception(f"Failed to load project file for {self.id}")
+
+    def save_settings(self, data: dict) -> str:
+        contents = json.dumps(data)
+        request = generation.Request(
+            engine_id=self._api._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(
+                    type=generation.ARTIFACT_TEXT,
+                    text=contents,
+                    mime="application/json",
+                    uuid=self.file_id
+                )
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_PUT, 
+                project_id=self.id, 
+                use=generation.ASSET_USE_PROJECT
+            )
+        )
+        for resp in self._api._asset.stub.Generate(request, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_TEXT:
+                    self.update(file_id=artifact.uuid, file_uri=artifact.text)
+                    logger.info(f"Saved project file {artifact.uuid} for {self.id}")
+                    return artifact.uuid
+        raise Exception(f"Failed to save project file for {self.id}")
+
+    def put_image_asset(
+        self, 
+        image: Union[Image.Image, np.ndarray],
+        use: generation.AssetUse=generation.ASSET_USE_OUTPUT
+    ):
+        store_rq = generation.Request(
+            engine_id=self._api._asset.engine_id,
+            prompt=[image_to_prompt(image)],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_PUT, 
+                project_id=self.id, 
+                use=use
+            )
+        )
+
+        for resp in self._api._asset.stub.Generate(store_rq, wait_for_ready=True):
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_TEXT:
+                    return artifact.uuid
+        raise Exception(f"Failed to store image asset for project {self.id}")
+
+    def update(self, title:str=None, file_id:str=None, file_uri:str=None):
+        file = project.ProjectAsset(
+            id=file_id,
+            uri=file_uri,
+            use=project.PROJECT_ASSET_USE_PROJECT,
+        ) if file_id and file_uri else None
+        
+        self._project = self._api._proj_stub.Update(project.UpdateProjectRequest(
+            id=self.id, 
+            title=title,
+            file=file
+        ))
+
 class Api:
-    def __init__(self, stub):
+    def __init__(self, channel: Optional[grpc.Channel]=None, stub: Optional[generation_grpc.GenerationServiceStub]=None):
+        if channel is None and stub is None:
+            raise Exception("Must provide either a channel or a RPC stub to Api")
+        if stub is None:
+            stub = generation_grpc.GenerationServiceStub(channel)
+        self._proj_stub = project_grpc.ProjectServiceStub(channel) if channel else None
+        self._asset = ApiEndpoint(stub, 'asset-service')
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
+        self._debug_no_chains = False
 
     def generate(
         self,
@@ -142,6 +273,7 @@ class Api:
         init_image: Optional[np.ndarray] = None,
         init_strength: float = 0.0,
         init_noise_scale: float = 1.0,
+        init_depth: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
@@ -174,7 +306,9 @@ class Api:
         if init_image is not None:
             p.append(image_to_prompt(init_image))
             if mask is not None:
-                p.append(image_to_prompt(mask, is_mask=True))
+                p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
+        if init_depth is not None:
+            p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
 
         step_parameters = {
             "scaled_step": 0,
@@ -194,6 +328,8 @@ class Api:
                 cutouts = generation.CutoutParameters(count=guidance_cuts)
             else:
                 cutouts = None
+            if guidance_strength == 0.0:
+                guidance_strength = None
             step_parameters["guidance"] = generation.GuidanceParameters(
                 guidance_preset=guidance_preset,
                 instances=[
@@ -265,7 +401,7 @@ class Api:
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         p.extend([
             image_to_prompt(image),
-            image_to_prompt(mask, is_mask=True)
+            image_to_prompt(mask, type=generation.ARTIFACT_MASK)
         ])
         rq = generation.Request(
             engine_id=self._inpaint.engine_id,
@@ -303,6 +439,9 @@ class Api:
         assert len(images) == 2
         assert len(ratios) >= 1
 
+        if mode == generation.INTERPOLATE_LINEAR and len(ratios) == 1:
+            return [image_mix(images[0], images[1], ratios[0])]
+
         p = [image_to_prompt(image) for image in images]
         rq = generation.Request(
             engine_id=self._interpolate.engine_id,
@@ -320,41 +459,135 @@ class Api:
 
     def transform(
         self,
-        images: List[np.ndarray], 
-        ops: List[generation.TransformOperation],
-    ) -> Tuple[List[np.ndarray], np.ndarray]:
+        images: List[np.ndarray],
+        params: Union[generation.TransformParameters, List[generation.TransformParameters]],
+        extras: Optional[Dict] = None
+    ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
         """
         Transform images
 
         :param images: One or more images to transform
-        :param ops: Transform operations to apply to each image
+        :param params: Transform operations to apply to each image
         :return: One image artifact for each image and one transform dependent mask
         """
         assert len(images)
         assert isinstance(images[0], np.ndarray)
 
-        transforms = generation.TransformSequence(operations=ops)
-        rq = generation.Request(
-            engine_id=self._transform.engine_id,
-            prompt=[image_to_prompt(image) for image in images],
-            image=generation.ImageParameters(transform=generation.TransformType(sequence=transforms)),
-        )
+        extras_struct = None
+        if extras is not None:
+            extras_struct = Struct()
+            extras_struct.update(extras)
 
-        results, mask = [], None
-        for resp in self._transform.stub.Generate(rq, wait_for_ready=True):
+        if isinstance(params, List) and len(params) > 1:
+            if self._debug_no_chains:
+                for param in params:
+                    images, mask = self.transform(images, param, extras)
+                return images, mask
+
+            assert extras is None
+            stages = []
+            for idx, param in enumerate(params):
+                final = idx == len(params) - 1
+                rq = generation.Request(
+                    engine_id=self._transform.engine_id,
+                    prompt=[image_to_prompt(image) for image in images] if idx == 0 else None,
+                    transform=param
+                )
+                stages.append(generation.Stage(
+                    id=str(idx),
+                    request=rq, 
+                    on_status=[generation.OnStatus(
+                        action=[generation.STAGE_ACTION_PASS if not final else generation.STAGE_ACTION_RETURN], 
+                        target=str(idx+1) if not final else None
+                    )]
+                ))
+            chain_rq = generation.ChainRequest(request_id="xform_chain", stage=stages)
+            responses = self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True)
+        else:
+            rq = generation.Request(
+                engine_id=self._transform.engine_id,
+                prompt=[image_to_prompt(image) for image in images],
+                transform=params[0] if isinstance(params, List) else params,
+                extras=extras_struct
+            )
+            responses = self._transform.stub.Generate(rq, wait_for_ready=True)
+
+        results = self._process_response(responses)
+        return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
+
+    def transform_resample_3d(
+        self, 
+        images: List[np.ndarray], 
+        depth_calc: generation.TransformParameters,
+        resample: generation.TransformParameters
+    ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
+        assert len(images)
+        assert isinstance(images[0], np.ndarray)
+
+        # because only linear chains are currently supported and we want to use
+        # the same depth for each, we have to do this in two passes right now
+
+        image_prompts = [image_to_prompt(image) for image in images]
+        warped_images = []
+        warp_mask = None
+
+        for image_prompt in image_prompts:
+            rq_depth = generation.Request(
+                engine_id=self._transform.engine_id,
+                requested_type=generation.ARTIFACT_TENSOR,
+                prompt=[image_prompts[0]], # use same input image for each depth calc
+                transform=depth_calc
+            )
+            rq_resample = generation.Request(
+                engine_id=self._transform.engine_id,
+                prompt=[image_prompt],
+                transform=resample
+            )
+
+            if self._debug_no_chains:
+                results = self._process_response(self._transform.stub.Generate(rq_depth, wait_for_ready=True))
+                rq_resample.prompt.append(                
+                    generation.Prompt(
+                        artifact=generation.Artifact(
+                            type=generation.ARTIFACT_TENSOR,
+                            tensor=results[generation.ARTIFACT_TENSOR][0]
+                        )
+                    )
+                )
+                results = self._process_response(self._transform.stub.Generate(rq_resample, wait_for_ready=True))
+            else:
+                chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
+                    generation.Stage(
+                        id="depth_calc",
+                        request=rq_depth, 
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target="resample")]
+                    ),
+                    generation.Stage(
+                        id="resample",
+                        request=rq_resample, 
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
+                    ) 
+                ])
+
+                results = self._process_response(self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True))
+            warped_images.append(results[generation.ARTIFACT_IMAGE][0])
+            warp_mask = results.get(generation.ARTIFACT_MASK, None)
+
+        return warped_images, warp_mask
+
+    def _process_response(self, response) -> Dict[int, List[np.ndarray]]:
+        results = {}
+        for resp in response:
             for artifact in resp.artifacts:
+                if artifact.type not in results:
+                    results[artifact.type] = []
                 if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
                     nparr = np.frombuffer(artifact.binary, np.uint8)
                     im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    if artifact.type == generation.ARTIFACT_IMAGE:
-                        results.append(im)
-                    elif artifact.type == generation.ARTIFACT_MASK:
-                        if mask is not None:
-                            raise Exception(
-                                "multiple masks returned in response, client implementaion currently assumes no more than one mask returned"
-                            )
-                        mask = im
-        return results, mask
+                    results[artifact.type].append(im)
+                elif artifact.type == generation.ARTIFACT_TENSOR:
+                    results[artifact.type].append(artifact.tensor)
+        return results
 
 
 class StabilityInference:
@@ -469,7 +702,7 @@ class StabilityInference:
             prompts += [image_to_prompt(init_image)]
 
             if mask_image is not None:
-                prompts += [image_to_prompt(mask_image, is_mask=True)]
+                prompts += [image_to_prompt(mask_image, type=generation.ARTIFACT_MASK)]
 
         
         if guidance_prompt:
@@ -625,12 +858,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sampler",
         "-A",
-        type=str,
-        default="k_lms",
-        help="[k_lms] (" + ", ".join(SAMPLERS.keys()) + ")",
+        type=str,        
+        help="[auto-select] (" + ", ".join(SAMPLERS.keys()) + ")",
     )
     parser.add_argument(
-        "--steps", "-s", type=int, default=50, help="[50] number of steps"
+        "--steps", "-s", type=int, default=None, help="[auto] number of steps"
     )
     parser.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
     parser.add_argument(
@@ -687,16 +919,18 @@ if __name__ == "__main__":
         "width": args.width,
         "start_schedule": args.start_schedule,
         "end_schedule": args.end_schedule,
-        "cfg_scale": args.cfg_scale,
-        "sampler": sampler_from_string(args.sampler),
-        "steps": args.steps,
+        "cfg_scale": args.cfg_scale,                
         "seed": args.seed,
         "samples": args.num_samples,
         "init_image": args.init_image,
         "mask_image": args.mask_image,
     }
 
+    if args.sampler:
+        request["sampler"] = sampler_from_string(args.sampler)
 
+    if args.steps:
+        request["steps"] = args.steps
 
     stability_api = StabilityInference(
         STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
