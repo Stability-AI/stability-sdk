@@ -312,11 +312,13 @@ def color_match_op(
 def depthcalc_op(
     blend_weight:float,
     blur_radius:int=0,
+    reverse:bool=False,
 ) -> generation.TransformParameters:
-    return generation.TransformParameters(                    
+    return generation.TransformParameters(
         depth_calc=generation.TransformDepthCalc(
             blend_weight=blend_weight,
             blur_radius=blur_radius,
+            reverse=reverse
         )
     )
 
