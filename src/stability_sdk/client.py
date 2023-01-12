@@ -240,11 +240,18 @@ class Project():
             use=project.PROJECT_ASSET_USE_PROJECT,
         ) if file_id and file_uri else None
         
-        self._project = self._api._proj_stub.Update(project.UpdateProjectRequest(
+        self._api._proj_stub.Update(project.UpdateProjectRequest(
             id=self.id, 
             title=title,
             file=file
         ))
+
+        if title:
+            self._project.title = title
+        if file_id:
+            self._project.file.id = file_id
+        if file_uri:
+            self._project.file.uri = file_uri
 
 class Api:
     def __init__(self, channel: Optional[grpc.Channel]=None, stub: Optional[generation_grpc.GenerationServiceStub]=None):
