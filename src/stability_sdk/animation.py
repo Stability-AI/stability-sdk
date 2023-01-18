@@ -502,11 +502,9 @@ class Animator:
                 init_depth = None
                 if init_image is not None and model_requires_depth(args.model):
                     depth_source = self.video_prev_frame if self.video_prev_frame is not None else init_image
-                    params = depthcalc_op(blend_weight=1.0, blur_radius=0)
+                    params = depthcalc_op(blend_weight=1.0, blur_radius=0, reverse=True)
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
-                    # TODO: signal to transform server we want depth where white is near and black is far
-                    init_depth = 255 - cv2.cvtColor(init_depth, cv2.COLOR_BGR2GRAY)
 
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
