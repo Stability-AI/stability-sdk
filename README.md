@@ -36,7 +36,7 @@ See usage demo notebooks in ./nbs
 ## Command line usage
 
 ```
-usage: python -m stability_sdk.client  [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
+usage: python -m stability_sdk [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
                  [--end_schedule END_SCHEDULE] [--cfg_scale CFG_SCALE] [--sampler SAMPLER]
                  [--steps STEPS] [--seed SEED] [--prefix PREFIX] [--no-store] [--num_samples NUM_SAMPLES]
                  [--show] [--engine ENGINE] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
