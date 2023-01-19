@@ -36,28 +36,33 @@ See usage demo notebooks in ./nbs
 ## Command line usage
 
 ```
-usage: python -m stability_sdk.client [-h] [--height HEIGHT] [--width WIDTH]
-	  								  [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS]
-									  [--seed SEED] [--prefix PREFIX] [--no-store]
-									  [--num_samples NUM_SAMPLES] [--show]
-									  prompt [prompt ...]
+usage: python -m stability_sdk.client  [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
+                 [--end_schedule END_SCHEDULE] [--cfg_scale CFG_SCALE] [--sampler SAMPLER]
+                 [--steps STEPS] [--seed SEED] [--prefix PREFIX] [--no-store] [--num_samples NUM_SAMPLES]
+                 [--show] [--engine ENGINE] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
+                 [prompt ...]
 
 positional arguments:
   prompt
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --height HEIGHT, -H HEIGHT
                         [512] height of image
   --width WIDTH, -W WIDTH
                         [512] width of image
+  --start_schedule START_SCHEDULE
+                        [0.5] start schedule for init image (must be greater than 0, 1 is full strength
+                        text prompt, no trace of image)
+  --end_schedule END_SCHEDULE
+                        [0.01] end schedule for init image
   --cfg_scale CFG_SCALE, -C CFG_SCALE
                         [7.0] CFG scale factor
   --sampler SAMPLER, -A SAMPLER
-                        [k_lms] (ddim, plms, k_euler, k_euler_ancestral,
-                        k_heun, k_dpm_2, k_dpm_2_ancestral, k_lms)
+                        [auto-select] (ddim, plms, k_euler, k_euler_ancestral, k_heun, k_dpm_2,
+                        k_dpm_2_ancestral, k_lms, k_dpmpp_2m, k_dpmpp_2s_ancestral)
   --steps STEPS, -s STEPS
-                        [50] number of steps
+                        [auto] number of steps
   --seed SEED, -S SEED  random seed to use
   --prefix PREFIX, -p PREFIX
                         output prefixes for artifacts
@@ -65,7 +70,12 @@ optional arguments:
   --num_samples NUM_SAMPLES, -n NUM_SAMPLES
                         number of samples to generate
   --show                open artifacts using PIL
-  --engine, -e          engine to use for inference
+  --engine ENGINE, -e ENGINE
+                        engine to use for inference
+  --init_image INIT_IMAGE, -i INIT_IMAGE
+                        Init image
+  --mask_image MASK_IMAGE, -m MASK_IMAGE
+                        Mask image
 ```
 
 
