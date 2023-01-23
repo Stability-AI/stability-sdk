@@ -262,7 +262,7 @@ class Api:
         self._proj_stub = project_grpc.ProjectServiceStub(channel) if channel else None
         self._asset = ApiEndpoint(stub, 'asset-service')
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
-        self._inpaint = ApiEndpoint(stub, 'stable-diffusion-v1-5')
+        self._inpaint = ApiEndpoint(stub, 'stable-inpainting-512-v2-0')
         self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
@@ -283,6 +283,7 @@ class Api:
         init_depth: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
+        mask_fixup: bool = True,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
@@ -373,21 +374,28 @@ class Api:
                     break
 
         # force pixels in unmasked areas not to change
-        if init_image is not None and mask is not None:
-            result = image_mix(result, init_image, mask)
+        if init_image is not None and mask is not None and mask_fixup:
+           result = image_mix(result, init_image, mask)
 
         return result
 
     def inpaint(
         self,
-        image: np.ndarray,
+        init_image: np.ndarray,
         mask: np.ndarray,
-        prompts: List[str],
-        weights: List[float],
-        steps: int = 50,
-        seed: int = 0,
-        cfg_scale: float = 7.0,
-        blur_radius: int = 5,
+        prompts: List[str], 
+        weights: List[str], 
+        steps: int = 50, 
+        seed: int = 0, 
+        cfg_scale: float = 7.0, 
+        sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
+        init_strength: float = 0.0,
+        init_noise_scale: float = 1.0,
+        masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
+        mask_fixup: bool = False,
+        guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
+        guidance_cuts: int = 0,
+        guidance_strength: float = 0.0,
     ) -> np.ndarray:
         """
         Apply inpainting to an image.
@@ -402,32 +410,74 @@ class Api:
         :param blur_radius: Radius of gaussian blur kernel to apply to mask
         :return: Inpainted image
         """
-        width, height = image.shape[1], image.shape[0]
-        mask = cv2.GaussianBlur(mask, (blur_radius*2+1,blur_radius*2+1), 0)
+        width, height = init_image.shape[1], init_image.shape[0]
 
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
-        p.extend([
-            image_to_prompt(image),
-            image_to_prompt(mask, type=generation.ARTIFACT_MASK)
-        ])
+        if init_image is not None:
+            p.append(image_to_prompt(init_image))
+            if mask is not None:
+                p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
+
+        step_parameters = {
+            "scaled_step": 0,
+            "sampler": generation.SamplerParameters(cfg_scale=cfg_scale, init_noise_scale=init_noise_scale),
+        }
+
+        begin_schedule = 1.0 if init_image is None else 1.0-init_strength
+        if begin_schedule != 1.0:
+            step_parameters["schedule"] = generation.ScheduleParameters(
+                start=begin_schedule
+            )
+
+        if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
+            guidance_prompt = None
+            guiders = None
+            if guidance_cuts:
+                cutouts = generation.CutoutParameters(count=guidance_cuts)
+            else:
+                cutouts = None
+            if guidance_strength == 0.0:
+                guidance_strength = None
+            step_parameters["guidance"] = generation.GuidanceParameters(
+                guidance_preset=guidance_preset,
+                instances=[
+                    generation.GuidanceInstanceParameters(
+                        guidance_strength=guidance_strength,
+                        models=guiders,
+                        cutouts=cutouts,
+                        prompt=guidance_prompt,
+                    )
+                ],
+            )
+
+        image_params = {
+            "height": height,
+            "width": width,
+            "seed": [seed],
+            "steps": steps,
+            "parameters": [generation.StepParameter(**step_parameters)],
+            "masked_area_init": masked_area_init,
+        }
         rq = generation.Request(
             engine_id=self._inpaint.engine_id,
             prompt=p,
-            image=generation.ImageParameters(height=height, width=width, steps=steps, seed=[seed])
-        )
-        rq.image.parameters.append(
-            generation.StepParameter(
-                schedule=generation.ScheduleParameters(start=0.99),
-                sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
-            )
-        )
+            image=generation.ImageParameters(**image_params)
+        )        
+        rq.image.transform.diffusion = sampler
+
+        result = None
         for resp in self._inpaint.stub.Generate(rq, wait_for_ready=True):
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_IMAGE:
                     nparr = np.frombuffer(artifact.binary, np.uint8)
-                    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        raise Exception(f"no image artifact returned from inpaint request")
+                    result = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    break
+
+        # force pixels in unmasked areas not to change
+        if init_image is not None and mask is not None and mask_fixup:
+           result = image_mix(result, init_image, mask)
+
+        return result
 
     def interpolate(
         self,
@@ -588,7 +638,7 @@ class Api:
             for artifact in resp.artifacts:
                 if artifact.type not in results:
                     results[artifact.type] = []
-                if artifact.type in (generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
+                if artifact.type in (generation.ARTIFACT_DEPTH, generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
                     nparr = np.frombuffer(artifact.binary, np.uint8)
                     im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     results[artifact.type].append(im)

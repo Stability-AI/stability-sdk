@@ -68,6 +68,16 @@ INTERP_MODES = {
 
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
+
+def pil_to_cv2(pil_img: Image.Image) -> np.ndarray:
+    """Convert a PIL Image to a cv2 BGR ndarray"""
+    return np.array(pil_img)[:, :, ::-1]
+
+def cv2_to_pil(cv2_img: np.ndarray) -> Image.Image:
+    """Convert a cv2 BGR ndarray to a PIL Image"""
+    return Image.fromarray(cv2_img[:, :, ::-1])
+
+
 # note: we need to decide on a convention between _str and _string
 
 def border_mode_from_str(s: str) -> generation.BorderMode:
