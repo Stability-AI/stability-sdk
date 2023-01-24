@@ -17,7 +17,7 @@ from argparse import ArgumentParser, Namespace
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union
 
 
 try:
@@ -43,12 +43,11 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as genera
 import stability_sdk.interfaces.gooseai.project.project_pb2 as project
 import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
 
-from stability_sdk.utils import (
+from .utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
     artifact_type_to_str,
     image_mix,
-    image_to_png_bytes,
     image_to_prompt,
     open_images,
     sampler_from_string,
@@ -274,7 +273,8 @@ class Api:
         width: int = 512, 
         height: int = 512, 
         steps: int = 50, 
-        seed: int = 0, 
+        seed: Union[Sequence[int], int] = 0,
+        samples: int = 1,
         cfg_scale: float = 7.0, 
         sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
         init_image: Optional[np.ndarray] = None,
@@ -282,12 +282,12 @@ class Api:
         init_noise_scale: float = 1.0,
         init_depth: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
-        masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
+        masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ORIGINAL,
         mask_fixup: bool = True,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
-    ) -> np.ndarray:
+    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
         Generate an image from a set of weighted prompts.
 
@@ -297,6 +297,7 @@ class Api:
         :param height: Height of the generated image
         :param steps: Number of steps to run the diffusion process
         :param seed: Random seed for the starting noise
+        :param samples: Number of samples to generate
         :param cfg_scale: Classifier free guidance scale
         :param sampler: Sampler to use for the diffusion process
         :param init_image: Initial image to use
@@ -304,11 +305,17 @@ class Api:
         :param init_noise_scale: Scale of the initial noise
         :param mask: Mask to use (0 for pixels to change, 255 for pixels to keep)
         :param masked_area_init: How to initialize the masked area
+        :param mask_fixup: Whether to restore the unmasked area after diffusion
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
-        :return: The generated image
+        :return: dict mapping artifact type to data (image, depth, etc.)
         """
+        if not prompts and init_image is None:
+            raise ValueError("prompt and/or init_image must be provided")
+
+        if (mask is not None) and (init_image is None):
+            raise ValueError("If mask_image is provided, init_image must also be provided")
 
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
@@ -318,75 +325,30 @@ class Api:
         if init_depth is not None:
             p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
 
-        step_parameters = {
-            "scaled_step": 0,
-            "sampler": generation.SamplerParameters(cfg_scale=cfg_scale, init_noise_scale=init_noise_scale),
-        }
+        start_schedule = 1.0 if init_image is None else 1.0 - init_strength
+        image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
+                                                start_schedule, init_noise_scale, masked_area_init, 
+                                                guidance_preset, guidance_cuts, guidance_strength)
 
-        begin_schedule = 1.0 if init_image is None else 1.0-init_strength
-        if begin_schedule != 1.0:
-            step_parameters["schedule"] = generation.ScheduleParameters(
-                start=begin_schedule
-            )
+        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params)        
+        response = self._generate.stub.Generate(request, wait_for_ready=True)
+        results = self._process_response(response)
 
-        if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
-            guidance_prompt = None
-            guiders = None
-            if guidance_cuts:
-                cutouts = generation.CutoutParameters(count=guidance_cuts)
-            else:
-                cutouts = None
-            if guidance_strength == 0.0:
-                guidance_strength = None
-            step_parameters["guidance"] = generation.GuidanceParameters(
-                guidance_preset=guidance_preset,
-                instances=[
-                    generation.GuidanceInstanceParameters(
-                        guidance_strength=guidance_strength,
-                        models=guiders,
-                        cutouts=cutouts,
-                        prompt=guidance_prompt,
-                    )
-                ],
-            )
-
-        image_params = {
-            "height": height,
-            "width": width,
-            "seed": [seed],
-            "steps": steps,
-            "parameters": [generation.StepParameter(**step_parameters)],
-            "masked_area_init": masked_area_init,
-        }
-        rq = generation.Request(
-            engine_id=self._generate.engine_id,
-            prompt=p,
-            image=generation.ImageParameters(**image_params)
-        )        
-        rq.image.transform.diffusion = sampler
-
-        result = None
-        for resp in self._generate.stub.Generate(rq, wait_for_ready=True):
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_IMAGE:
-                    nparr = np.frombuffer(artifact.binary, np.uint8)
-                    result = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    break
-
-        # force pixels in unmasked areas not to change
+        # optionally force pixels in unmasked areas not to change
         if init_image is not None and mask is not None and mask_fixup:
-           result = image_mix(result, init_image, mask)
+            results[generation.ARTIFACT_IMAGE] = [image_mix(image, init_image, mask) for image in results[generation.ARTIFACT_IMAGE]]
 
-        return result
+        return results
 
     def inpaint(
         self,
-        init_image: np.ndarray,
+        image: np.ndarray,
         mask: np.ndarray,
         prompts: List[str], 
         weights: List[str], 
         steps: int = 50, 
-        seed: int = 0, 
+        seed: Union[Sequence[int], int] = 0,
+        samples: int = 1,
         cfg_scale: float = 7.0, 
         sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
         init_strength: float = 0.0,
@@ -396,88 +358,50 @@ class Api:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
-    ) -> np.ndarray:
+    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
         Apply inpainting to an image.
-
+        
         :param image: Source image
         :param mask: Mask image with 0 for pixels to change and 255 for pixels to keep
         :param prompts: List of text prompts
         :param weights: List of prompt weights
         :param steps: Number of steps to run
         :param seed: Random seed
-        :param cfg_scale: Classifier free guidance scale
-        :param blur_radius: Radius of gaussian blur kernel to apply to mask
-        :return: Inpainted image
+        :param samples: Number of samples to generate
+        :param cfg_scale: Classifier free guidance scale        
+        :param sampler: Sampler to use for the diffusion process
+        :param init_strength: Strength of the initial image
+        :param init_noise_scale: Scale of the initial noise
+        :param masked_area_init: How to initialize the masked area
+        :param mask_fixup: Whether to restore the unmasked area after diffusion
+        :param guidance_preset: Preset to use for CLIP guidance
+        :param guidance_cuts: Number of cuts to use with CLIP guidance
+        :param guidance_strength: Strength of CLIP guidance
+        :return: dict mapping artifact type to data (image, depth, etc.)
         """
-        width, height = init_image.shape[1], init_image.shape[0]
+        width, height = image.shape[1], image.shape[0]
 
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
-        if init_image is not None:
-            p.append(image_to_prompt(init_image))
+        if image is not None:
+            p.append(image_to_prompt(image))
             if mask is not None:
                 p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
 
-        step_parameters = {
-            "scaled_step": 0,
-            "sampler": generation.SamplerParameters(cfg_scale=cfg_scale, init_noise_scale=init_noise_scale),
-        }
+        start_schedule = 1.0-init_strength
+        image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
+                                                start_schedule, init_noise_scale, masked_area_init, 
+                                                guidance_preset, guidance_cuts, guidance_strength)
 
-        begin_schedule = 1.0 if init_image is None else 1.0-init_strength
-        if begin_schedule != 1.0:
-            step_parameters["schedule"] = generation.ScheduleParameters(
-                start=begin_schedule
-            )
+        request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params)        
+        response = self._inpaint.stub.Generate(request, wait_for_ready=True)
+        results = self._process_response(response)
 
-        if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
-            guidance_prompt = None
-            guiders = None
-            if guidance_cuts:
-                cutouts = generation.CutoutParameters(count=guidance_cuts)
-            else:
-                cutouts = None
-            if guidance_strength == 0.0:
-                guidance_strength = None
-            step_parameters["guidance"] = generation.GuidanceParameters(
-                guidance_preset=guidance_preset,
-                instances=[
-                    generation.GuidanceInstanceParameters(
-                        guidance_strength=guidance_strength,
-                        models=guiders,
-                        cutouts=cutouts,
-                        prompt=guidance_prompt,
-                    )
-                ],
-            )
+        # optionally force pixels in unmasked areas not to change
+        if mask_fixup:
+            results[generation.ARTIFACT_IMAGE] = [image_mix(image, image, mask) for image in results[generation.ARTIFACT_IMAGE]]
 
-        image_params = {
-            "height": height,
-            "width": width,
-            "seed": [seed],
-            "steps": steps,
-            "parameters": [generation.StepParameter(**step_parameters)],
-            "masked_area_init": masked_area_init,
-        }
-        rq = generation.Request(
-            engine_id=self._inpaint.engine_id,
-            prompt=p,
-            image=generation.ImageParameters(**image_params)
-        )        
-        rq.image.transform.diffusion = sampler
-
-        result = None
-        for resp in self._inpaint.stub.Generate(rq, wait_for_ready=True):
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_IMAGE:
-                    nparr = np.frombuffer(artifact.binary, np.uint8)
-                    result = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    break
-
-        # force pixels in unmasked areas not to change
-        if init_image is not None and mask is not None and mask_fixup:
-           result = image_mix(result, init_image, mask)
-
-        return result
+        return results
 
     def interpolate(
         self,
@@ -632,6 +556,50 @@ class Api:
 
         return warped_images, warp_mask
 
+    def _build_image_params(self, width, height, sampler, steps, seed, samples, cfg_scale, 
+                            schedule_start, init_noise_scale, masked_area_init, 
+                            guidance_preset, guidance_cuts, guidance_strength):
+
+        if not seed:
+            seed = [random.randrange(0, 4294967295)]
+        elif isinstance(seed, int):
+            seed = [seed]
+        else:
+            seed = list(seed)
+
+        step_parameters = {
+            "scaled_step": 0,
+            "sampler": generation.SamplerParameters(cfg_scale=cfg_scale, init_noise_scale=init_noise_scale),
+        }
+        if schedule_start != 1.0:
+            step_parameters["schedule"] = generation.ScheduleParameters(start=schedule_start)
+
+        if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
+            cutouts = generation.CutoutParameters(count=guidance_cuts) if guidance_cuts else None
+            if guidance_strength == 0.0:
+                guidance_strength = None
+            step_parameters["guidance"] = generation.GuidanceParameters(
+                guidance_preset=guidance_preset,
+                instances=[
+                    generation.GuidanceInstanceParameters(
+                        cutouts=cutouts,
+                        guidance_strength=guidance_strength,
+                        models=None, prompt=None
+                    )
+                ]
+            )
+
+        return generation.ImageParameters(
+            transform=generation.TransformType(diffusion=sampler),
+            height=height,
+            width=width,
+            seed=seed,
+            steps=steps,
+            samples=samples,
+            masked_area_init=masked_area_init,
+            parameters=[generation.StepParameter(**step_parameters)],
+        )
+
     def _process_response(self, response) -> Dict[int, List[np.ndarray]]:
         results = {}
         for resp in response:
@@ -671,7 +639,7 @@ class StabilityInference:
         self.grpc_args = {"wait_for_ready": wait_for_ready}
         if verbose:
             logger.info(f"Opening channel to {host}")
-        self.stub = open_channel(host=host, api_key=key)
+        self.stub = generation_grpc.GenerationServiceStub(open_channel(host=host, api_key=key))
 
 
     def generate(

@@ -19,10 +19,6 @@ from stability_sdk.client import (
     generation,
     image_mix
 )
-
-
-import stability_sdk.matrix as matrix
-
 from stability_sdk.utils import (
     blend_op,
     color_match_op,
@@ -36,6 +32,7 @@ from stability_sdk.utils import (
     resample_op,
     sampler_from_string,
 )
+import stability_sdk.matrix as matrix
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
@@ -198,6 +195,7 @@ def to_3x3(m: matrix.Matrix) -> matrix.Matrix:
             [m[1][0], m[1][1], m[1][3]],
             [m[3][0], m[3][1], m[3][3]]]
 
+
 class Animator:
     def __init__(
         self,
@@ -236,7 +234,7 @@ class Animator:
 
     def apply_inpainting(self, mask: np.ndarray, prompts: List[str], weights: List[float], inpaint_steps: int, seed: int):
         for i in range(len(self.prior_frames)):
-            self.prior_frames[i] = self.api.inpaint(
+            results = self.api.inpaint(
                 image=self.prior_frames[i],
                 mask=mask,
                 prompts=prompts,
@@ -244,8 +242,8 @@ class Animator:
                 steps=inpaint_steps,
                 seed=seed,
                 cfg_scale=self.args.cfg_scale,
-                blur_radius=5,
             )
+            self.prior_frames[i] = results[generation.ARTIFACT_IMAGE][0]
 
     def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
         params = depthcalc_op(
@@ -510,7 +508,7 @@ class Animator:
                 sampler = sampler_from_string(args.sampler.lower())
                 guidance = guidance_from_string(args.clip_guidance)
                 noise_scale = self.frame_args.noise_scale_series[frame_idx]
-                image = self.api.generate(
+                results = self.api.generate(
                     prompts, weights, 
                     args.width, args.height, 
                     steps=adjusted_steps,
@@ -525,6 +523,7 @@ class Animator:
                     masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                     guidance_preset=guidance,
                 )
+                image = results[generation.ARTIFACT_IMAGE][0]
 
                 if self.color_match_image is None and args.color_coherence != 'None':
                     self.color_match_image = image
@@ -594,12 +593,12 @@ class Animator:
                 params = resample_op(args.border, to_3x3(self.prior_xforms[i]), export_mask=args.inpaint_border)
                 xformed, mask = self.api.transform([self.prior_diffused[i]], params)
                 self.prior_frames[i] = xformed[0]
-
-            return mask
         else:
             params = resample_op(args.border, to_3x3(xform), export_mask=args.inpaint_border)
             self.prior_frames, mask = self.api.transform(self.prior_frames, params)
-            return mask
+
+        mask = mask[0] if isinstance(mask, list) else mask
+        return mask
 
     def transform_3d(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
@@ -638,14 +637,14 @@ class Animator:
                 resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
                 xformed, mask = self.api.transform_resample_3d([self.prior_diffused[i]], depth_calc, resample)
                 self.prior_frames[i] = xformed[0]
-
-            return mask
         else:
             wvp = matrix.multiply(projection, world_view)
             depth_calc = depthcalc_op(args.midas_weight, depth_blur)
             resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
             self.prior_frames, mask = self.api.transform_resample_3d(self.prior_frames, depth_calc, resample)
-            return mask
+
+        mask = mask[0] if isinstance(mask, list) else mask
+        return mask
 
     def transform_video(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
