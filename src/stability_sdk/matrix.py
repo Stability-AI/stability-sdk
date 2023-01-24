@@ -15,14 +15,14 @@ from typing import List
 
 Matrix = List[List[float]]
 
-identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+identity = [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.], [0., 0., 0., 1.]]
 
 def multiply(a: Matrix, b: Matrix) -> Matrix:
     assert len(a) == len(b) == 4
-    c = [[0, 0, 0, 0],
-         [0, 0, 0, 0],
-         [0, 0, 0, 0],
-         [0, 0, 0, 0]]
+    c = [[0., 0., 0., 0.],
+         [0., 0., 0., 0.],
+         [0., 0., 0., 0.],
+         [0., 0., 0., 0.]]
     for row in range(4):
         for col in range(4):
             for k in range(4):
@@ -42,10 +42,10 @@ def projection_fov(fov_y: float, aspect: float, near: float, far: float) -> Matr
     f1 =  far / (far - near)
     f2 = -(far * near) / (far - near)
 
-    return [[s1,   0,   w1,   0],
-            [0,   s2,   h1,   0],
-            [0,    0,   f1,  f2],
-            [0,    0,    1,   0]]
+    return [[s1,   0.,   w1,  0.],
+            [0.,   s2,   h1,  0.],
+            [0.,   0.,   f1,  f2],
+            [0.,   0.,   1.,  0.]]
 
 def rotation_euler(x: float, y: float, z: float) -> Matrix:
     """Returns a rotation matrix for the given Euler angles (in radians) using XYZ order."""
@@ -58,19 +58,19 @@ def rotation_euler(x: float, y: float, z: float) -> Matrix:
     be = b * e 
     bf = b * f
 
-    return [[ c * e, af + be * d, bf - ae * d, 0],
-            [-c * f, ae - bf * d, be + af * d, 0],
-            [     d,      -b * c,       a * c, 0],
-            [     0,           0,           0, 1]]
+    return [[ c * e, af + be * d, bf - ae * d, 0.],
+            [-c * f, ae - bf * d, be + af * d, 0.],
+            [     d,      -b * c,       a * c, 0.],
+            [    0.,          0.,          0., 1.]]
 
 def scale(sx: float, sy: float, sz: float) -> Matrix:
-    return [[sx,  0,  0, 0],
-            [ 0, sy,  0, 0],
-            [ 0,  0, sz, 0],
-            [ 0,  0,  0, 1]]
+    return [[sx, 0., 0., 0.],
+            [0., sy, 0., 0.],
+            [0., 0., sz, 0.],
+            [0., 0., 0., 1.]]
 
 def translation(tx: float, ty: float, tz: float) -> Matrix:
-    return [[1, 0, 0, tx],
-            [0, 1, 0, ty],
-            [0, 0, 1, tz],
-            [0, 0, 0,  1]]
+    return [[1., 0., 0., tx],
+            [0., 1., 0., ty],
+            [0., 0., 1., tz],
+            [0., 0., 0., 1.]]

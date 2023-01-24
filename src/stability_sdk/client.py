@@ -269,7 +269,7 @@ class Api:
     def generate(
         self,
         prompts: List[str], 
-        weights: List[str], 
+        weights: List[float], 
         width: int = 512, 
         height: int = 512, 
         steps: int = 50, 
@@ -309,7 +309,7 @@ class Api:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
-        :return: dict mapping artifact type to data (image, depth, etc.)
+        :return: dict mapping artifact type to data
         """
         if not prompts and init_image is None:
             raise ValueError("prompt and/or init_image must be provided")
@@ -345,7 +345,7 @@ class Api:
         image: np.ndarray,
         mask: np.ndarray,
         prompts: List[str], 
-        weights: List[str], 
+        weights: List[float], 
         steps: int = 50, 
         seed: Union[Sequence[int], int] = 0,
         samples: int = 1,
@@ -378,7 +378,7 @@ class Api:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
-        :return: dict mapping artifact type to data (image, depth, etc.)
+        :return: dict mapping artifact type to data
         """
         width, height = image.shape[1], image.shape[0]
 
@@ -443,7 +443,7 @@ class Api:
         images: List[np.ndarray],
         params: Union[generation.TransformParameters, List[generation.TransformParameters]],
         extras: Optional[Dict] = None
-    ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
+    ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
         """
         Transform images
 
@@ -501,7 +501,7 @@ class Api:
         images: List[np.ndarray], 
         depth_calc: generation.TransformParameters,
         resample: generation.TransformParameters
-    ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
+    ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
         assert len(images)
         assert isinstance(images[0], np.ndarray)
 
@@ -601,7 +601,7 @@ class Api:
         )
 
     def _process_response(self, response) -> Dict[int, List[np.ndarray]]:
-        results = {}
+        results: Dict[int, List[np.ndarray]] = {}
         for resp in response:
             for artifact in resp.artifacts:
                 if artifact.type not in results:

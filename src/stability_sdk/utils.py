@@ -184,7 +184,7 @@ def image_mix(img_a: np.ndarray, img_b: np.ndarray, ratio: Union[float, np.ndarr
     :return: The mixed image
     """
     if img_a.shape != img_b.shape:
-        raise ValueError(f"img_a shape {ratio.shape} does not match img_b shape {img_a.shape}")
+        raise ValueError(f"img_a shape {img_a.shape} does not match img_b shape {img_b.shape}")
 
     if isinstance(ratio, np.ndarray):
         if ratio.shape[:2] != img_a.shape[:2]:
