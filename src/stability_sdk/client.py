@@ -623,7 +623,7 @@ class Api:
             except grpc.RpcError as rpc_error:
                 if attempt == self._max_retries:
                     raise rpc_error
-                print(f"Received RpcError: {rpc_error} will retry {self._max_retries-attempt} more times")
+                logger.warning(f"Received RpcError: {rpc_error} will retry {self._max_retries-attempt} more times")
                 time.sleep(0.25 * 2**attempt)
         return self._process_response(response)
 
