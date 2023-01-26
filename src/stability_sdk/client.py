@@ -265,6 +265,7 @@ class Api:
         self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
+        self._max_retries = 3 # retry request on RPC error
 
     def generate(
         self,
@@ -331,8 +332,7 @@ class Api:
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
         request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params)        
-        response = self._generate.stub.Generate(request, wait_for_ready=True)
-        results = self._process_response(response)
+        results = self._run_request(self._generate, request)
 
         # optionally force pixels in unmasked areas not to change
         if init_image is not None and mask is not None and mask_fixup:
@@ -394,8 +394,7 @@ class Api:
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
         request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params)        
-        response = self._inpaint.stub.Generate(request, wait_for_ready=True)
-        results = self._process_response(response)
+        results = self._run_request(self._inpaint, request)
 
         # optionally force pixels in unmasked areas not to change
         if mask_fixup:
@@ -424,19 +423,14 @@ class Api:
             return [image_mix(images[0], images[1], ratios[0])]
 
         p = [image_to_prompt(image) for image in images]
-        rq = generation.Request(
+        request = generation.Request(
             engine_id=self._interpolate.engine_id,
             prompt=p,
             interpolate=generation.InterpolateParameters(ratios=ratios, mode=mode)
         )
 
-        results = []
-        for resp in self._interpolate.stub.Generate(rq, wait_for_ready=True):
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_IMAGE:
-                    nparr = np.frombuffer(artifact.binary, np.uint8)
-                    results.append(cv2.imdecode(nparr, cv2.IMREAD_COLOR))
-        return results
+        results = self._run_request(self._interpolate, request)
+        return results[generation.ARTIFACT_IMAGE]
 
     def transform(
         self,
@@ -483,17 +477,16 @@ class Api:
                     )]
                 ))
             chain_rq = generation.ChainRequest(request_id="xform_chain", stage=stages)
-            responses = self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True)
+            results = self._run_request(self._transform, chain_rq)
         else:
-            rq = generation.Request(
+            request = generation.Request(
                 engine_id=self._transform.engine_id,
                 prompt=[image_to_prompt(image) for image in images],
                 transform=params[0] if isinstance(params, List) else params,
                 extras=extras_struct
             )
-            responses = self._transform.stub.Generate(rq, wait_for_ready=True)
+            results = self._run_request(self._transform, request)
 
-        results = self._process_response(responses)
         return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
 
     def transform_resample_3d(
@@ -535,7 +528,7 @@ class Api:
                         )
                     )
                 )
-                results = self._process_response(self._transform.stub.Generate(rq_resample, wait_for_ready=True))
+                results = self._run_request(self._transform, rq_resample)
             else:
                 chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
                     generation.Stage(
@@ -549,8 +542,8 @@ class Api:
                         on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
                     ) 
                 ])
+                results = self._run_request(self._transform, chain_rq)
 
-                results = self._process_response(self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True))
             warped_images.append(results[generation.ARTIFACT_IMAGE][0])
             warp_mask = results.get(generation.ARTIFACT_MASK, None)
 
@@ -613,6 +606,26 @@ class Api:
                 elif artifact.type == generation.ARTIFACT_TENSOR:
                     results[artifact.type].append(artifact.tensor)
         return results
+
+    def _run_request(
+        self, 
+        endpoint: ApiEndpoint, 
+        request: Union[generation.ChainRequest, generation.Request]
+    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+        for attempt in range(self._max_retries+1):
+            try:
+                if isinstance(request, generation.Request):
+                    assert endpoint.engine_id == request.engine_id
+                    response = endpoint.stub.Generate(request, wait_for_ready=True)
+                else:
+                    response = endpoint.stub.ChainGenerate(request, wait_for_ready=True)
+                break
+            except grpc.RpcError as rpc_error:
+                if attempt == self._max_retries:
+                    raise rpc_error
+                print(f"Received RpcError: {rpc_error} will retry {self._max_retries-attempt} more times")
+                time.sleep(0.25 * 2**attempt)
+        return self._process_response(response)
 
 
 class StabilityInference:
