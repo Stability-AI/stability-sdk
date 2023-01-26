@@ -56,7 +56,7 @@ class BasicSettings(param.Parameterized):
     width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"])
-    model = param.ObjectSelector(default=DEFAULT_MODEL, objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1", "stable-diffusion-depth-v2-0"])
+    model = param.ObjectSelector(default=DEFAULT_MODEL, objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1", "stable-diffusion-depth-v2-0", "classic-anim-diffusion-v1"])
     seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
     clip_guidance = param.ObjectSelector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
