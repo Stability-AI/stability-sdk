@@ -373,8 +373,8 @@ class Api:
                     break
 
         # force pixels in unmasked areas not to change
-        if init_image is not None and mask is not None:
-            result = image_mix(result, init_image, mask)
+        # if init_image is not None and mask is not None:
+        #     result = image_mix(result, init_image, mask)
 
         return result
 
@@ -522,11 +522,12 @@ class Api:
         results = self._process_response(responses)
         return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
 
-    def transform_resample_3d(
+    # TODO: Add option to do transform using given depth map (for Blender use cases)
+    def transform_3d(
         self, 
         images: List[np.ndarray], 
         depth_calc: generation.TransformParameters,
-        resample: generation.TransformParameters
+        transform: generation.TransformParameters
     ) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
         assert len(images)
         assert isinstance(images[0], np.ndarray)
@@ -537,6 +538,7 @@ class Api:
         image_prompts = [image_to_prompt(image) for image in images]
         warped_images = []
         warp_mask = None
+        op_id = "resample" if transform.HasField("resample") else "camera_pose"
 
         for image_prompt in image_prompts:
             rq_depth = generation.Request(
@@ -545,15 +547,15 @@ class Api:
                 prompt=[image_prompts[0]], # use same input image for each depth calc
                 transform=depth_calc
             )
-            rq_resample = generation.Request(
+            rq_transform = generation.Request(
                 engine_id=self._transform.engine_id,
                 prompt=[image_prompt],
-                transform=resample
+                transform=transform
             )
 
             if self._debug_no_chains:
                 results = self._process_response(self._transform.stub.Generate(rq_depth, wait_for_ready=True))
-                rq_resample.prompt.append(                
+                rq_transform.prompt.append(                
                     generation.Prompt(
                         artifact=generation.Artifact(
                             type=generation.ARTIFACT_TENSOR,
@@ -561,19 +563,21 @@ class Api:
                         )
                     )
                 )
-                results = self._process_response(self._transform.stub.Generate(rq_resample, wait_for_ready=True))
+                results = self._process_response(self._transform.stub.Generate(rq_transform, wait_for_ready=True))
             else:
-                chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
-                    generation.Stage(
-                        id="depth_calc",
-                        request=rq_depth, 
-                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target="resample")]
-                    ),
-                    generation.Stage(
-                        id="resample",
-                        request=rq_resample, 
-                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
-                    ) 
+                chain_rq = generation.ChainRequest(
+                    request_id=f"{op_id}_3d_chain",
+                    stage=[
+                        generation.Stage(
+                            id="depth_calc",
+                            request=rq_depth, 
+                            on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target=op_id)]
+                        ),
+                        generation.Stage(
+                            id=op_id,
+                            request=rq_transform, 
+                            on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
+                        ) 
                 ])
 
                 results = self._process_response(self._transform.stub.ChainGenerate(chain_rq, wait_for_ready=True))

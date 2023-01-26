@@ -34,6 +34,7 @@ from stability_sdk.utils import (
     key_frame_inbetweens,
     key_frame_parse,
     resample_op,
+    camera_pose_op,
     sampler_from_string,
 )
 
@@ -129,7 +130,24 @@ class DepthwarpSettings(param.Parameterized):
     depth_blur_curve = param.String(default="0:(0.0)", doc="Blur strength of depth map.")
     depth_warp_curve = param.String(default="0:(1.0)", doc="Depth warp strength.")
     save_depth_maps = param.Boolean(default=False)
+    
 
+class OcclusionInpaintingSettings(param.Parameterized):
+    occlusion_inpainting = param.Boolean(default=False, doc="If True, inpainting is applied for areas that were occluded on a previous frame. Otherwise, 3D warping is applied.")
+    camera_type = param.ObjectSelector(default='perspective', objects=['perspective', 'orthographic'])
+    image_render_method = param.ObjectSelector(default='mesh', objects=['pointcloud', 'mesh'])
+    mask_render_method = param.ObjectSelector(default='pointcloud', objects=['pointcloud', 'mesh'])
+    image_render_points_per_pixel = param.Number(default=8)
+    image_render_point_radius = param.Number(default=0.005)
+    image_max_mesh_edge = param.Number(default=0.1)
+    mask_render_points_per_pixel = param.Number(default=5)
+    mask_render_point_radius = param.Number(default=0.0045)
+    mask_max_mesh_edge = param.Number(default=0.04)
+    do_prefill = param.Boolean(default=True)
+    mask_multiplier = param.String(default="0:(0.85)")
+    mask_min_value = param.String(default="0:(0.06)")
+    mask_max_value = param.String(default="0:(1.0)")
+    save_inpaint_masks = param.Boolean(default=False)
 
 class VideoInputSettings(param.Parameterized):
     video_init_path = param.String(default="", doc="Path to video input")
@@ -145,6 +163,7 @@ class AnimationArgs(
     CoherenceSettings,
     ColorSettings,
     DepthwarpSettings,
+    OcclusionInpaintingSettings,
     VideoInputSettings,
 ):
     pass
@@ -267,8 +286,7 @@ class Animator:
             tween = (frame_idx - keys[prev]) / (keys[next] - keys[prev])
             return [self.animation_prompts[keys[prev]], self.animation_prompts[keys[next]]], [1.0 - tween, tween]
 
-    def get_frame_filename(self, frame_idx, depth=False):
-        prefix = "depth" if depth else "frame"
+    def get_frame_filename(self, frame_idx, prefix="frame"):
         return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png")
 
     def image_resize(self, img: np.ndarray, mode: str='stretch') -> np.ndarray:
@@ -333,6 +351,9 @@ class Animator:
             depth_blur_series = curve_to_series(args.depth_blur_curve),
             depth_warp_series = curve_to_series(args.depth_warp_curve),
             video_mix_in_series = curve_to_series(args.video_mix_in_curve),
+            mask_multiplier = curve_to_series(args.mask_multiplier),
+            mask_min_value = curve_to_series(args.mask_min_value),
+            mask_max_value = curve_to_series(args.mask_max_value), 
         ))
 
         # prepare sorted list of key frames
@@ -462,6 +483,7 @@ class Animator:
             diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
             steps = int(self.frame_args.steps_series[frame_idx])
             strength = max(0.0, self.frame_args.strength_series[frame_idx])
+            # TODO: Should we adjust steps for inpainting modes?
             adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
 
             # fetch set of prompts and weights for this frame
@@ -494,7 +516,7 @@ class Animator:
 
             # either run diffusion or emit an inbetween frame
             if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
-                # apply additional noising and color matching to previous frame to use as init
+                # apply additional color matching to previous frame to use as init
                 init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
                 init_image = self.prepare_init(init_image, frame_idx, seed)
 
@@ -511,20 +533,20 @@ class Animator:
                 guidance = guidance_from_string(args.clip_guidance)
                 noise_scale = self.frame_args.noise_scale_series[frame_idx]
                 image = self.api.generate(
-                    prompts, weights, 
-                    args.width, args.height, 
-                    steps=adjusted_steps,
-                    seed=seed,
-                    cfg_scale=args.cfg_scale,
-                    sampler=sampler, 
-                    init_image=init_image, 
-                    init_strength=strength,
-                    init_noise_scale=noise_scale, 
-                    init_depth=init_depth,
-                    mask = self.mask,
-                    masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
-                    guidance_preset=guidance,
-                )
+                        prompts, weights, 
+                        args.width, args.height, 
+                        steps=adjusted_steps,
+                        seed=seed,
+                        cfg_scale=args.cfg_scale,
+                        sampler=sampler, 
+                        init_image=init_image, 
+                        init_strength=strength,
+                        init_noise_scale=noise_scale, 
+                        init_depth=init_depth,
+                        mask = inpaint_mask if args.occlusion_inpainting else self.mask,
+                        masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
+                        guidance_preset=guidance,
+                    )
 
                 if self.color_match_image is None and args.color_coherence != 'None':
                     self.color_match_image = image
@@ -551,7 +573,9 @@ class Animator:
             yield cv2_to_pil(out_frame)
             if args.save_depth_maps:
                 depth_image = self.generate_depth_image(out_frame)
-                cv2.imwrite(self.get_frame_filename(frame_idx, depth=True), depth_image)
+                cv2.imwrite(self.get_frame_filename(frame_idx, prefix="depth"), depth_image)
+            if args.save_inpaint_masks and inpaint_mask is not None:
+                cv2.imwrite(self.get_frame_filename(frame_idx, prefix="mask"), inpaint_mask)
 
             if not args.locked_seed:
                 seed += 1
@@ -617,6 +641,8 @@ class Animator:
         fov = frame_args.fov_series[frame_idx]
         depth_blur = int(frame_args.depth_blur_series[frame_idx])
         depth_warp = frame_args.depth_warp_series[frame_idx]
+        
+        depth_calc = depthcalc_op(args.midas_weight, depth_blur)
 
         TRANSLATION_SCALE = 1.0/200.0 # matches Disco
         dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
@@ -634,18 +660,33 @@ class Animator:
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
                 wvp = matrix.multiply(projection, self.prior_xforms[i])
-                depth_calc = depthcalc_op(args.midas_weight, depth_blur)
                 resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
-                xformed, mask = self.api.transform_resample_3d([self.prior_diffused[i]], depth_calc, resample)
+                xformed, mask = self.api.transform_3d([self.prior_diffused[i]], depth_calc, resample)
                 self.prior_frames[i] = xformed[0]
 
             return mask
         else:
-            wvp = matrix.multiply(projection, world_view)
-            depth_calc = depthcalc_op(args.midas_weight, depth_blur)
-            resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
-            self.prior_frames, mask = self.api.transform_resample_3d(self.prior_frames, depth_calc, resample)
+            if not args.occlusion_inpainting:
+                wvp = matrix.multiply(projection, world_view)
+                transform_op = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
+            else:
+                transform_op = camera_pose_op(
+                    world_view, near, far, fov, 
+                    args.camera_type,
+                    args.image_render_method,
+                    args.image_render_point_radius if args.image_render_method=="pointcloud" else None,
+                    args.image_render_points_per_pixel if args.image_render_method=="pointcloud" else None,
+                    args.image_max_mesh_edge if args.image_render_method=="mesh" else None,
+                    args.mask_render_method,
+                    args.mask_render_point_radius if args.mask_render_method=="pointcloud" else None,
+                    args.mask_render_points_per_pixel if args.mask_render_method=="pointcloud" else None,
+                    args.mask_max_mesh_edge if args.mask_render_method=="mesh" else None,
+                    args.do_prefill)
+            self.prior_frames, mask = self.api.transform_3d(self.prior_frames, depth_calc, transform_op)
+            if mask is not None:
+                mask = self.postprocess_inpainting_mask(mask[0], frame_idx)
             return mask
+                
 
     def transform_video(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
@@ -669,3 +710,8 @@ class Animator:
             return mask
         return None
 
+    def postprocess_inpainting_mask(self, mask, frame_idx):
+        mask_multiplier = self.frame_args.mask_multiplier[frame_idx]
+        mask_min_value = self.frame_args.mask_min_value[frame_idx]
+        mask_max_value = self.frame_args.mask_max_value[frame_idx]
+        return (mask * mask_multiplier).clip(255 * mask_min_value, 255 * mask_max_value).astype(np.uint8)

@@ -66,6 +66,11 @@ INTERP_MODES = {
     'vae-slerp': generation.INTERPOLATE_VAE_SLERP,
 }
 
+CAMERA_TYPES = {
+    'perspective': generation.CAMERA_PERSPECTIVE,
+    'orthographic': generation.CAMERA_ORTHOGRAPHIC,
+}
+
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 # note: we need to decide on a convention between _str and _string
@@ -107,6 +112,13 @@ def interp_mode_from_str(s: str) -> generation.InterpolateMode:
     if mode is None:
         raise ValueError(f"invalid interpolation mode: {s}")
     return mode
+
+# TODO: class/decorator instead
+def camera_type_from_string(s: str) -> generation.CameraType:
+    cam_type = CAMERA_TYPES.get(s.lower().strip())
+    if cam_type is None:
+        raise ValueError(f"invalid camera type: {s}")
+    return cam_type
 
 def artifact_type_to_str(artifact_type: generation.ArtifactType):
     """
@@ -336,5 +348,70 @@ def resample_op(
             prev_transform=generation.TransformMatrix(data=sum(prev_transform, [])) if prev_transform else None,
             depth_warp=depth_warp,
             export_mask=export_mask
+        )
+    )
+
+def camera_pose_op(
+    transform:Matrix,
+    near_plane:float,
+    far_plane:float,
+    fov:float,
+    camera_type:str='perspective',
+    image_render_method:str='mesh',
+    image_point_radius:Optional[float]=None,
+    image_points_per_pixel:Optional[float]=None,
+    image_max_mesh_edge:Optional[float]=0.04,
+    mask_render_method:str='pointcloud',
+    mask_point_radius:Optional[float]=0.003,
+    mask_points_per_pixel:Optional[float]=4,
+    mask_max_mesh_edge:Optional[float]=None,
+    do_prefill:bool=True,
+) -> generation.TransformParameters:
+    camera_settings = generation.CameraSettings(near_plane=near_plane, far_plane=far_plane, fov=fov)
+    if image_render_method == "pointcloud":
+        image_render_settings = generation.RenderSettings(
+            pointcloud_settings=generation.PointCloudRenderSettings(
+                radius=image_point_radius, points_per_pixel=image_points_per_pixel))
+    elif image_render_method == "mesh":
+        image_render_settings = generation.RenderSettings(
+            mesh_settings=generation.MeshRenderSettings(
+                max_mesh_edge=image_max_mesh_edge))
+    else:
+        raise Exception("Rendering method must be one of 'pointcloud' or 'mesh'")
+    if mask_render_method == "pointcloud":
+        mask_render_settings = generation.RenderSettings(
+            pointcloud_settings=generation.PointCloudRenderSettings(
+                radius=mask_point_radius, points_per_pixel=mask_points_per_pixel))
+    elif mask_render_method == "mesh":
+        mask_render_settings = generation.RenderSettings(
+            mesh_settings=generation.MeshRenderSettings(
+                max_mesh_edge=mask_max_mesh_edge))
+    else:
+        raise Exception("Rendering method must be one of 'pointcloud' or 'mesh'")
+    return generation.TransformParameters(
+        camera_pose=generation.TransformCameraPose(
+            world_to_view_matrix=generation.TransformMatrix(data=sum(transform, [])),
+            camera_settings=camera_settings,
+            camera_type=camera_type_from_string(camera_type),
+            image_render_settings=image_render_settings,
+            mask_render_settings=mask_render_settings,
+            do_prefill=do_prefill
+        )
+    )
+
+def warpflow_op(
+    prev_frame:np.ndarray,
+    next_frame:np.ndarray,
+) -> generation.TransformParameters:
+    im_prev=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(prev_frame))
+    im_next=generation.Artifact(
+        type=generation.ARTIFACT_IMAGE,
+        binary=image_to_jpg_bytes(next_frame))
+    return generation.TransformParameters(
+        warp_flow=generation.TransformWarpFlow(
+            prev_frame=im_prev,
+            next_frame=im_next,
         )
     )
