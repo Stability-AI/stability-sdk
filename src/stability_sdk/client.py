@@ -271,7 +271,7 @@ class Api:
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
         self._max_retries = 3 # retry request on RPC error
-        self._retry_obfuscation = False # retry request with different seed on classifier rejection
+        self._retry_obfuscation = False # retry request with different seed on classifier obfuscation
 
     def generate(
         self,
@@ -658,8 +658,7 @@ class Api:
                 if attempt == self._max_retries:
                     raise rpc_error
                 logger.warning(f"Received RpcError: {rpc_error} will retry {self._max_retries-attempt} more times")
-
-            time.sleep(0.25 * 2**attempt)
+                time.sleep(0.25 * 2**attempt)
         return results
 
 class StabilityInference:
