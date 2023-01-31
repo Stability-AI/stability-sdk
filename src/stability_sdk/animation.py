@@ -227,6 +227,9 @@ class Animator:
         self.video_prev_frame: Optional[np.ndarray] = None
         self.video_reader = None
 
+        # configure Api to retry on classifier obfuscations
+        self.api._retry_obfuscation = True
+
         # 3D accumulate_xforms not ready yet
         if args.animation_mode == '3D' and args.accumulate_xforms:
             args.accumulate_xforms = False

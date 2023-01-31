@@ -54,6 +54,11 @@ from .utils import (
     truncate_fit,
 )
 
+class ClassifierException(Exception):
+    """Raised when server classifies generated content as inappropriate."""
+    def __init__(self, classifier_result: generation.ClassifierParameters):
+        self.classifier_result = classifier_result
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
@@ -266,6 +271,7 @@ class Api:
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
         self._max_retries = 3 # retry request on RPC error
+        self._retry_obfuscation = False # retry request with different seed on classifier obfuscation
 
     def generate(
         self,
@@ -599,12 +605,16 @@ class Api:
             for artifact in resp.artifacts:
                 if artifact.type not in results:
                     results[artifact.type] = []
-                if artifact.type in (generation.ARTIFACT_DEPTH, generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
+                if artifact.type == generation.ARTIFACT_CLASSIFICATIONS:
+                    results[artifact.type].append(artifact.classifier)
+                elif artifact.type in (generation.ARTIFACT_DEPTH, generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
                     nparr = np.frombuffer(artifact.binary, np.uint8)
                     im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     results[artifact.type].append(im)
                 elif artifact.type == generation.ARTIFACT_TENSOR:
                     results[artifact.type].append(artifact.tensor)
+                elif artifact.type == generation.ARTIFACT_TEXT:
+                    results[artifact.type].append(artifact.text)
         return results
 
     def _run_request(
@@ -619,14 +629,37 @@ class Api:
                     response = endpoint.stub.Generate(request, wait_for_ready=True)
                 else:
                     response = endpoint.stub.ChainGenerate(request, wait_for_ready=True)
+
+                results = self._process_response(response)
+
+                # check for classifier obfuscation
+                if generation.ARTIFACT_CLASSIFICATIONS in results:
+                    for classifier in results[generation.ARTIFACT_CLASSIFICATIONS]:
+                        if classifier.realized_action == generation.ACTION_OBFUSCATE:
+                            raise ClassifierException(classifier)
+
                 break
+            except ClassifierException as ce:
+                if attempt == self._max_retries or not self._retry_obfuscation:
+                    raise ce
+                
+                for exceed in ce.classifier_result.exceeds:
+                    logger.warning(f"Received classifier obfuscation. Exceeded {exceed.name} threshold")
+                    for concept in exceed.concepts:
+                        if concept.HasField("threshold"):
+                            logger.warning(f"  {concept.concept} ({concept.threshold})")
+                
+                if isinstance(request, generation.Request) and request.HasField("image"):
+                    request.image.seed[:] = [seed + 1 for seed in request.image.seed]
+                    logger.warning(f"  adjusting seed, will retry {self._max_retries-attempt} more times")
+                else:
+                    raise ce
             except grpc.RpcError as rpc_error:
                 if attempt == self._max_retries:
                     raise rpc_error
                 logger.warning(f"Received RpcError: {rpc_error} will retry {self._max_retries-attempt} more times")
                 time.sleep(0.25 * 2**attempt)
-        return self._process_response(response)
-
+        return results
 
 class StabilityInference:
     def __init__(
