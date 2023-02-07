@@ -61,18 +61,25 @@ class MockStub:
 def test_api_generate():
     api = client.Api(stub=MockStub())
     width, height = 512, 768
-    result = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height)
-    assert isinstance(result, np.ndarray)
-    assert result.shape == (height, width, 3)
+    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height)
+    assert isinstance(results, dict)
+    assert generation.ARTIFACT_IMAGE in results
+    assert len(results[generation.ARTIFACT_IMAGE]) == 1
+    image = results[generation.ARTIFACT_IMAGE][0]
+    assert isinstance(image, np.ndarray)
+    assert image.shape == (height, width, 3)
 
 def test_api_inpaint():
     api = client.Api(stub=MockStub())
     width, height = 512, 768
     image = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
     mask = np.random.randint(0, 255, (height, width), dtype=np.uint8)
-    result = api.inpaint(image, mask, prompts=["foo bar"], weights=[1.0])
-    assert isinstance(result, np.ndarray)
-    assert result.shape == (height, width, 3)
+    results = api.inpaint(image, mask, prompts=["foo bar"], weights=[1.0])
+    assert generation.ARTIFACT_IMAGE in results
+    assert len(results[generation.ARTIFACT_IMAGE]) == 1
+    image = results[generation.ARTIFACT_IMAGE][0]
+    assert isinstance(image, np.ndarray)
+    assert image.shape == (height, width, 3)
 
 def test_api_interpolate():
     api = client.Api(stub=MockStub())
