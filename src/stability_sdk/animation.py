@@ -84,7 +84,7 @@ class CameraSettings(param.Parameterized):
     For abrupt transitions, specify values at adjacent keyframes.
     """
     angle = param.String(default="0:(0)", doc="Camera rotation angle in degrees for 2D mode")
-    zoom = param.String(default="0:(1)", doc="Camera zoom for 2D mode (<1 zooms out, >1 zooms in)")
+    zoom = param.String(default="0:(1)", doc="Camera zoom factor for 2D mode (<1 zooms out, >1 zooms in)")
     translation_x = param.String(default="0:(0)")
     translation_y = param.String(default="0:(0)")
     translation_z = param.String(default="0:(0)")
@@ -109,7 +109,7 @@ class ColorSettings(param.Parameterized):
 
 
 class DepthSettings(param.Parameterized):
-    depth_model_weight = param.Number(default=0.3, softbounds=(0,1), doc="Blend factor between Adabins and MiDaS depth models.")
+    depth_model_weight = param.Number(default=0.3, softbounds=(0,1), doc="Blend factor between AdaBins and MiDaS depth models.")
     near_plane = param.Number(default=200, doc="Distance to nearest plane of camera view volume.")
     far_plane = param.Number(default=10000, doc="Distance to furthest plane of camera view volume.")
     fov_curve = param.String(default="0:(25)", doc="FOV angle of camera volume in degrees.")
@@ -127,7 +127,7 @@ class VideoInputSettings(param.Parameterized):
 class VideoOutputSettings(param.Parameterized):
     fps = param.Integer(default=24, doc="Frame rate to use when generating video output.")
     reverse = param.Boolean(default=False, doc="Whether to reverse the output video or not.")
-    vr_mode = param.Boolean(default=False, doc="Output views for both eyes in combination with 3D mode.")
+    vr_mode = param.Boolean(default=False, doc="Outputs side by side views for each eye using depth warp.")
     vr_eye_angle = param.Number(default=0.5, softbounds=(0,1), doc="Y-axis rotation of the eyes towards the center.")
     vr_eye_dist = param.Number(default=5.0, softbounds=(0,1), doc="Interpupillary distance (between the eyes)")
     vr_projection = param.Number(default=-0.4, softbounds=(-1,1), doc="Spherical projection of the video.")
@@ -262,6 +262,19 @@ class Animator:
         else:
             return matrix.identity
 
+    def emit_frame(self, frame_idx: int, out_frame: np.ndarray) -> Image.Image:
+        if self.args.save_depth_maps:
+            depth_image = self.generate_depth_image(out_frame)
+            cv2.imwrite(self.get_frame_filename(frame_idx, depth=True), depth_image)
+
+        if self.args.vr_mode:
+            stereo_frame = self.render_stereo_eye_views(frame_idx, out_frame)
+            cv2.imwrite(self.get_frame_filename(frame_idx), stereo_frame)
+            return cv2_to_pil(stereo_frame)
+        else:
+            cv2.imwrite(self.get_frame_filename(frame_idx), out_frame)
+            return cv2_to_pil(out_frame)
+
     def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
         results, _ = self.api.transform(
             [image], 
@@ -314,7 +327,6 @@ class Animator:
             prompts.append(self.negative_prompt)
             weights.append(-abs(self.negative_prompt_weight))
 
-        # generate the next frame
         if use_inpaint_model:
             results = self.api.inpaint(
                 image, mask,
@@ -335,13 +347,13 @@ class Animator:
                 steps=adjusted_steps,
                 seed=args.seed,
                 cfg_scale=args.cfg_scale,
-                sampler=sampler_from_string(args.sampler.lower()), 
+                sampler=sampler, 
                 init_image=image, 
                 init_strength=strength,
                 mask=mask,
                 masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                 mask_fixup=True,
-                guidance_preset=guidance_from_string(args.clip_guidance),
+                guidance_preset=guidance,
             )
         return results[generation.ARTIFACT_IMAGE][0]
 
@@ -512,7 +524,8 @@ class Animator:
 
         # experimental span-based outpainting mode
         if args.cadence_spans:
-            yield from self._spans_render()
+            for idx, frame in self._spans_render():
+                yield self.emit_frame(idx, frame)
             return
 
         for frame_idx in range(self.start_frame_idx, args.max_frames):
@@ -545,7 +558,7 @@ class Animator:
             # apply inpainting
             if args.inpaint_border and inpaint_mask is not None:
                 for i in range(len(self.prior_frames)):
-                    self.prior_frames[i] = self.inpaint_frame(frame_idx, self.prior_frames[i], inpaint_mask, use_inpaint_model=True)
+                    self.prior_frames[i] = self.inpaint_frame(frame_idx, self.prior_frames[i], inpaint_mask)
 
             # apply mask to transformed prior frames
             self.next_mask()
@@ -610,17 +623,7 @@ class Animator:
                 )[0]
 
             # save and return final frame
-            if args.vr_mode:
-                stereo_frame = self.render_stereo_eye_views(frame_idx, out_frame)
-                cv2.imwrite(self.get_frame_filename(frame_idx), stereo_frame)
-                yield cv2_to_pil(stereo_frame)
-            else:
-                cv2.imwrite(self.get_frame_filename(frame_idx), out_frame)
-                yield cv2_to_pil(out_frame)
-
-            if args.save_depth_maps:
-                depth_image = self.generate_depth_image(out_frame)
-                cv2.imwrite(self.get_frame_filename(frame_idx, depth=True), depth_image)
+            yield self.emit_frame(frame_idx, out_frame)
 
             if not args.locked_seed:
                 seed += 1
@@ -777,7 +780,7 @@ class Animator:
         )
         return results[generation.ARTIFACT_IMAGE][0]
 
-    def _span_render(self, start: int, end: int, prev_frame: Optional[np.ndarray]) -> Generator[np.ndarray, None, None]:
+    def _span_render(self, start: int, end: int, prev_frame: Optional[np.ndarray]) -> Generator[Tuple[int, np.ndarray], None, None]:
         args = self.args
 
         def apply_xform(frame: np.ndarray, xform: matrix.Matrix) -> Tuple[np.ndarray, np.ndarray]:
@@ -788,7 +791,6 @@ class Animator:
 
         if prev_frame is None:
             prev_frame = self._span_render_frame(start, None)
-            yield prev_frame
 
         # transform the previous frame forward
         accum_xform = matrix.identity
@@ -831,10 +833,9 @@ class Animator:
             fwd_fill = image_mix(frame_bwd, frame_fwd, mask_erode_blur(forward_masks[idx], 8, 8))
             bwd_fill = image_mix(frame_fwd, frame_bwd, mask_erode_blur(backward_masks[idx], 8, 8))
             blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_str(args.cadence_interp))[0]
-            cv2.imwrite(self.get_frame_filename(start+idx), blended)
-            yield blended
+            yield start+idx, blended
 
-    def _spans_render(self) -> Generator[Image.Image, None, None]:
+    def _spans_render(self) -> Generator[Tuple[int, np.ndarray], None, None]:
         frame_idx = self.start_frame_idx
         prev_frame: np.ndarray = None
         while frame_idx < self.args.max_frames:
@@ -844,8 +845,8 @@ class Animator:
                 diffusion_cadence = self.args.max_frames - frame_idx
 
             # render all frames in the span
-            for frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, prev_frame):
+            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, prev_frame):
+                yield idx, frame
                 prev_frame = frame
-                yield cv2_to_pil(frame)
 
             frame_idx += diffusion_cadence
