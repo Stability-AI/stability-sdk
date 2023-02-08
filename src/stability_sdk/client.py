@@ -166,6 +166,7 @@ class Project():
         results = []
         for proj in api._proj_stub.List(list_req, wait_for_ready=True):
             results.append(Project(api, proj))
+        results.sort(key=lambda x: x.title.lower())
         return results
 
     def load_settings(self) -> dict:
@@ -499,7 +500,8 @@ class Api:
         self, 
         images: List[np.ndarray], 
         depth_calc: generation.TransformParameters,
-        resample: generation.TransformParameters
+        resample: generation.TransformParameters,
+        extras: Optional[Dict] = None
     ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
         assert len(images)
         assert isinstance(images[0], np.ndarray)
@@ -511,17 +513,22 @@ class Api:
         warped_images = []
         warp_mask = None
 
+        extras_struct = Struct()
+        if extras is not None:
+            extras_struct.update(extras)
+
         for image_prompt in image_prompts:
             rq_depth = generation.Request(
                 engine_id=self._transform.engine_id,
                 requested_type=generation.ARTIFACT_TENSOR,
                 prompt=[image_prompts[0]], # use same input image for each depth calc
-                transform=depth_calc
+                transform=depth_calc,
             )
             rq_resample = generation.Request(
                 engine_id=self._transform.engine_id,
                 prompt=[image_prompt],
-                transform=resample
+                transform=resample,
+                extras=extras_struct
             )
 
             if self._debug_no_chains:
