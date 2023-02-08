@@ -38,8 +38,9 @@ See usage demo notebooks in ./nbs
 ```
 usage: python -m stability_sdk [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
                  [--end_schedule END_SCHEDULE] [--cfg_scale CFG_SCALE] [--sampler SAMPLER]
-                 [--steps STEPS] [--seed SEED] [--prefix PREFIX] [--no-store] [--num_samples NUM_SAMPLES]
-                 [--show] [--engine ENGINE] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
+                 [--steps STEPS] [--seed SEED] [--prefix PREFIX] [--engine ENGINE]
+                 [--num_samples NUM_SAMPLES] [--artifact_types ARTIFACT_TYPES]
+                 [--no-store] [--show] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
                  [prompt ...]
 
 positional arguments:
@@ -66,6 +67,8 @@ options:
   --seed SEED, -S SEED  random seed to use
   --prefix PREFIX, -p PREFIX
                         output prefixes for artifacts
+  --artifact_types ARTIFACT_TYPES, -t ARTIFACT_TYPES
+                        filter artifacts by type (ARTIFACT_IMAGE, ARTIFACT_TEXT, ARTIFACT_CLASSIFICATIONS, etc)
   --no-store            do not write out artifacts
   --num_samples NUM_SAMPLES, -n NUM_SAMPLES
                         number of samples to generate

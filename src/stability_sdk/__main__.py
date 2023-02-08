@@ -114,6 +114,13 @@ parser.add_argument(
     help="output prefixes for artifacts",
 )
 parser.add_argument(
+    "--artifact_types",
+    "-t",
+    action='append',
+    type=str,
+    help="filter artifacts by type (ARTIFACT_IMAGE, ARTIFACT_TEXT, ARTIFACT_CLASSIFICATIONS, etc)"
+)
+parser.add_argument(
     "--no-store", action="store_true", help="do not write out artifacts"
 )
 parser.add_argument(
@@ -177,7 +184,8 @@ stability_api = StabilityInference(
 
 answers = stability_api.generate(args.prompt, **request)
 artifacts = process_artifacts_from_answers(
-    args.prefix, args.prompt, answers, write=not args.no_store, verbose=True
+    args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
+    filter_types=args.artifact_types,
 )
 if args.show:
     for artifact in open_images(artifacts, verbose=True):
