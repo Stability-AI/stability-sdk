@@ -849,7 +849,7 @@ class Animator:
             t = (idx) / (end-start-1)
             fwd_fill = image_mix(frame_bwd, frame_fwd, mask_erode_blur(forward_masks[idx], 8, 8))
             bwd_fill = image_mix(frame_fwd, frame_bwd, mask_erode_blur(backward_masks[idx], 8, 8))
-            blended = self.api.interpolate([fwd_fill, bwd_fill], [t*t], interp_mode_from_str(args.cadence_interp))[0]
+            blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_str(args.cadence_interp))[0]
             yield start+idx, blended
 
     def _spans_render(self) -> Generator[Tuple[int, np.ndarray], None, None]:
