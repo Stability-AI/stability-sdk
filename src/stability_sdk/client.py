@@ -276,7 +276,7 @@ class Api:
 
         logger.warning(
             "\n"
-            "The functionality available through this Api is in beta and subject to changes in both functionality and pricing.\n"
+            "The functionality available through this Api class is in beta and subject to changes in both functionality and pricing.\n"
             "Please be aware that these changes may affect your implementation and usage of this class.\n"
             "\n"
         )
