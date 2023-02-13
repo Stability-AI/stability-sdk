@@ -268,11 +268,18 @@ class Api:
         self._asset = ApiEndpoint(stub, 'asset-service')
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._inpaint = ApiEndpoint(stub, 'stable-inpainting-512-v2-0')
-        self._interpolate = ApiEndpoint(stub, 'interpolate-v1')
+        self._interpolate = ApiEndpoint(stub, 'interpolation-server-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
         self._max_retries = 3 # retry request on RPC error
         self._retry_obfuscation = False # retry request with different seed on classifier obfuscation
+
+        logger.warning(
+            "\n"
+            "The functionality available through this Api class is in beta and subject to changes in both functionality and pricing.\n"
+            "Please be aware that these changes may affect your implementation and usage of this class.\n"
+            "\n"
+        )
 
     def generate(
         self,
@@ -426,8 +433,13 @@ class Api:
         assert len(images) == 2
         assert len(ratios) >= 1
 
-        if mode == generation.INTERPOLATE_LINEAR and len(ratios) == 1:
-            return [image_mix(images[0], images[1], ratios[0])]
+        if len(ratios) == 1:
+            if ratios[0] == 0.0:
+                return [images[0]]
+            elif ratios[0] == 1.0:
+                return [images[1]]
+            elif mode == generation.INTERPOLATE_LINEAR:
+               return [image_mix(images[0], images[1], ratios[0])]
 
         p = [image_to_prompt(image) for image in images]
         request = generation.Request(

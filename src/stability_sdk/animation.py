@@ -748,7 +748,14 @@ class Animator:
             return mask
         return None
 
-    def _span_render_frame(self, frame_idx: int, init: Optional[np.ndarray], mask: Optional[np.ndarray]=None, strength: Optional[float]=None) -> np.ndarray:
+    def _span_render_frame(
+        self, 
+        frame_idx: int, 
+        seed: int, 
+        init: Optional[np.ndarray], 
+        mask: Optional[np.ndarray]=None, 
+        strength: Optional[float]=None
+    ) -> np.ndarray:
         args = self.args
         steps = int(self.frame_args.steps_series[frame_idx])
         strength = strength if strength is not None else max(0.0, self.frame_args.strength_series[frame_idx])
@@ -767,7 +774,7 @@ class Animator:
             prompts, weights, 
             args.width, args.height, 
             steps = adjusted_steps,
-            seed = args.seed,
+            seed = seed,
             cfg_scale = args.cfg_scale,
             sampler = sampler, 
             init_image = init, 
@@ -780,24 +787,34 @@ class Animator:
         )
         return results[generation.ARTIFACT_IMAGE][0]
 
-    def _span_render(self, start: int, end: int, prev_frame: Optional[np.ndarray]) -> Generator[Tuple[int, np.ndarray], None, None]:
+    def _span_render(self, start: int, end: int, seed: int, prev_frame: Optional[np.ndarray]) -> Generator[Tuple[int, np.ndarray], None, None]:
         args = self.args
 
-        def apply_xform(frame: np.ndarray, xform: matrix.Matrix) -> Tuple[np.ndarray, np.ndarray]:
+        def apply_xform(frame: np.ndarray, xform: matrix.Matrix, frame_idx: int) -> Tuple[np.ndarray, np.ndarray]:
+            args, frame_args = self.args, self.frame_args
             if args.animation_mode == '2D':
                 xform = to_3x3(xform)
-            frames, masks = self.api.transform([frame], resample_op(args.border, xform, export_mask=True))
+                frames, masks = self.api.transform([frame], resample_op(args.border, xform, export_mask=True))
+            else:
+                fov = frame_args.fov_series[frame_idx]
+                depth_blur = int(frame_args.depth_blur_series[frame_idx])
+                depth_warp = frame_args.depth_warp_series[frame_idx]
+                projection = matrix.projection_fov(math.radians(fov), 1.0, args.near_plane, args.far_plane)                
+                wvp = matrix.multiply(projection, xform)
+                depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
+                resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=True)
+                frames, masks = self.api.transform_resample_3d([frame], depth_calc, resample)
             return frames[0], masks[0]
 
         if prev_frame is None:
-            prev_frame = self._span_render_frame(start, None)
+            prev_frame = self._span_render_frame(start, seed, None)
 
         # transform the previous frame forward
         accum_xform = matrix.identity
         forward_frames, forward_masks = [], []
         for frame_idx in range(start, end):
             accum_xform = matrix.multiply(self.build_frame_xform(frame_idx), accum_xform)
-            frame, mask = apply_xform(prev_frame, accum_xform)
+            frame, mask = apply_xform(prev_frame, accum_xform, frame_idx)
             forward_frames.append(frame)
             forward_masks.append(mask)
 
@@ -808,7 +825,7 @@ class Animator:
         # run diffusion on top of the final result to allow content to evolve over time
         strength = max(0.0, self.frame_args.strength_series[end-1])
         if strength < 1.0:
-            final_frame = self._span_render_frame(end-1, forward_frames[-1])
+            final_frame = self._span_render_frame(end-1, seed, forward_frames[-1])
         else:
             final_frame = forward_frames[-1]
 
@@ -819,7 +836,7 @@ class Animator:
             frame_xform = self.build_frame_xform(frame_idx+1)
             inv_xform = np.linalg.inv(frame_xform).tolist()
             accum_xform = matrix.multiply(inv_xform, accum_xform)
-            xformed, mask = apply_xform(backward_frames[-1], accum_xform)
+            xformed, mask = apply_xform(backward_frames[-1], accum_xform, frame_idx)
             backward_frames.insert(0, xformed)
             backward_masks.insert(0, mask)
 
@@ -837,6 +854,7 @@ class Animator:
 
     def _spans_render(self) -> Generator[Tuple[int, np.ndarray], None, None]:
         frame_idx = self.start_frame_idx
+        seed = self.args.seed
         prev_frame: np.ndarray = None
         while frame_idx < self.args.max_frames:
             # determine how many frames the span will process together
@@ -845,8 +863,10 @@ class Animator:
                 diffusion_cadence = self.args.max_frames - frame_idx
 
             # render all frames in the span
-            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, prev_frame):
+            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, seed, prev_frame):
                 yield idx, frame
                 prev_frame = frame
+                if not self.args.locked_seed:
+                    seed += 1
 
             frame_idx += diffusion_cadence
