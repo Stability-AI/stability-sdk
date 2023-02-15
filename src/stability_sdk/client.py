@@ -166,6 +166,7 @@ class Project():
         results = []
         for proj in api._proj_stub.List(list_req, wait_for_ready=True):
             results.append(Project(api, proj))
+        results.sort(key=lambda x: x.title.lower())
         return results
 
     def load_settings(self) -> dict:
@@ -404,7 +405,7 @@ class Api:
 
         # optionally force pixels in unmasked areas not to change
         if mask_fixup:
-            results[generation.ARTIFACT_IMAGE] = [image_mix(image, image, mask) for image in results[generation.ARTIFACT_IMAGE]]
+            results[generation.ARTIFACT_IMAGE] = [image_mix(res_image, image, mask) for res_image in results[generation.ARTIFACT_IMAGE]]
 
         return results
 
@@ -495,12 +496,13 @@ class Api:
 
         return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
 
-    # TODO: Add option to do transform using given depth map (for Blender use cases)
+    # TODO: Add option to do transform using given depth map (e.g. for Blender use cases)
     def transform_3d(
         self, 
         images: List[np.ndarray], 
         depth_calc: generation.TransformParameters,
-        transform: generation.TransformParameters
+        transform: generation.TransformParameters,
+        extras: Optional[Dict] = None
     ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
         assert len(images)
         assert isinstance(images[0], np.ndarray)
@@ -513,17 +515,22 @@ class Api:
         warp_mask = None
         op_id = "resample" if transform.HasField("resample") else "camera_pose"
 
+        extras_struct = Struct()
+        if extras is not None:
+            extras_struct.update(extras)
+
         for image_prompt in image_prompts:
             rq_depth = generation.Request(
                 engine_id=self._transform.engine_id,
                 requested_type=generation.ARTIFACT_TENSOR,
                 prompt=[image_prompts[0]], # use same input image for each depth calc
-                transform=depth_calc
+                transform=depth_calc,
             )
             rq_transform = generation.Request(
                 engine_id=self._transform.engine_id,
                 prompt=[image_prompt],
-                transform=transform
+                transform=transform,
+                extras=extras_struct
             )
 
             if self._debug_no_chains:

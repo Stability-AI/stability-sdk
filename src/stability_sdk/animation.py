@@ -12,19 +12,20 @@ import random
 from collections import OrderedDict
 from PIL import Image
 from types import SimpleNamespace
-from typing import Generator, List, Optional, Tuple
+from typing import Generator, List, Optional, Tuple, Union
 
 from stability_sdk.client import (
     Api,
     generation,
-    image_mix
 )
 from stability_sdk.utils import (
     blend_op,
     color_match_op,
     color_adjust_op,
+    cv2_to_pil,
     depthcalc_op,
     guidance_from_string,
+    image_mix,
     image_to_png_bytes,
     interp_mode_from_str,
     key_frame_inbetweens,
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
 DEFAULT_MODEL = 'stable-diffusion-v1-5'
+TRANSLATION_SCALE = 1.0/200.0 # matches Disco and Deforum
 
 docstring_bordermode = ( 
     "Method that will be used to fill empty regions, e.g. after a rotation transform."
@@ -48,12 +50,7 @@ docstring_bordermode = (
     "\n\t* zero - Fill empty regions with black pixels."
 )
 
-# to do: these defaults and bounds should be configured in a language agnostic way so they can be 
-# shared across client libraries, front end, etc.
-# https://param.holoviz.org/user_guide/index.html
-# TO DO: "prompt" argument has a bit of a logical collision with animation prompts
 class BasicSettings(param.Parameterized):
-    #prompt  = param.String(default="A beautiful painting of yosemite national park, by Neil Gaiman", doc="A string")
     width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"])
@@ -69,8 +66,7 @@ class BasicSettings(param.Parameterized):
 
 class AnimationSettings(param.Parameterized):
     animation_mode = param.ObjectSelector(default='3D', objects=['2D', '3D', 'Video Input'])
-    max_frames = param.Integer(default=60, doc="Force stop of animation job after this many frames are generated.")
-    fps = param.Integer(default=24, doc="Frame rate to use when generating video output.")
+    max_frames = param.Integer(default=72, doc="Force stop of animation job after this many frames are generated.")
     border = param.ObjectSelector(default='replicate', objects=['reflect', 'replicate', 'wrap', 'zero'], doc=docstring_bordermode)
     noise_scale_curve = param.String(default="0:(1.02)")
     strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
@@ -81,33 +77,27 @@ class AnimationSettings(param.Parameterized):
     locked_seed = param.Boolean(default=False)
 
 
-# TO DO: ability to specify backfill/interpolation method for each parameter
-# TO DO: ability to provide a function that returns a parameter value given some frame index
-# TO DO: inherit from param.String to add validation to these things
-# TO DO: should defaults be noop or opinionated? Maybe a separate object for opinionated defaults?
-class KeyframedSettings(param.Parameterized):
+class CameraSettings(param.Parameterized):
     """
     See disco/deforum keyframing syntax, originally developed by Chigozie Nri
     General syntax: "<frameId>:(<valueAtFrame>), f2:(v2),f3:(v3)...." 
     Values between intermediate keyframes will be linearly interpolated by default to produce smooth transitions.
     For abrupt transitions, specify values at adjacent keyframes.
     """
-    angle = param.String(default="0:(1)")
-    zoom = param.String(default="0:(1)")
+    angle = param.String(default="0:(0)", doc="Camera rotation angle in degrees for 2D mode")
+    zoom = param.String(default="0:(1)", doc="Camera zoom factor for 2D mode (<1 zooms out, >1 zooms in)")
     translation_x = param.String(default="0:(0)")
     translation_y = param.String(default="0:(0)")
-    translation_z = param.String(default="0:(1)")
-    rotation_x = param.String(default="0:(0)", doc="Euler angle in radians")
-    rotation_y = param.String(default="0:(0)", doc="Euler angle in radians")
-    rotation_z = param.String(default="0:(0)", doc="Euler angle in radians")
+    translation_z = param.String(default="0:(0)")
+    rotation_x = param.String(default="0:(0)", doc="Camera rotation around X-axis in degrees for 3D mode")
+    rotation_y = param.String(default="0:(0)", doc="Camera rotation around Y-axis in degrees for 3D mode")
+    rotation_z = param.String(default="0:(0)", doc="Camera rotation around Z-axis in degrees for 3D mode")
 
 
-# should diffusion cadence be moved up to the keyframed settings?
-# if not, maybe stuff like steps and strength should be moved elsewhere?
 class CoherenceSettings(param.Parameterized):
-    diffusion_cadence_curve = param.String(default="0:(4)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
+    diffusion_cadence_curve = param.String(default="0:(1)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
     cadence_interp = param.ObjectSelector(default='mix', objects=['mix', 'rife', 'vae-lerp', 'vae-slerp'])
-    accumulate_xforms = param.Boolean(default=True)
+    cadence_spans = param.Boolean(default=False, doc="Experimental diffusion cadence mode for better outpainting")
 
 
 class ColorSettings(param.Parameterized):
@@ -119,9 +109,8 @@ class ColorSettings(param.Parameterized):
     lightness_curve = param.String(default="0:(0.0)")
 
 
-# TO DO: change to a generic `depth_weight` rather than specifying model name in the parameter
-class DepthwarpSettings(param.Parameterized):
-    midas_weight = param.Number(default=0.3, softbounds=(0,1), doc="Strength of depth model influence.")
+class DepthSettings(param.Parameterized):
+    depth_model_weight = param.Number(default=0.3, softbounds=(0,1), doc="Blend factor between AdaBins and MiDaS depth models.")
     near_plane = param.Number(default=200, doc="Distance to nearest plane of camera view volume.")
     far_plane = param.Number(default=10000, doc="Distance to furthest plane of camera view volume.")
     fov_curve = param.String(default="0:(25)", doc="FOV angle of camera volume in degrees.")
@@ -135,13 +124,15 @@ class OcclusionInpaintingSettings(param.Parameterized):
     camera_type = param.ObjectSelector(default='perspective', objects=['perspective', 'orthographic'])
     image_render_method = param.ObjectSelector(default='mesh', objects=['pointcloud', 'mesh'])
     mask_render_method = param.ObjectSelector(default='pointcloud', objects=['pointcloud', 'mesh'])
-    image_render_points_per_pixel = param.Number(default=8)
+    image_render_points_per_pixel = param.Integer(default=8)
     image_render_point_radius = param.Number(default=0.005)
     image_max_mesh_edge = param.Number(default=0.1)
-    mask_render_points_per_pixel = param.Number(default=5)
+    mask_render_points_per_pixel = param.Integer(default=5)
     mask_render_point_radius = param.Number(default=0.0045)
     mask_max_mesh_edge = param.Number(default=0.04)
+    use_inpainting_model = param.Boolean(default=False)
     do_prefill = param.Boolean(default=True)
+    do_mask_fixup = param.Boolean(default=False)
     mask_multiplier = param.String(default="0:(0.85)")
     mask_min_value = param.String(default="0:(0.06)")
     mask_max_value = param.String(default="0:(1.0)")
@@ -153,16 +144,24 @@ class VideoInputSettings(param.Parameterized):
     video_mix_in_curve = param.String(default="0:(0.02)")
     video_flow_warp = param.Boolean(default=True, doc="Whether or not to transfer the optical flow from the video to the generated animation as a warp effect.")
 
+class VideoOutputSettings(param.Parameterized):
+    fps = param.Integer(default=24, doc="Frame rate to use when generating video output.")
+    reverse = param.Boolean(default=False, doc="Whether to reverse the output video or not.")
+    vr_mode = param.Boolean(default=False, doc="Outputs side by side views for each eye using depth warp.")
+    vr_eye_angle = param.Number(default=0.5, softbounds=(0,1), doc="Y-axis rotation of the eyes towards the center.")
+    vr_eye_dist = param.Number(default=5.0, softbounds=(0,1), doc="Interpupillary distance (between the eyes)")
+    vr_projection = param.Number(default=-0.4, softbounds=(-1,1), doc="Spherical projection of the video.")
 
 class AnimationArgs(
     BasicSettings,
     AnimationSettings,
-    KeyframedSettings,
+    CameraSettings,
     CoherenceSettings,
     ColorSettings,
-    DepthwarpSettings,
+    DepthSettings,
     OcclusionInpaintingSettings,
     VideoInputSettings,
+    VideoOutputSettings
 ):
     pass
 
@@ -186,9 +185,14 @@ def args2dict_simplenamespace(args):
 def args2dict_param(args):
     return OrderedDict(args.param.values())
 
-def cv2_to_pil(img):
-    assert img is not None
-    return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+def mask_erode_blur(mask: np.ndarray, mask_erode: int, mask_blur: int) -> np.ndarray:
+    if mask_erode > 0:
+        ks = mask_erode*2 + 1
+        mask = cv2.erode(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks)), iterations=1)
+    if mask_blur > 0:
+        ks = mask_blur*2 + 1
+        mask = cv2.GaussianBlur(mask, (ks, ks), 0)
+    return mask
 
 def make_xform_2d(
     w: float, h: float,
@@ -249,31 +253,57 @@ class Animator:
         # configure Api to retry on classifier obfuscations
         self.api._retry_obfuscation = True
 
-        # 3D accumulate_xforms not ready yet
-        if args.animation_mode == '3D' and args.accumulate_xforms:
-            args.accumulate_xforms = False
-
         self.setup_animation(resume)
 
-    def apply_inpainting(self, mask: np.ndarray, prompts: List[str], weights: List[float], inpaint_steps: int, seed: int):
-        for i in range(len(self.prior_frames)):
-            results = self.api.inpaint(
-                image=self.prior_frames[i],
-                mask=mask,
-                prompts=prompts,
-                weights=weights,
-                steps=inpaint_steps,
-                seed=seed,
-                cfg_scale=self.args.cfg_scale,
-            )
-            self.prior_frames[i] = results[generation.ARTIFACT_IMAGE][0]
+    def build_frame_xform(self, frame_idx) -> matrix.Matrix:
+        args, frame_args = self.args, self.frame_args
+
+        if self.args.animation_mode == '2D':
+            angle = frame_args.angle_series[frame_idx]
+            scale = frame_args.zoom_series[frame_idx]
+            dx = frame_args.translation_x_series[frame_idx]
+            dy = frame_args.translation_y_series[frame_idx]
+            return make_xform_2d(args.width, args.height, math.radians(angle), scale, dx, dy)
+
+        elif self.args.animation_mode == '3D':
+            dx = frame_args.translation_x_series[frame_idx]
+            dy = frame_args.translation_y_series[frame_idx]
+            dz = frame_args.translation_z_series[frame_idx]
+            rx = frame_args.rotation_x_series[frame_idx]
+            ry = frame_args.rotation_y_series[frame_idx]
+            rz = frame_args.rotation_z_series[frame_idx]
+
+            dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
+            rx, ry, rz = math.radians(rx), math.radians(ry), math.radians(rz)
+
+            # create xform for the current frame
+            world_view = matrix.multiply(matrix.translation(dx, dy, dz), matrix.rotation_euler(rx, ry, rz))
+            return world_view
+
+        else:
+            return matrix.identity
+
+    def emit_frame(self, frame_idx: int, out_frame: np.ndarray) -> Image.Image:
+        if self.args.save_depth_maps:
+            depth_image = self.generate_depth_image(out_frame)
+            cv2.imwrite(self.get_frame_filename(frame_idx, prefix='depth'), depth_image)
+
+        if self.args.save_inpaint_masks:
+            cv2.imwrite(self.get_frame_filename(frame_idx, prefix='mask'), self.inpaint_mask)
+
+        if self.args.vr_mode:
+            stereo_frame = self.render_stereo_eye_views(frame_idx, out_frame)
+            cv2.imwrite(self.get_frame_filename(frame_idx), stereo_frame)
+            return cv2_to_pil(stereo_frame)
+        else:
+            cv2.imwrite(self.get_frame_filename(frame_idx), out_frame)
+            return cv2_to_pil(out_frame)
 
     def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
-        params = depthcalc_op(
-            blend_weight=self.args.midas_weight,
-            blur_radius=0
+        results, _ = self.api.transform(
+            [image], 
+            depthcalc_op(blend_weight=self.args.depth_model_weight)
         )
-        results, _ = self.api.transform([image], params)
         return results[0]
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
@@ -305,6 +335,50 @@ class Animator:
             width, height = map(lambda x: x - x % 64, (width, height))
             self.args.width, self.args.height = width, height
         return img
+
+    def inpaint_frame(self, frame_idx: int, image: np.ndarray, mask: np.ndarray, use_inpaint_model: bool=True) -> np.ndarray:
+        args = self.args
+        steps = int(self.frame_args.steps_series[frame_idx])
+        strength = max(0.0, self.frame_args.strength_series[frame_idx])
+        adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
+        sampler = sampler_from_string(args.sampler.lower())
+        guidance = guidance_from_string(args.clip_guidance)
+
+        # fetch set of prompts and weights for this frame
+        prompts, weights = self.get_animation_prompts_weights(frame_idx)
+        if len(self.negative_prompt) and self.negative_prompt_weight != 0.0:
+            prompts.append(self.negative_prompt)
+            weights.append(-abs(self.negative_prompt_weight))
+
+        if use_inpaint_model:
+            results = self.api.inpaint(
+                image, mask,
+                prompts, weights, 
+                steps=adjusted_steps,
+                seed=args.seed,
+                cfg_scale=args.cfg_scale,
+                sampler=sampler, 
+                init_strength=0.0,
+                masked_area_init=generation.MASKED_AREA_INIT_ZERO,
+                mask_fixup=False,
+                guidance_preset=guidance,
+            )
+        else:
+            results = self.api.generate(
+                prompts, weights, 
+                args.width, args.height, 
+                steps=adjusted_steps,
+                seed=args.seed,
+                cfg_scale=args.cfg_scale,
+                sampler=sampler, 
+                init_image=image, 
+                init_strength=strength,
+                mask=mask,
+                masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
+                mask_fixup=True,
+                guidance_preset=guidance,
+            )
+        return results[generation.ARTIFACT_IMAGE][0]
 
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename)
@@ -474,6 +548,12 @@ class Animator:
         args = self.args
         seed = args.seed
 
+        # experimental span-based outpainting mode
+        if args.cadence_spans:
+            for idx, frame in self._spans_render():
+                yield self.emit_frame(idx, frame)
+            return
+
         for frame_idx in range(self.start_frame_idx, args.max_frames):
             # select image generation model
             self.api._generate.engine_id = args.custom_model if args.model == "custom" else args.model
@@ -493,30 +573,33 @@ class Animator:
                 weights.append(-abs(self.negative_prompt_weight))
 
             # transform prior frames
-            inpaint_mask = None
             stashed_prior_frames = [i.copy() for i in self.prior_frames] if self.mask is not None else None
+            self.inpaint_mask = None
             if args.animation_mode == '2D':
-                inpaint_mask = self.transform_2d(frame_idx)
+                self.inpaint_mask = self.transform_2d(frame_idx)
             elif args.animation_mode == '3D':
-                inpaint_mask = self.transform_3d(frame_idx)
+                self.inpaint_mask = self.transform_3d(frame_idx)
             elif args.animation_mode == 'Video Input':
-                inpaint_mask = self.transform_video(frame_idx)
+                self.inpaint_mask = self.transform_video(frame_idx)
 
+            if self.inpaint_mask is not None:
+                self.inpaint_mask = self._postprocess_inpainting_mask(self.inpaint_mask, frame_idx)
+
+            self.transformed_image = self.prior_frames[-1]
             # apply inpainting
-            if args.inpaint_border and inpaint_mask is not None:
-                self.apply_inpainting(inpaint_mask, prompts, weights, adjusted_steps, seed)
-
-            # update diffusion mask
-            self.next_mask()
+            if args.inpaint_border and self.inpaint_mask is not None:
+                for i in range(len(self.prior_frames)):
+                    self.prior_frames[i] = self.inpaint_frame(frame_idx, self.prior_frames[i], self.inpaint_mask)
 
             # apply mask to transformed prior frames
+            self.next_mask()
             if self.mask is not None:
                 for i in range(len(self.prior_frames)):
                     self.prior_frames[i] = image_mix(self.prior_frames[i], stashed_prior_frames[i], self.mask)
 
             # either run diffusion or emit an inbetween frame
             if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
-                # apply additional color matching to previous frame to use as init
+                # apply color adjustments and mix-in to previous frame to use as init
                 init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
                 init_image = self.prepare_init(init_image, frame_idx, seed)
 
@@ -543,8 +626,9 @@ class Animator:
                     init_strength=strength,
                     init_noise_scale=noise_scale, 
                     init_depth=init_depth,
-                    mask = self.mask,
+                    mask = self.inpaint_mask if args.occlusion_inpainting else self.mask,
                     masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
+                    mask_fixup=args.do_mask_fixup,
                     guidance_preset=guidance,
                 )
                 image = results[generation.ARTIFACT_IMAGE][0]
@@ -570,16 +654,36 @@ class Animator:
                     interp_mode_from_str(args.cadence_interp)
                 )[0]
 
-            cv2.imwrite(self.get_frame_filename(frame_idx), out_frame)
-            yield cv2_to_pil(out_frame)
-            if args.save_depth_maps:
-                depth_image = self.generate_depth_image(out_frame)
-                cv2.imwrite(self.get_frame_filename(frame_idx, prefix="depth"), depth_image)
-            if args.save_inpaint_masks and inpaint_mask is not None:
-                cv2.imwrite(self.get_frame_filename(frame_idx, prefix="mask"), inpaint_mask)
+            # cv2.imwrite(os.path.join(self.out_dir, f"transformed_{frame_idx:05d}.png"), self.transformed_image)
+
+            # save and return final frame
+            yield self.emit_frame(frame_idx, out_frame) #, cv2_to_pil(self.inpaint_mask), cv2_to_pil(self.transformed_image)
 
             if not args.locked_seed:
                 seed += 1
+
+    def render_stereo_eye_views(self, frame_idx, frame: np.ndarray) -> np.ndarray:
+        args, frame_args = self.args, self.frame_args
+        fov = frame_args.fov_series[frame_idx]
+        projection = matrix.projection_fov(math.radians(fov), 1.0, args.near_plane, args.far_plane)
+
+        # VR spherical projection is experimental development feature and may change or be removed
+        extras = { "spherical_proj": args.vr_projection }
+
+        eye_images = []
+        for eye_idx in range(2):
+            theta = args.vr_eye_angle * (math.pi / 180)
+            ray_origin = math.cos(theta) * args.vr_eye_dist / 2 * (-1.0 if eye_idx == 0 else 1.0)
+            ray_rotation = theta if eye_idx == 0 else -theta                               
+            world_view = matrix.multiply(matrix.translation(-(ray_origin) * TRANSLATION_SCALE, 0, 0), 
+                                         matrix.rotation_euler(0, math.radians(ray_rotation), 0))
+            wvp = matrix.multiply(projection, world_view)
+            depth_calc = depthcalc_op(args.depth_model_weight)
+            resample = resample_op(args.border, wvp, projection, depth_warp=1.0, export_mask=False)
+            results, _ = self.api.transform_resample_3d([frame], depth_calc, resample, extras=extras)
+            eye_images.append(results[0])
+        
+        return np.concatenate(eye_images, axis=1)
 
     def set_mask(self, mask: np.ndarray):
         self.mask = cv2.resize(mask, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
@@ -595,21 +699,15 @@ class Animator:
         if not len(self.prior_frames):
             return None
 
-        args, frame_args = self.args, self.frame_args
-        angle = frame_args.angle_series[frame_idx]
-        scale = frame_args.zoom_series[frame_idx]
-        dx = frame_args.translation_x_series[frame_idx]
-        dy = frame_args.translation_y_series[frame_idx]
+        # create xform for the current frame
+        xform = self.build_frame_xform(frame_idx)
 
-        if angle == 0.0 and scale == 1.0 and dx == 0.0 and dy == 0.0:
+        # check if we can skip transform request
+        if np.allclose(xform, matrix.identity):
             return None
 
-        # create xform for the current frame
-        xform = make_xform_2d(args.width, args.height, math.radians(angle), scale, dx, dy)
-
-        if args.accumulate_xforms:
-            frame_args = self.frame_args
-
+        args = self.args
+        if not args.inpaint_border:
             # apply xform to prior frames running xforms
             for i in range(len(self.prior_xforms)):
                 self.prior_xforms[i] = matrix.multiply(xform, self.prior_xforms[i])
@@ -623,37 +721,28 @@ class Animator:
             params = resample_op(args.border, to_3x3(xform), export_mask=args.inpaint_border)
             self.prior_frames, mask = self.api.transform(self.prior_frames, params)
 
-        mask = mask[0] if isinstance(mask, list) else mask
-        return mask
+        return mask[0] if isinstance(mask, list) else mask
 
     def transform_3d(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
             return None
 
         args, frame_args = self.args, self.frame_args
-
-        dx = frame_args.translation_x_series[frame_idx]
-        dy = frame_args.translation_y_series[frame_idx]
-        dz = frame_args.translation_z_series[frame_idx]
-        rx = frame_args.rotation_x_series[frame_idx]
-        ry = frame_args.rotation_y_series[frame_idx]
-        rz = frame_args.rotation_z_series[frame_idx]
         near, far = args.near_plane, args.far_plane
         fov = frame_args.fov_series[frame_idx]
         depth_blur = int(frame_args.depth_blur_series[frame_idx])
         depth_warp = frame_args.depth_warp_series[frame_idx]
         
-        depth_calc = depthcalc_op(args.midas_weight, depth_blur)
-
-        TRANSLATION_SCALE = 1.0/200.0 # matches Disco
-        dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
-        rx, ry, rz = math.radians(rx), math.radians(ry), math.radians(rz)
+        depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
 
         # create xform for the current frame
-        world_view = matrix.multiply(matrix.translation(dx, dy, dz), matrix.rotation_euler(rx, ry, rz))
-        projection = matrix.projection_fov(math.radians(fov), 1.0, near, far)           
+        world_view = self.build_frame_xform(frame_idx)
+        projection = matrix.projection_fov(math.radians(fov), 1.0, near, far)
 
-        if args.accumulate_xforms:
+        if False:
+            # currently disabled. for 3D mode transform accumulation needs additional 
+            # depth map changes to work properly without swimming artifacts
+
             # apply world_view xform to prior frames running xforms
             for i in range(len(self.prior_xforms)):
                 self.prior_xforms[i] = matrix.multiply(world_view, self.prior_xforms[i])
@@ -682,9 +771,7 @@ class Animator:
                     args.mask_max_mesh_edge if args.mask_render_method=="mesh" else None,
                     args.do_prefill)
             self.prior_frames, mask = self.api.transform_3d(self.prior_frames, depth_calc, transform_op)
-            if mask is not None:
-                mask = self.postprocess_inpainting_mask(mask[0], frame_idx)
-            return mask
+            return mask[0] if isinstance(mask, list) else mask
 
     def transform_video(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
@@ -708,8 +795,113 @@ class Animator:
             return mask
         return None
 
-    def postprocess_inpainting_mask(self, mask, frame_idx):
+    def _postprocess_inpainting_mask(self, mask, frame_idx, blur_radius=10):
+        mask = cv2.erode(mask, np.ones((blur_radius, blur_radius), np.uint8))
+        mask = cv2.GaussianBlur(mask, (blur_radius*2+1, blur_radius*2+1), 0)
         mask_multiplier = self.frame_args.mask_multiplier[frame_idx]
         mask_min_value = self.frame_args.mask_min_value[frame_idx]
         mask_max_value = self.frame_args.mask_max_value[frame_idx]
         return (mask * mask_multiplier).clip(255 * mask_min_value, 255 * mask_max_value).astype(np.uint8)
+    
+    def _span_render_frame(self, frame_idx: int, init: Optional[np.ndarray], mask: Optional[np.ndarray]=None, strength: Optional[float]=None) -> np.ndarray:
+        args = self.args
+        steps = int(self.frame_args.steps_series[frame_idx])
+        strength = strength if strength is not None else max(0.0, self.frame_args.strength_series[frame_idx])
+        adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
+
+        # fetch set of prompts and weights for this frame
+        prompts, weights = self.get_animation_prompts_weights(frame_idx)
+        if len(self.negative_prompt) and self.negative_prompt_weight != 0.0:
+            prompts.append(self.negative_prompt)
+            weights.append(-abs(self.negative_prompt_weight))
+
+        # generate the next frame
+        sampler = sampler_from_string(args.sampler.lower())
+        guidance = guidance_from_string(args.clip_guidance)
+        results = self.api.generate(
+            prompts, weights, 
+            args.width, args.height, 
+            steps = adjusted_steps,
+            seed = args.seed,
+            cfg_scale = args.cfg_scale,
+            sampler = sampler, 
+            init_image = init, 
+            init_strength = strength,
+            init_noise_scale = self.frame_args.noise_scale_series[frame_idx], 
+            mask = mask if mask is not None else self.mask,
+            masked_area_init = generation.MASKED_AREA_INIT_ORIGINAL,
+            mask_fixup = True,
+            guidance_preset = guidance,
+        )
+        return results[generation.ARTIFACT_IMAGE][0]
+
+    def _span_render(self, start: int, end: int, prev_frame: Optional[np.ndarray]) -> Generator[Tuple[int, np.ndarray], None, None]:
+        args = self.args
+
+        def apply_xform(frame: np.ndarray, xform: matrix.Matrix) -> Tuple[np.ndarray, np.ndarray]:
+            if args.animation_mode == '2D':
+                xform = to_3x3(xform)
+            frames, masks = self.api.transform([frame], resample_op(args.border, xform, export_mask=True))
+            return frames[0], masks[0]
+
+        if prev_frame is None:
+            prev_frame = self._span_render_frame(start, None)
+
+        # transform the previous frame forward
+        accum_xform = matrix.identity
+        forward_frames, forward_masks = [], []
+        for frame_idx in range(start, end):
+            accum_xform = matrix.multiply(self.build_frame_xform(frame_idx), accum_xform)
+            frame, mask = apply_xform(prev_frame, accum_xform)
+            forward_frames.append(frame)
+            forward_masks.append(mask)
+
+        # inpaint the final frame
+        if not np.all(forward_masks[-1]):
+            forward_frames[-1] = self.inpaint_frame(end-1, forward_frames[-1], forward_masks[-1])
+
+        # run diffusion on top of the final result to allow content to evolve over time
+        strength = max(0.0, self.frame_args.strength_series[end-1])
+        if strength < 1.0:
+            final_frame = self._span_render_frame(end-1, forward_frames[-1])
+        else:
+            final_frame = forward_frames[-1]
+
+        # go backwards through the frames in the span        
+        backward_frames, backward_masks = [final_frame], [np.full_like(forward_masks[-1], 255)]
+        accum_xform = matrix.identity
+        for frame_idx in range(end-2, start-1, -1):
+            frame_xform = self.build_frame_xform(frame_idx+1)
+            inv_xform = np.linalg.inv(frame_xform).tolist()
+            accum_xform = matrix.multiply(inv_xform, accum_xform)
+            xformed, mask = apply_xform(backward_frames[-1], accum_xform)
+            backward_frames.insert(0, xformed)
+            backward_masks.insert(0, mask)
+
+        # inpaint the backwards frame
+        if not np.all(backward_masks[0]):
+            backward_frames[0] = self.inpaint_frame(start, backward_frames[0], backward_masks[0])
+
+        # yield the final frames blending from forward to backward
+        for idx, (frame_fwd, frame_bwd) in enumerate(zip(forward_frames, backward_frames)):
+            t = (idx) / (end-start-1)
+            fwd_fill = image_mix(frame_bwd, frame_fwd, mask_erode_blur(forward_masks[idx], 8, 8))
+            bwd_fill = image_mix(frame_fwd, frame_bwd, mask_erode_blur(backward_masks[idx], 8, 8))
+            blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_str(args.cadence_interp))[0]
+            yield start+idx, blended
+
+    def _spans_render(self) -> Generator[Tuple[int, np.ndarray], None, None]:
+        frame_idx = self.start_frame_idx
+        prev_frame: np.ndarray = None
+        while frame_idx < self.args.max_frames:
+            # determine how many frames the span will process together
+            diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
+            if frame_idx + diffusion_cadence > self.args.max_frames:
+                diffusion_cadence = self.args.max_frames - frame_idx
+
+            # render all frames in the span
+            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, prev_frame):
+                yield idx, frame
+                prev_frame = frame
+
+            frame_idx += diffusion_cadence
