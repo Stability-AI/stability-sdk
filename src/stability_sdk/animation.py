@@ -572,9 +572,6 @@ class Animator:
                 if init_image is not None and mix_in > 0 and self.video_prev_frame is not None:
                     init_image = image_mix(init_image, self.video_prev_frame, mix_in)
 
-                # apply color adjustments and mix-in to previous frame to use as init
-                init_image_ops = self.prepare_init_ops(init_image, frame_idx, seed)
-
                 # when using depth model, compute a depth init image
                 init_depth = None
                 if init_image is not None and model_requires_depth(args.model):
@@ -582,6 +579,9 @@ class Animator:
                     params = depthcalc_op(blend_weight=1.0, blur_radius=0, reverse=True)
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
+
+                # builds set of transform ops to prepare init image for generation
+                init_image_ops = self.prepare_init_ops(init_image, frame_idx, seed)
 
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())

@@ -582,7 +582,7 @@ class Api:
         rq_depth = generation.Request(
             engine_id=self._transform.engine_id,
             requested_type=generation.ARTIFACT_TENSOR,
-            prompt=[image_prompts[0]], # use same input image for each depth calc
+            prompt=[image_prompts[0]],
             transform=depth_calc,
         )
         rq_resample = generation.Request(
