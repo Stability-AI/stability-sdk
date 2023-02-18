@@ -492,19 +492,13 @@ class Animator:
         hue = frame_args.hue_series[frame_idx]
         saturation = frame_args.saturation_series[frame_idx]
         lightness = frame_args.lightness_series[frame_idx]
-        mix_in = frame_args.video_mix_in_series[frame_idx]
-        noise_amount = self.frame_args.noise_add_series[frame_idx]
+        noise_amount = frame_args.noise_add_series[frame_idx]
 
         do_color_match = args.color_coherence != 'None' and self.color_match_image is not None
         do_bchsl = brightness != 1.0 or contrast != 1.0 or hue != 0.0 or saturation != 1.0 or lightness != 0.0
         do_noise = noise_amount > 0.0
 
         init_ops: List[generation.TransformParameters] = []
-        if mix_in > 0 and self.video_prev_frame is not None:
-            init_ops.append(blend_op(
-                amount=mix_in, 
-                target=self.video_prev_frame
-            ))
 
         if do_color_match or do_bchsl or do_noise:
             init_ops.append(color_adjust_op(
@@ -571,8 +565,14 @@ class Animator:
 
             # either run diffusion or emit an inbetween frame
             if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
-                # apply color adjustments and mix-in to previous frame to use as init
                 init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
+
+                # mix video frame into init image
+                mix_in = self.frame_args.video_mix_in_series[frame_idx]
+                if init_image is not None and mix_in > 0 and self.video_prev_frame is not None:
+                    init_image = image_mix(init_image, self.video_prev_frame, mix_in)
+
+                # apply color adjustments and mix-in to previous frame to use as init
                 init_image_ops = self.prepare_init_ops(init_image, frame_idx, seed)
 
                 # when using depth model, compute a depth init image
