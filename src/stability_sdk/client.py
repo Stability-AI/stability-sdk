@@ -17,7 +17,7 @@ from argparse import ArgumentParser, Namespace
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
-from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Generator, Iterable, List, Optional, Sequence, Tuple, Union
 
 
 try:
@@ -418,7 +418,7 @@ class Api:
 
     def interpolate(
         self,
-        images: List[np.ndarray], 
+        images: Iterable[np.ndarray], 
         ratios: List[float],
         mode: generation.InterpolateMode = generation.INTERPOLATE_LINEAR,
     ) -> List[np.ndarray]:
@@ -453,7 +453,7 @@ class Api:
 
     def transform(
         self,
-        images: List[np.ndarray],
+        images: Iterable[np.ndarray],
         params: Union[generation.TransformParameters, List[generation.TransformParameters]],
         extras: Optional[Dict] = None
     ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
@@ -511,7 +511,7 @@ class Api:
     # TODO: Add option to do transform using given depth map (e.g. for Blender use cases)
     def transform_3d(
         self, 
-        images: List[np.ndarray], 
+        images: Iterable[np.ndarray], 
         depth_calc: generation.TransformParameters,
         transform: generation.TransformParameters,
         extras: Optional[Dict] = None
