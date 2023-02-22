@@ -20,7 +20,6 @@ from stability_sdk.client import (
 )
 from stability_sdk.utils import (
     blend_op,
-    color_match_op,
     color_adjust_op,
     cv2_to_pil,
     depthcalc_op,
@@ -67,6 +66,7 @@ class AnimationSettings(param.Parameterized):
     animation_mode = param.ObjectSelector(default='3D', objects=['2D', '3D', 'Video Input'])
     max_frames = param.Integer(default=72, doc="Force stop of animation job after this many frames are generated.")
     border = param.ObjectSelector(default='replicate', objects=['reflect', 'replicate', 'wrap', 'zero'], doc=docstring_bordermode)
+    noise_add_curve = param.String(default="0:(0.02)")
     noise_scale_curve = param.String(default="0:(1.02)")
     strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
     steps_curve = param.String(default="0:(50)", doc="Diffusion steps")
@@ -349,7 +349,7 @@ class Animator:
                 cfg_scale=args.cfg_scale,
                 sampler=sampler, 
                 init_image=image, 
-                init_strength=strength,
+                init_strength=strength if image is not None else 0.0,
                 mask=mask,
                 masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                 mask_fixup=True,
@@ -393,6 +393,7 @@ class Animator:
             hue_series = curve_to_series(args.hue_curve),
             saturation_series = curve_to_series(args.saturation_curve),
             lightness_series = curve_to_series(args.lightness_curve),
+            noise_add_series = curve_to_series(args.noise_add_curve),
             noise_scale_series = curve_to_series(args.noise_scale_curve),
             steps_series = curve_to_series(args.steps_curve),
             strength_series = curve_to_series(args.strength_curve),
@@ -481,9 +482,9 @@ class Animator:
 
         self.set_mask(mask)
 
-    def prepare_init(self, init_image: Optional[np.ndarray], frame_idx: int, noise_seed:int) -> Optional[np.ndarray]:
+    def prepare_init_ops(self, init_image: Optional[np.ndarray], frame_idx: int, noise_seed:int) -> List[generation.TransformParameters]:
         if init_image is None:
-            return None
+            return []
 
         args, frame_args = self.args, self.frame_args
         brightness = frame_args.brightness_series[frame_idx]
@@ -491,39 +492,35 @@ class Animator:
         hue = frame_args.hue_series[frame_idx]
         saturation = frame_args.saturation_series[frame_idx]
         lightness = frame_args.lightness_series[frame_idx]
-        mix_in = frame_args.video_mix_in_series[frame_idx]
+        noise_amount = frame_args.noise_add_series[frame_idx]
+
+        do_color_match = args.color_coherence != 'None' and self.color_match_image is not None
+        do_bchsl = brightness != 1.0 or contrast != 1.0 or hue != 0.0 or saturation != 1.0 or lightness != 0.0
+        do_noise = noise_amount > 0.0
 
         init_ops: List[generation.TransformParameters] = []
-        if args.color_coherence != 'None' and self.color_match_image is not None:                    
-            init_ops.append(color_match_op(
-                palette_image=self.color_match_image,
-                color_mode=args.color_coherence,
-            ))
-        if mix_in > 0 and self.video_prev_frame is not None:
-            init_ops.append(blend_op(
-                amount=mix_in, 
-                target=self.video_prev_frame
-            ))
-        if brightness != 1.0 or contrast != 1.0 or hue != 0.0 or saturation != 1.0 or lightness != 0.0:
+
+        if do_color_match or do_bchsl or do_noise:
             init_ops.append(color_adjust_op(
                 brightness=brightness,
                 contrast=contrast,
                 hue=hue,
                 saturation=saturation,
-                lightness=lightness
+                lightness=lightness,
+                match_image=self.color_match_image,
+                match_mode=args.color_coherence,
+                noise_amount=noise_amount,
+                noise_seed=noise_seed
             ))
 
-        if len(init_ops):
-            init_image = self.api.transform([init_image], init_ops)[0][0]
-
-        return init_image
+        return init_ops
 
     def render(self) -> Generator[Image.Image, None, None]:
         args = self.args
         seed = args.seed
 
         # experimental span-based outpainting mode
-        if args.cadence_spans:
+        if args.cadence_spans and args.animation_mode != 'Video Input':
             for idx, frame in self._spans_render():
                 yield self.emit_frame(idx, frame)
             return
@@ -568,9 +565,12 @@ class Animator:
 
             # either run diffusion or emit an inbetween frame
             if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
-                # apply color adjustments and mix-in to previous frame to use as init
                 init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
-                init_image = self.prepare_init(init_image, frame_idx, seed)
+
+                # mix video frame into init image
+                mix_in = self.frame_args.video_mix_in_series[frame_idx]
+                if init_image is not None and mix_in > 0 and self.video_prev_frame is not None:
+                    init_image = image_mix(init_image, self.video_prev_frame, mix_in)
 
                 # when using depth model, compute a depth init image
                 init_depth = None
@@ -580,26 +580,30 @@ class Animator:
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
 
+                # builds set of transform ops to prepare init image for generation
+                init_image_ops = self.prepare_init_ops(init_image, frame_idx, seed)
+
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
                 guidance = guidance_from_string(args.clip_guidance)
                 noise_scale = self.frame_args.noise_scale_series[frame_idx]
-                results = self.api.generate(
+                generate_request = self.api.generate(
                     prompts, weights, 
                     args.width, args.height, 
                     steps=adjusted_steps,
                     seed=seed,
                     cfg_scale=args.cfg_scale,
                     sampler=sampler, 
-                    init_image=init_image, 
-                    init_strength=strength,
+                    init_image=init_image if init_image_ops is None else None, 
+                    init_strength=strength if init_image is not None else 0.0,
                     init_noise_scale=noise_scale, 
                     init_depth=init_depth,
                     mask = self.mask,
                     masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                     guidance_preset=guidance,
+                    return_request=True
                 )
-                image = results[generation.ARTIFACT_IMAGE][0]
+                image = self.api.transform_and_generate(init_image, init_image_ops, generate_request)
 
                 if self.color_match_image is None and args.color_coherence != 'None':
                     self.color_match_image = image
@@ -767,25 +771,33 @@ class Animator:
             prompts.append(self.negative_prompt)
             weights.append(-abs(self.negative_prompt_weight))
 
-        # generate the next frame
+        init_ops = self.prepare_init_ops(init, frame_idx, seed)
+
         sampler = sampler_from_string(args.sampler.lower())
         guidance = guidance_from_string(args.clip_guidance)
-        results = self.api.generate(
+        generate_request = self.api.generate(
             prompts, weights, 
             args.width, args.height, 
             steps = adjusted_steps,
             seed = seed,
             cfg_scale = args.cfg_scale,
             sampler = sampler, 
-            init_image = init, 
-            init_strength = strength,
+            init_image = init if init_ops is None else None, 
+            init_strength = strength if init is not None else 0.0,
             init_noise_scale = self.frame_args.noise_scale_series[frame_idx], 
             mask = mask if mask is not None else self.mask,
             masked_area_init = generation.MASKED_AREA_INIT_ORIGINAL,
             mask_fixup = True,
             guidance_preset = guidance,
+            return_request = True
         )
-        return results[generation.ARTIFACT_IMAGE][0]
+
+        result_image = self.api.transform_and_generate(init, init_ops, generate_request)
+
+        if self.color_match_image is None and args.color_coherence != 'None':
+            self.color_match_image = result_image
+
+        return result_image
 
     def _span_render(self, start: int, end: int, seed: int, prev_frame: Optional[np.ndarray]) -> Generator[Tuple[int, np.ndarray], None, None]:
         args = self.args
@@ -846,7 +858,7 @@ class Animator:
 
         # yield the final frames blending from forward to backward
         for idx, (frame_fwd, frame_bwd) in enumerate(zip(forward_frames, backward_frames)):
-            t = (idx) / (end-start-1)
+            t = (idx) / max(1, end-start-1)
             fwd_fill = image_mix(frame_bwd, frame_fwd, mask_erode_blur(forward_masks[idx], 8, 8))
             bwd_fill = image_mix(frame_fwd, frame_bwd, mask_erode_blur(backward_masks[idx], 8, 8))
             blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_str(args.cadence_interp))[0]
