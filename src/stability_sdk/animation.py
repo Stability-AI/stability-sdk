@@ -121,7 +121,7 @@ class DepthSettings(param.Parameterized):
 class Realistic3dSettings(param.Parameterized):
     camera_type = param.ObjectSelector(default='perspective', objects=['perspective', 'orthographic'])
     image_render_method = param.ObjectSelector(default='mesh', objects=['pointcloud', 'mesh'])
-    mask_render_method = param.ObjectSelector(default='pointcloud', objects=['pointcloud', 'mesh'])
+    # Mask render method is selected based on a type of model (inpainting/non-inpainting) used for inpainting for current frame
     image_render_points_per_pixel = param.Integer(default=8)
     image_render_point_radius = param.Number(default=0.005)
     image_max_mesh_edge = param.Number(default=0.1)
@@ -130,10 +130,9 @@ class Realistic3dSettings(param.Parameterized):
     mask_max_mesh_edge = param.Number(default=0.04)
 
 class InpaintingSettings(param.Parameterized):
-    use_inpainting_model = param.Boolean(default=False, doc="If False, inpainting will be conducted using regular non-inpainting model, grayscale non-binary masks are allowed.")
+    non_inpainting_model_off_cadence = param.Boolean(default=False, doc="If True, for each frame off cadence, inpainting will be conducted using regular non-inpainting model to optimize number of generations.")
     inpaint_border = param.Boolean(default=False, doc="Use inpainting on top of border regions for 2D and Pseudo 3D modes. Defaults to False")
     do_mask_fixup = param.Boolean(default=False, doc="Enforce pixels outside of inpainting region to be equal to original frame")
-    mask_multiplier = param.String(default="0:(1.0)", doc="Mask postprocessing. Mask values will be multiplied by this value prior to inpainting")
     mask_min_value = param.String(default="0:(0.0)", doc="Mask postprocessing. Mask floor values will be clipped by this value prior to inpainting")
     mask_max_value = param.String(default="0:(1.0)", doc="Mask postprocessing. Mask ceiling values will be clipped by this value prior to inpainting")
     save_inpaint_masks = param.Boolean(default=False)
@@ -338,7 +337,8 @@ class Animator:
             self.args.width, self.args.height = width, height
         return img
 
-    def inpaint_frame(self, frame_idx: int, image: np.ndarray, mask: np.ndarray, use_inpaint_model: bool=True) -> np.ndarray:
+    def inpaint_frame(self, frame_idx: int, image: np.ndarray, mask: np.ndarray,
+                      use_inpaint_model: bool=True, mask_fixup: Optional[bool]=None) -> np.ndarray:
         args = self.args
         steps = int(self.frame_args.steps_series[frame_idx])
         strength = max(0.0, self.frame_args.strength_series[frame_idx])
@@ -362,7 +362,7 @@ class Animator:
                 sampler=sampler, 
                 init_strength=0.0,
                 masked_area_init=generation.MASKED_AREA_INIT_ZERO,
-                mask_fixup=False,
+                mask_fixup=mask_fixup if mask_fixup is not None else False,
                 guidance_preset=guidance,
             )
         else:
@@ -377,7 +377,7 @@ class Animator:
                 init_strength=strength,
                 mask=mask,
                 masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
-                mask_fixup=True,
+                mask_fixup=mask_fixup if mask_fixup is not None else True,
                 guidance_preset=guidance,
             )
         return results[generation.ARTIFACT_IMAGE][0]
@@ -426,7 +426,6 @@ class Animator:
             depth_blur_series = curve_to_series(args.depth_blur_curve),
             depth_warp_series = curve_to_series(args.depth_warp_curve),
             video_mix_in_series = curve_to_series(args.video_mix_in_curve),
-            mask_multiplier = curve_to_series(args.mask_multiplier),
             mask_min_value = curve_to_series(args.mask_min_value),
             mask_max_value = curve_to_series(args.mask_max_value), 
         ))
@@ -570,11 +569,10 @@ class Animator:
 
             diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
             self.set_cadence_mode(enabled=(diffusion_cadence > 1))
+            off_cadence_step = (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0
 
             steps = int(self.frame_args.steps_series[frame_idx])
             strength = max(0.0, self.frame_args.strength_series[frame_idx])
-            # TODO: Should we adjust steps for inpainting modes?
-            adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
 
             # fetch set of prompts and weights for this frame
             prompts, weights = self.get_animation_prompts_weights(frame_idx)
@@ -582,6 +580,16 @@ class Animator:
                 prompts.append(self.negative_prompt)
                 weights.append(-abs(self.negative_prompt_weight))
 
+            # inpaint
+            inpaint_with_non_inpainting_model = off_cadence_step and args.non_inpainting_model_off_cadence
+            if args.animation_mode == '3D':
+                if inpaint_with_non_inpainting_model:
+                    # For non-inpainting model, the pointcloud-rendered grayscale mask is better suited.
+                    args.mask_render_method = "pointcloud"
+                else:
+                    # For inpainting model, the mesh-rendered binary mask is better suited.
+                    args.mask_render_method = "mesh"
+            
             # transform prior frames
             stashed_prior_frames = [i.copy() for i in self.prior_frames] if self.mask is not None else None
             self.inpaint_mask = None
@@ -592,22 +600,28 @@ class Animator:
             elif args.animation_mode == 'Video Input':
                 self.inpaint_mask = self.transform_video(frame_idx)
 
-            if self.inpaint_mask is not None:
-                self.inpaint_mask = self._postprocess_inpainting_mask(self.inpaint_mask, frame_idx)
-
             # apply inpainting
-            if args.inpaint_border and self.inpaint_mask is not None:
+            if args.inpaint_border and self.inpaint_mask is not None \
+                    and not (args.non_inpainting_model_off_cadence and not self.cadence_on):
                 for i in range(len(self.prior_frames)):
-                    self.prior_frames[i] = self.inpaint_frame(frame_idx, self.prior_frames[i], self.inpaint_mask)
+                    # The latest prior frame will be popped right after the generation step, so this inpainting call for it would be redundant.
+                    if self.cadence_on and off_cadence_step and i==0:
+                        continue
+                    self.prior_frames[i] = self.inpaint_frame(
+                        frame_idx, self.prior_frames[i], self.inpaint_mask,
+                        mask_fixup=args.do_mask_fixup,
+                        use_inpaint_model=True)
 
             # apply mask to transformed prior frames
             self.next_mask()
             if self.mask is not None:
                 for i in range(len(self.prior_frames)):
+                    if self.cadence_on and off_cadence_step and i==0:
+                        continue
                     self.prior_frames[i] = image_mix(self.prior_frames[i], stashed_prior_frames[i], self.mask)
 
             # either run diffusion or emit an inbetween frame
-            if (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0:
+            if off_cadence_step:
                 # apply color adjustments and mix-in to previous frame to use as init
                 init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
                 init_image = self.prepare_init(init_image, frame_idx, seed)
@@ -620,10 +634,19 @@ class Animator:
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
 
+                # For off cadence steps instead of
+                do_inpainting = args.non_inpainting_model_off_cadence \
+                        and self.inpaint_mask is not None \
+                        and (args.inpaint_border or args.animation_mode == '3D')
+                start_diffusion_from = min(strength, self.frame_args.mask_min_value[frame_idx] if do_inpainting else 1.0)
+                if do_inpainting:
+                    self.inpaint_mask = self._postprocess_inpainting_mask(self.inpaint_mask, frame_idx, max_val=strength)
+
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
                 guidance = guidance_from_string(args.clip_guidance)
                 noise_scale = self.frame_args.noise_scale_series[frame_idx]
+                adjusted_steps = int(max(5, steps*(1.0-start_diffusion_from))) if args.steps_strength_adj else int(steps)
                 results = self.api.generate(
                     prompts, weights, 
                     args.width, args.height, 
@@ -632,10 +655,10 @@ class Animator:
                     cfg_scale=args.cfg_scale,
                     sampler=sampler, 
                     init_image=init_image, 
-                    init_strength=strength,
+                    init_strength=strength if not do_inpainting else start_diffusion_from,
                     init_noise_scale=noise_scale, 
                     init_depth=init_depth,
-                    mask = self.inpaint_mask if args.animation_mode == '3D' else self.mask,
+                    mask = self.inpaint_mask if do_inpainting else self.mask,
                     masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                     mask_fixup=args.do_mask_fixup,
                     guidance_preset=guidance,
@@ -663,7 +686,6 @@ class Animator:
                     [tween],
                     interp_mode_from_str(args.cadence_interp)
                 )[0]
-
 
             # save and return final frame
             yield self.emit_frame(frame_idx, out_frame)
@@ -804,7 +826,7 @@ class Animator:
                     args.mask_render_point_radius if args.mask_render_method=="pointcloud" else None,
                     args.mask_render_points_per_pixel if args.mask_render_method=="pointcloud" else None,
                     args.mask_max_mesh_edge if args.mask_render_method=="mesh" else None,
-                    (not args.use_inpainting_model))
+                    True)
             transformed_prior_frames, mask = self.api.transform_3d(self.prior_frames, depth_calc, transform_op)
             self.prior_frames.extend(transformed_prior_frames)
             return mask[0] if isinstance(mask, list) else mask
@@ -832,13 +854,12 @@ class Animator:
             return mask
         return None
 
-    def _postprocess_inpainting_mask(self, mask, frame_idx, blur_radius=10):
-        mask = cv2.erode(mask, np.ones((blur_radius, blur_radius), np.uint8))
+    def _postprocess_inpainting_mask(self, mask, frame_idx, blur_radius=10, min_val=None, max_val=None):
+        mask = cv2.erode(mask, np.ones((blur_radius+5, blur_radius+5), np.uint8))
         mask = cv2.GaussianBlur(mask, (blur_radius*2+1, blur_radius*2+1), 0)
-        mask_multiplier = self.frame_args.mask_multiplier[frame_idx]
-        mask_min_value = self.frame_args.mask_min_value[frame_idx]
-        mask_max_value = self.frame_args.mask_max_value[frame_idx]
-        return (mask * mask_multiplier).clip(255 * mask_min_value, 255 * mask_max_value).astype(np.uint8)
+        mask_min_value = self.frame_args.mask_min_value[frame_idx] if min_val is None else min_val
+        mask_max_value = self.frame_args.mask_max_value[frame_idx] if max_val is None else max_val
+        return mask.clip(255 * mask_min_value, 255 * mask_max_value).astype(np.uint8)
     
     def _span_render_frame(
         self, 
