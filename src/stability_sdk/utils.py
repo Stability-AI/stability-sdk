@@ -308,29 +308,29 @@ def color_adjust_op(
     hue:float=0.0,
     saturation:float=1.0,
     lightness:float=0.0,
+    match_image:Optional[np.ndarray]=None,
+    match_mode:str='LAB',
+    noise_amount:float=0.0,
+    noise_seed:int=0
 ) -> generation.TransformParameters:
+    if match_mode == 'None':
+        match_mode = 'RGB'
+        match_image = None
     return generation.TransformParameters(
         color_adjust=generation.TransformColorAdjust(
             brightness=brightness,
             contrast=contrast,
             hue=hue,
             saturation=saturation,
-            lightness=lightness
-        ))
-
-def color_match_op(
-    palette_image:np.ndarray,
-    color_mode:str='LAB',
-) -> generation.TransformParameters:
-    return generation.TransformParameters(
-        color_match=generation.TransformColorMatch(
-            color_mode=color_match_from_string(color_mode),
-            image=generation.Artifact(
+            lightness=lightness,
+            match_image=generation.Artifact(
                 type=generation.ARTIFACT_IMAGE,
-                binary=image_to_jpg_bytes(palette_image),
-            )
-        )
-    )
+                binary=image_to_jpg_bytes(match_image),
+            ) if match_image is not None else None,
+            match_mode=color_match_from_string(match_mode),
+            noise_amount=noise_amount,
+            noise_seed=noise_seed,
+        ))
 
 def depthcalc_op(
     blend_weight:float,

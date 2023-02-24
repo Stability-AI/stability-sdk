@@ -27,7 +27,6 @@ from stability_sdk.utils import (
     key_frame_parse,
     #########
     blend_op,
-    color_match_op,
     color_adjust_op,
     depthcalc_op,
     resample_op
@@ -155,17 +154,17 @@ def test_image_to_prompt_mask(np_image):
 
 @pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
 def test_colormatch_op_valid(np_image, color_mode):
-    op = color_match_op(
-        palette_image=np_image,
-        color_mode=color_mode
+    op = color_adjust_op(
+        match_image=np_image,
+        match_mode=color_mode
     )
     assert isinstance(op, generation.TransformParameters)
 
 def test_colormatch_op_invalid(np_image):
     with pytest.raises(ValueError, match="invalid color space"):
-        _ = color_match_op(
-            palette_image=np_image,
-            color_mode="not a real color mode",
+        _ = color_adjust_op(
+            match_image=np_image,
+            match_mode="not a real color mode",
         )
 
 @pytest.mark.parametrize("border_mode", BORDER_MODES.keys())

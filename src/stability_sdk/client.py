@@ -272,6 +272,7 @@ class Api:
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
         self._max_retries = 3 # retry request on RPC error
+        self._retry_delay = 1.0 # base delay in seconds between retries, each attempt will double
         self._retry_obfuscation = False # retry request with different seed on classifier obfuscation
 
         logger.warning(
@@ -302,6 +303,7 @@ class Api:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        return_request: bool = False,
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
         Generate an image from a set of weighted prompts.
@@ -329,23 +331,26 @@ class Api:
         if not prompts and init_image is None:
             raise ValueError("prompt and/or init_image must be provided")
 
-        if (mask is not None) and (init_image is None):
+        if (mask is not None) and (init_image is None) and not return_request:
             raise ValueError("If mask_image is provided, init_image must also be provided")
 
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
             p.append(image_to_prompt(init_image))
-            if mask is not None:
-                p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
+        if mask is not None:
+            p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
         if init_depth is not None:
             p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
 
-        start_schedule = 1.0 if init_image is None else 1.0 - init_strength
+        start_schedule = 1.0 - init_strength
         image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
                                                 start_schedule, init_noise_scale, masked_area_init, 
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
-        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params)        
+        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params)
+        if return_request:
+            return request
+
         results = self._run_request(self._generate, request)
 
         # optionally force pixels in unmasked areas not to change
@@ -451,6 +456,65 @@ class Api:
         results = self._run_request(self._interpolate, request)
         return results[generation.ARTIFACT_IMAGE]
 
+    def transform_and_generate(
+        self,
+        image: np.ndarray,
+        params: List[generation.TransformParameters],
+        generate_request: generation.Request,
+        extras: Optional[Dict] = None,
+    ) -> np.ndarray:
+        extras_struct = None
+        if extras is not None:
+            extras_struct = Struct()
+            extras_struct.update(extras)
+
+        if not params:
+            results = self._run_request(self._generate, generate_request)
+            return results[generation.ARTIFACT_IMAGE][0]
+
+        requests = [
+            generation.Request(
+                engine_id=self._transform.engine_id,
+                prompt=[image_to_prompt(image)],
+                transform=param,
+                extras=extras_struct,
+            ) for param in params
+        ]
+
+        if not self._debug_no_chains:
+            stages = []
+            for idx, rq in enumerate(requests):
+                rq.requested_type=generation.ARTIFACT_TENSOR
+                stages.append(generation.Stage(
+                    id=str(idx),
+                    request=rq, 
+                    on_status=[generation.OnStatus(
+                        action=[generation.STAGE_ACTION_PASS], 
+                        target=str(idx+1)
+                    )]
+                ))
+            stages.append(generation.Stage(
+                id=str(len(params)),
+                request=generate_request,
+                on_status=[generation.OnStatus(
+                    action=[generation.STAGE_ACTION_RETURN],
+                    target=None
+                )]
+            ))
+            chain_rq = generation.ChainRequest(request_id="xform_gen_chain", stage=stages)
+            results = self._run_request(self._transform, chain_rq)
+        else:
+            prev_result = None
+            for rq in requests:
+                rq.requested_type = generation.ARTIFACT_IMAGE
+                if prev_result is not None:
+                    rq.prompt = [image_to_prompt(prev_result)]
+                prev_result = self._run_request(self._transform, rq)[generation.ARTIFACT_IMAGE][0]
+            generate_request.prompt.append(image_to_prompt(prev_result))
+            results = self._run_request(self._generate, generate_request)
+
+        return results[generation.ARTIFACT_IMAGE][0]
+
     def transform(
         self,
         images: Iterable[np.ndarray],
@@ -485,7 +549,8 @@ class Api:
                 rq = generation.Request(
                     engine_id=self._transform.engine_id,
                     prompt=[image_to_prompt(image) for image in images] if idx == 0 else None,
-                    transform=param
+                    transform=param,
+                    extras_struct=extras_struct
                 )
                 stages.append(generation.Stage(
                     id=str(idx),
@@ -519,9 +584,6 @@ class Api:
         assert len(images)
         assert isinstance(images[0], np.ndarray)
 
-        # because only linear chains are currently supported and we want to use
-        # the same depth for each, we have to do this in two passes right now
-
         image_prompts = [image_to_prompt(image) for image in images]
         warped_images = []
         warp_mask = None
@@ -531,50 +593,49 @@ class Api:
         if extras is not None:
             extras_struct.update(extras)
 
-        for image_prompt in image_prompts:
-            rq_depth = generation.Request(
-                engine_id=self._transform.engine_id,
-                requested_type=generation.ARTIFACT_TENSOR,
-                prompt=[image_prompts[0]], # use same input image for each depth calc
-                transform=depth_calc,
-            )
-            rq_transform = generation.Request(
-                engine_id=self._transform.engine_id,
-                prompt=[image_prompt],
-                transform=transform,
-                extras=extras_struct
-            )
+        rq_depth = generation.Request(
+            engine_id=self._transform.engine_id,
+            requested_type=generation.ARTIFACT_TENSOR,
+            prompt=[image_prompts[0]],
+            transform=depth_calc,
+        )
+        rq_transform = generation.Request(
+            engine_id=self._transform.engine_id,
+            prompt=image_prompts,
+            transform=transform,
+            extras=extras_struct
+        )
 
-            if self._debug_no_chains:
-                results = self._process_response(self._transform.stub.Generate(rq_depth, wait_for_ready=True))
-                rq_transform.prompt.append(                
-                    generation.Prompt(
-                        artifact=generation.Artifact(
-                            type=generation.ARTIFACT_TENSOR,
-                            tensor=results[generation.ARTIFACT_TENSOR][0]
-                        )
+        if self._debug_no_chains:
+            results = self._process_response(self._transform.stub.Generate(rq_depth, wait_for_ready=True))
+            rq_transform.prompt.append(
+                generation.Prompt(
+                    artifact=generation.Artifact(
+                        type=generation.ARTIFACT_TENSOR,
+                        tensor=results[generation.ARTIFACT_TENSOR][0]
                     )
                 )
-                results = self._run_request(self._transform, rq_transform)
-            else:
-                chain_rq = generation.ChainRequest(
-                    request_id=f"{op_id}_3d_chain",
-                    stage=[
-                        generation.Stage(
-                            id="depth_calc",
-                            request=rq_depth, 
-                            on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target=op_id)]
-                        ),
-                        generation.Stage(
-                            id=op_id,
-                            request=rq_transform, 
-                            on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
-                        ) 
+            )
+            results = self._run_request(self._transform, rq_transform)
+        else:
+            chain_rq = generation.ChainRequest(
+                request_id=f"{op_id}_3d_chain",
+                stage=[
+                    generation.Stage(
+                        id="depth_calc",
+                        request=rq_depth,
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target=op_id)]
+                    ),
+                    generation.Stage(
+                        id=op_id,
+                        request=rq_transform,
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
+                    ) 
                 ])
-                results = self._run_request(self._transform, chain_rq)
+            results = self._run_request(self._transform, chain_rq)
 
-            warped_images.append(results[generation.ARTIFACT_IMAGE][0])
-            warp_mask = results.get(generation.ARTIFACT_MASK, None)
+        warped_images = results[generation.ARTIFACT_IMAGE]
+        warp_mask = results.get(generation.ARTIFACT_MASK, None)
 
         return warped_images, warp_mask
 
@@ -681,7 +742,7 @@ class Api:
                 if attempt == self._max_retries:
                     raise rpc_error
                 logger.warning(f"Received RpcError: {rpc_error} will retry {self._max_retries-attempt} more times")
-                time.sleep(0.25 * 2**attempt)
+                time.sleep(self._retry_delay * 2**attempt)
         return results
 
 class StabilityInference:
