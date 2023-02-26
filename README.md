@@ -39,7 +39,7 @@ See usage demo notebooks in ./nbs
 ## Command line usage
 
 ```
-usage: python -m stability_sdk [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
+usage: python -m stability_sdk generate [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
                  [--end_schedule END_SCHEDULE] [--cfg_scale CFG_SCALE] [--sampler SAMPLER]
                  [--steps STEPS] [--seed SEED] [--prefix PREFIX] [--engine ENGINE]
                  [--num_samples NUM_SAMPLES] [--artifact_types ARTIFACT_TYPES]
@@ -82,6 +82,31 @@ options:
                         Init image
   --mask_image MASK_IMAGE, -m MASK_IMAGE
                         Mask image
+```
+Fot upscale:
+```
+usage: client.py upscale
+       [-h]
+       --init_image INIT_IMAGE
+       [--height HEIGHT] [--width WIDTH] [--prefix PREFIX] [--artifact_types ARTIFACT_TYPES]
+       [--no-store] [--show] [--engine ENGINE]
+
+options:
+  -h, --help            show this help message and exit
+  --init_image INIT_IMAGE, -i INIT_IMAGE
+                        Init image
+  --height HEIGHT, -H HEIGHT
+                        height of upscaled image in pixels
+  --width WIDTH, -W WIDTH
+                        width of upscaled image in pixels
+  --prefix PREFIX, -p PREFIX
+                        output prefixes for artifacts
+  --artifact_types ARTIFACT_TYPES, -t ARTIFACT_TYPES
+                        filter artifacts by type (ARTIFACT_IMAGE, ARTIFACT_TEXT, ARTIFACT_CLASSIFICATIONS, etc)
+  --no-store            do not write out artifacts
+  --show                open artifacts using PIL
+  --engine ENGINE, -e ENGINE
+                        engine to use for upscale
 ```
 
 

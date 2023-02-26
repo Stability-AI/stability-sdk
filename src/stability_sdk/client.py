@@ -528,7 +528,7 @@ if __name__ == "__main__":
     command = None
     if len(input_args)>0:
         command = input_args[0]
-    if command not in subparsers.choices.keys():
+    if command not in subparsers.choices.keys() and command != '-h' and command != '--help':
         logger.warning(f"command {command} not recognized, defaulting to 'generate'")
         logger.warning(
         "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
