@@ -25,9 +25,12 @@ You can manage API keys in your dreamstudio account [here](https://beta.dreamstu
 
 Then to invoke:
 
-`python3 -m stability_sdk.client -W 512 -H 512 "A stunning house."`
+`python3 -m stability_sdk generate -W 512 -H 512 "A stunning house."`
 
 It will generate and put PNGs in your current directory.
+
+To upscale:
+`python3 -m stability_sdk upscale -i "/path/to/image.png"
 
 ## SDK Usage
 
