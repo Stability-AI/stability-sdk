@@ -45,7 +45,7 @@ def test_load_video(vidpath):
     assert artist.video_prev_frame is not None
     assert all([v is not None for v in artist.prior_frames]) 
 
-@pytest.mark.parametrize('animation_mode', ['Video Input','2D','3D'])
+@pytest.mark.parametrize('animation_mode', ['Video Input','2D','Pseudo 3D','3D'])
 def test_render(animation_mode, grpc_addr, grpc_server, vidpath):
     args = AnimationArgs()
     args.animation_mode = animation_mode
@@ -67,7 +67,7 @@ def test_init_image_from_args(impath):
     args = AnimationArgs()
     args.init_image = impath
     artist = Animator(api=client.Api(stub=MockStub()), args=args, animation_prompts=animation_prompts)
-    assert len(artist.prior_frames) == 2
+    assert len(artist.prior_frames) == 1
 
 def test_init_image_from_input(impath):
     artist = Animator(api=client.Api(stub=MockStub()), args=AnimationArgs(), animation_prompts=animation_prompts)
@@ -77,4 +77,6 @@ def test_init_image_from_input(impath):
     assert len(artist.prior_frames) == 0
     assert Path(impath).exists()
     artist.load_init_image(impath)
+    assert len(artist.prior_frames) == 1
+    artist.set_cadence_mode(True)
     assert len(artist.prior_frames) == 2
