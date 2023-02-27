@@ -45,7 +45,7 @@ def test_load_video(vidpath):
     assert artist.video_prev_frame is not None
     assert all([v is not None for v in artist.prior_frames]) 
 
-@pytest.mark.parametrize('animation_mode', ['Video Input','2D','Pseudo 3D','3D'])
+@pytest.mark.parametrize('animation_mode', ['Video Input','2D','3D warp','3D render'])
 def test_render(animation_mode, grpc_addr, grpc_server, vidpath):
     args = AnimationArgs()
     args.animation_mode = animation_mode
