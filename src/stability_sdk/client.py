@@ -17,7 +17,7 @@ from argparse import ArgumentParser, Namespace
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
-from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Generator, Iterable, List, Optional, Sequence, Tuple, Union
 
 
 try:
@@ -331,14 +331,14 @@ class Api:
         if not prompts and init_image is None:
             raise ValueError("prompt and/or init_image must be provided")
 
-        if (mask is not None) and (init_image is None):
+        if (mask is not None) and (init_image is None) and not return_request:
             raise ValueError("If mask_image is provided, init_image must also be provided")
 
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
             p.append(image_to_prompt(init_image))
-            if mask is not None:
-                p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
+        if mask is not None:
+            p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
         if init_depth is not None:
             p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
 
@@ -417,13 +417,13 @@ class Api:
 
         # optionally force pixels in unmasked areas not to change
         if mask_fixup:
-            results[generation.ARTIFACT_IMAGE] = [image_mix(image, image, mask) for image in results[generation.ARTIFACT_IMAGE]]
+            results[generation.ARTIFACT_IMAGE] = [image_mix(res_image, image, mask) for res_image in results[generation.ARTIFACT_IMAGE]]
 
         return results
 
     def interpolate(
         self,
-        images: List[np.ndarray], 
+        images: Iterable[np.ndarray], 
         ratios: List[float],
         mode: generation.InterpolateMode = generation.INTERPOLATE_LINEAR,
     ) -> List[np.ndarray]:
@@ -472,40 +472,52 @@ class Api:
             results = self._run_request(self._generate, generate_request)
             return results[generation.ARTIFACT_IMAGE][0]
 
-        stages = []
-        for idx, param in enumerate(params):
-            rq = generation.Request(
+        requests = [
+            generation.Request(
                 engine_id=self._transform.engine_id,
                 prompt=[image_to_prompt(image)],
                 transform=param,
                 extras=extras_struct,
-                requested_type=generation.ARTIFACT_TENSOR
-            )
+            ) for param in params
+        ]
+
+        if not self._debug_no_chains:
+            stages = []
+            for idx, rq in enumerate(requests):
+                rq.requested_type=generation.ARTIFACT_TENSOR
+                stages.append(generation.Stage(
+                    id=str(idx),
+                    request=rq, 
+                    on_status=[generation.OnStatus(
+                        action=[generation.STAGE_ACTION_PASS], 
+                        target=str(idx+1)
+                    )]
+                ))
             stages.append(generation.Stage(
-                id=str(idx),
-                request=rq, 
+                id=str(len(params)),
+                request=generate_request,
                 on_status=[generation.OnStatus(
-                    action=[generation.STAGE_ACTION_PASS], 
-                    target=str(idx+1)
+                    action=[generation.STAGE_ACTION_RETURN],
+                    target=None
                 )]
             ))
+            chain_rq = generation.ChainRequest(request_id="xform_gen_chain", stage=stages)
+            results = self._run_request(self._transform, chain_rq)
+        else:
+            prev_result = None
+            for rq in requests:
+                rq.requested_type = generation.ARTIFACT_IMAGE
+                if prev_result is not None:
+                    rq.prompt = [image_to_prompt(prev_result)]
+                prev_result = self._run_request(self._transform, rq)[generation.ARTIFACT_IMAGE][0]
+            generate_request.prompt.append(image_to_prompt(prev_result))
+            results = self._run_request(self._generate, generate_request)
 
-        stages.append(generation.Stage(
-            id=str(len(params)),
-            request=generate_request,
-            on_status=[generation.OnStatus(
-                action=[generation.STAGE_ACTION_RETURN],
-                target=None
-            )]
-        ))
-
-        chain_rq = generation.ChainRequest(request_id="xform_gen_chain", stage=stages)
-        results = self._run_request(self._transform, chain_rq)
         return results[generation.ARTIFACT_IMAGE][0]
 
     def transform(
         self,
-        images: List[np.ndarray],
+        images: Iterable[np.ndarray],
         params: Union[generation.TransformParameters, List[generation.TransformParameters]],
         extras: Optional[Dict] = None
     ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
@@ -561,11 +573,12 @@ class Api:
 
         return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
 
-    def transform_resample_3d(
+    # TODO: Add option to do transform using given depth map (e.g. for Blender use cases)
+    def transform_3d(
         self, 
-        images: List[np.ndarray], 
+        images: Iterable[np.ndarray], 
         depth_calc: generation.TransformParameters,
-        resample: generation.TransformParameters,
+        transform: generation.TransformParameters,
         extras: Optional[Dict] = None
     ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
         assert len(images)
@@ -574,6 +587,7 @@ class Api:
         image_prompts = [image_to_prompt(image) for image in images]
         warped_images = []
         warp_mask = None
+        op_id = "resample" if transform.HasField("resample") else "camera_pose"
 
         extras_struct = Struct()
         if extras is not None:
@@ -585,16 +599,16 @@ class Api:
             prompt=[image_prompts[0]],
             transform=depth_calc,
         )
-        rq_resample = generation.Request(
+        rq_transform = generation.Request(
             engine_id=self._transform.engine_id,
             prompt=image_prompts,
-            transform=resample,
+            transform=transform,
             extras=extras_struct
         )
 
         if self._debug_no_chains:
             results = self._process_response(self._transform.stub.Generate(rq_depth, wait_for_ready=True))
-            rq_resample.prompt.append(
+            rq_transform.prompt.append(
                 generation.Prompt(
                     artifact=generation.Artifact(
                         type=generation.ARTIFACT_TENSOR,
@@ -602,20 +616,22 @@ class Api:
                     )
                 )
             )
-            results = self._run_request(self._transform, rq_resample)
+            results = self._run_request(self._transform, rq_transform)
         else:
-            chain_rq = generation.ChainRequest(request_id="resample_3d_chain", stage=[
-                generation.Stage(
-                    id="depth_calc",
-                    request=rq_depth,
-                    on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target="resample")]
-                ),
-                generation.Stage(
-                    id="resample",
-                    request=rq_resample,
-                    on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
-                ) 
-            ])
+            chain_rq = generation.ChainRequest(
+                request_id=f"{op_id}_3d_chain",
+                stage=[
+                    generation.Stage(
+                        id="depth_calc",
+                        request=rq_depth,
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_PASS], target=op_id)]
+                    ),
+                    generation.Stage(
+                        id=op_id,
+                        request=rq_transform,
+                        on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
+                    ) 
+                ])
             results = self._run_request(self._transform, chain_rq)
 
         warped_images = results[generation.ARTIFACT_IMAGE]
