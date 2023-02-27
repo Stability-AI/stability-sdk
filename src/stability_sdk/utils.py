@@ -410,20 +410,3 @@ def camera_pose_op(
             do_prefill=do_prefill
         )
     )
-
-def warpflow_op(
-    prev_frame:np.ndarray,
-    next_frame:np.ndarray,
-) -> generation.TransformParameters:
-    im_prev=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(prev_frame))
-    im_next=generation.Artifact(
-        type=generation.ARTIFACT_IMAGE,
-        binary=image_to_jpg_bytes(next_frame))
-    return generation.TransformParameters(
-        warp_flow=generation.TransformWarpFlow(
-            prev_frame=im_prev,
-            next_frame=im_next,
-        )
-    )
