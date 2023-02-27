@@ -720,8 +720,6 @@ class Api:
                 if isinstance(request, generation.Request) and request.HasField("image"):
                     request.image.seed[:] = [seed + 1 for seed in request.image.seed]
                     logger.warning(f"  adjusting seed, will retry {self._max_retries-attempt} more times")
-                else:
-                    raise ce
             except grpc.RpcError as rpc_error:
                 if attempt == self._max_retries:
                     raise rpc_error
