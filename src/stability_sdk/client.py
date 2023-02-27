@@ -636,6 +636,8 @@ class Api:
 
         warped_images = results[generation.ARTIFACT_IMAGE]
         warp_mask = results.get(generation.ARTIFACT_MASK, None)
+        warped_images = results[generation.ARTIFACT_IMAGE]
+        warp_mask = results.get(generation.ARTIFACT_MASK, None)
 
         return warped_images, warp_mask
 
