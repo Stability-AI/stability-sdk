@@ -30,7 +30,7 @@ Then to invoke:
 It will generate and put PNGs in your current directory.
 
 To upscale:
-`python3 -m stability_sdk upscale -i "/path/to/image.png"
+`python3 -m stability_sdk upscale -i "/path/to/image.png"`
 
 ## SDK Usage
 
