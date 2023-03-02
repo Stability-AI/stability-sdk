@@ -147,6 +147,15 @@ class StabilityInference:
 
         call_credentials = []
 
+        # Increase the max message size to 10MB to allow for larger images.
+        max_message_size: int = os.getenv("MAX_MESSAGE_SIZE")
+        if max_message_size is None:
+            max_message_size = 10 * 1024 * 1024 # 10MB
+        options = [
+            ("grpc.max_send_message_length", int(max_message_size)),
+            ("grpc.max_receive_message_length",int(max_message_size)),
+        ]
+
         if host.endswith("443"):
             if key:
                 call_credentials.append(grpc.access_token_call_credentials(f"{key}"))
@@ -155,13 +164,13 @@ class StabilityInference:
             channel_credentials = grpc.composite_channel_credentials(
                 grpc.ssl_channel_credentials(), *call_credentials
             )
-            channel = grpc.secure_channel(host, channel_credentials)
+            channel = grpc.secure_channel(host, channel_credentials, options=options)
         else:
             if key:
                 logger.warning(
                     "Not using authentication token due to non-secure transport"
                 )
-            channel = grpc.insecure_channel(host)
+            channel = grpc.insecure_channel(host, options=options)
 
         if verbose:
             logger.info(f"Channel opened to {host}")
