@@ -15,6 +15,20 @@ See usage demo notebooks in ./nbs
 
 # Upscale 
 
+## Engine selection
+The upscale engine can be optionally chosen when initializing the client:
+```
+stability_api = client.StabilityInference(
+    key=os.environ['STABILITY_KEY'], # API Key reference.
+    upscale_engine="upscale_engine_name", # The name of the upscaling model we want to use.
+)
+```
+Command line example:
+`python3 -m stability_sdk upscale -e "upscale_engine_name" -i "/path/to/img.png"`
+
+Default upscale_engine_name is "esrgan-v1-x2plus"
+
+## Inputs
 Required inputs:
 init_image
 
@@ -22,7 +36,7 @@ Optional inputs:
 height
 width
 
-Additional requirements:
+## Additional requirements:
 Max input size = 1048576 pixels (ie. the total pixels in a 1024 x 1024 image)
 Max output size = 4194304 pixels (ie. the total pixels in a 2048 x 2048 image)
 
@@ -30,13 +44,36 @@ The default output size is set by the specific endpoint.
 For example, upscale_engine == "esrgan-v1-x2plus" will upscale to 2x the input size
 
 If height or width is provided, the original aspect ratio will be maintained.
-Specifying both height and width will throw an error. This is to guarantee that the original aspect ratio is maintained.
+Specifying both height and width will throw an error. This is so original aspect ratio is maintained.
 
-Examples:
+For example:
+```
+# This is fine
+answers = stability_api.upscale(
+    init_image=img
+) # results in a 2x image if using default upscale_engine
+
+# This is fine
+answers = stability_api.upscale(
+    width=1000,
+    init_image=img
+)
+
+# !! This will throw an error !!
+answers = stability_api.upscale(
+    width=1000,
+    height=1000,
+    init_image=img
+)
+```
+
+## Example calls
 
 Command line:
 `python3 -m stability_sdk upscale -i "/path/to/image.png"`
+`python3 -m stability_sdk upscale --engine "esrgan-v1-x2plus" -i "/path/to/image.png"`
 `python3 -m stability_sdk upscale -H 1200 -i "/path/to/image.png"`
+`python3 -m stability_sdk upscale -W 1200 -i "/path/to/image.png"`
 
 SDK Usage:
 
