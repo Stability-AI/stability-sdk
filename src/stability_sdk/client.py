@@ -51,6 +51,7 @@ from .utils import (
     image_to_prompt,
     open_images,
     sampler_from_string,
+    tensor_to_prompt,
     truncate_fit,
 )
 
@@ -475,16 +476,25 @@ class Api:
         requests = [
             generation.Request(
                 engine_id=self._transform.engine_id,
+                requested_type=generation.ARTIFACT_TENSOR,
                 prompt=[image_to_prompt(image)],
                 transform=param,
                 extras=extras_struct,
             ) for param in params
         ]
 
-        if not self._debug_no_chains:
+        if self._debug_no_chains:
+            prev_result = None
+            for rq in requests:
+                if prev_result is not None:
+                    rq.prompt.pop()
+                    rq.prompt.append(tensor_to_prompt(prev_result))
+                prev_result = self._run_request(self._transform, rq)[generation.ARTIFACT_TENSOR][0]
+            generate_request.prompt.append(tensor_to_prompt(prev_result))
+            results = self._run_request(self._generate, generate_request)
+        else:
             stages = []
             for idx, rq in enumerate(requests):
-                rq.requested_type=generation.ARTIFACT_TENSOR
                 stages.append(generation.Stage(
                     id=str(idx),
                     request=rq, 
@@ -503,15 +513,6 @@ class Api:
             ))
             chain_rq = generation.ChainRequest(request_id="xform_gen_chain", stage=stages)
             results = self._run_request(self._transform, chain_rq)
-        else:
-            prev_result = None
-            for rq in requests:
-                rq.requested_type = generation.ARTIFACT_IMAGE
-                if prev_result is not None:
-                    rq.prompt = [image_to_prompt(prev_result)]
-                prev_result = self._run_request(self._transform, rq)[generation.ARTIFACT_IMAGE][0]
-            generate_request.prompt.append(image_to_prompt(prev_result))
-            results = self._run_request(self._generate, generate_request)
 
         return results[generation.ARTIFACT_IMAGE][0]
 

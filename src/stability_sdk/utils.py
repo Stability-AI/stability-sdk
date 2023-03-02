@@ -241,6 +241,12 @@ def image_to_prompt(
         artifact=generation.Artifact(type=type, binary=png)
     )
 
+def tensor_to_prompt(tensor: 'tensors_pb.Tensor') -> generation.Prompt:
+    return generation.Prompt(artifact=generation.Artifact(
+        type=generation.ARTIFACT_TENSOR, 
+        tensor=tensor
+    ))
+
 
 ##############################################
 

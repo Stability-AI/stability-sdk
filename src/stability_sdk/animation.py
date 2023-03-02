@@ -841,7 +841,6 @@ class Animator:
         if not len(self.prior_frames):
             return None
 
-        op = None
         args = self.args
         for _ in range(args.extract_nth_frame):
             success, video_next_frame = self.video_reader.read()
@@ -852,8 +851,10 @@ class Animator:
                 # warp_flow is in `extras` and will change in the future
                 prev_b64 = base64.b64encode(image_to_png_bytes(self.video_prev_frame)).decode('utf-8')
                 next_b64 = base64.b64encode(image_to_png_bytes(video_next_frame)).decode('utf-8')
-                extras = { "warp_flow": { "prev_frame": prev_b64, "next_frame": next_b64} }
-                transformed_prior_frames, mask = self.api.transform(self.prior_frames, None, extras=extras)
+                extras = { "warp_flow": { "prev_frame": prev_b64, "next_frame": next_b64, "export_mask": args.inpaint_border } }
+                transformed_prior_frames, masks = self.api.transform(self.prior_frames, None, extras=extras)
+                if masks is not None:
+                    mask = masks[0]
                 self.prior_frames.extend(transformed_prior_frames)
             self.video_prev_frame = video_next_frame
             self.color_match_image = video_next_frame
