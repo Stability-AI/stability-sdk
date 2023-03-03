@@ -83,7 +83,7 @@ options:
   --mask_image MASK_IMAGE, -m MASK_IMAGE
                         Mask image
 ```
-Fot upscale:
+For upscale:
 ```
 usage: client.py upscale
        [-h]
