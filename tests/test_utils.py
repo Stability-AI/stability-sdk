@@ -26,7 +26,6 @@ from stability_sdk.utils import (
     key_frame_inbetweens,
     key_frame_parse,
     #########
-    blend_op,
     color_adjust_op,
     depthcalc_op,
     resample_op

@@ -19,7 +19,6 @@ from stability_sdk.client import (
     generation,
 )
 from stability_sdk.utils import (
-    blend_op,
     color_adjust_op,
     cv2_to_pil,
     depthcalc_op,
@@ -717,7 +716,7 @@ class Animator:
             wvp = matrix.multiply(projection, world_view)
             depth_calc = depthcalc_op(args.depth_model_weight)
             resample = resample_op(args.border, wvp, projection, depth_warp=1.0, export_mask=False)
-            results, _ = self.api.transform_resample_3d([frame], depth_calc, resample, extras=extras)
+            results, _ = self.api.transform_3d([frame], depth_calc, resample, extras=extras)
             eye_images.append(results[0])
         
         return np.concatenate(eye_images, axis=1)
@@ -931,7 +930,7 @@ class Animator:
                 wvp = matrix.multiply(projection, xform)
                 depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
                 resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=True)
-                frames, masks = self.api.transform_resample_3d([frame], depth_calc, resample)
+                frames, masks = self.api.transform_3d([frame], depth_calc, resample)
             return frames[0], masks[0]
 
         if prev_frame is None:

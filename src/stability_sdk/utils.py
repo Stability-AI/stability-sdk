@@ -294,20 +294,6 @@ def key_frame_parse(string, prompt_parser=None):
 #  - move to their own submodule
 #  - add doc strings giving details on parameters
 
-def blend_op(
-    amount:float,
-    target:np.ndarray,
-) -> generation.TransformParameters:
-    return generation.TransformParameters(
-        blend=generation.TransformBlend(
-            amount=amount, 
-            target=generation.Artifact(
-                type=generation.ARTIFACT_IMAGE,
-                binary=image_to_jpg_bytes(target),
-            )
-        )
-    )
-
 def color_adjust_op(
     brightness:float=1.0,
     contrast:float=1.0,

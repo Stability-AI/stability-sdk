@@ -572,7 +572,9 @@ class Api:
             )
             results = self._run_request(self._transform, request)
 
-        return results[generation.ARTIFACT_IMAGE], results.get(generation.ARTIFACT_MASK, None)
+        images = results.get(generation.ARTIFACT_IMAGE, []) + results.get(generation.ARTIFACT_DEPTH, [])
+        masks = results.get(generation.ARTIFACT_MASK, None)
+        return images, masks
 
     # TODO: Add option to do transform using given depth map (e.g. for Blender use cases)
     def transform_3d(
