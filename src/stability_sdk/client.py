@@ -328,8 +328,7 @@ class StabilityInference:
             width=width,
         )
 
-        prompts: List[generation.Prompt] = []
-        prompts += [image_to_prompt(init_image, init=True)]
+        prompts = [image_to_prompt(init_image, init=True)]
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters, engine_id=self.upscale_engine)
 
