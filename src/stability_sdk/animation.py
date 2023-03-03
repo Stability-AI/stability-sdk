@@ -142,7 +142,7 @@ class VideoInputSettings(param.Parameterized):
     video_flow_warp = param.Boolean(default=True, doc="Whether or not to transfer the optical flow from the video to the generated animation as a warp effect.")
 
 class VideoOutputSettings(param.Parameterized):
-    fps = param.Integer(default=24, doc="Frame rate to use when generating video output.")
+    fps = param.Integer(default=12, doc="Frame rate to use when generating video output.")
     reverse = param.Boolean(default=False, doc="Whether to reverse the output video or not.")
     vr_mode = param.Boolean(default=False, doc="Outputs side by side views for each eye using depth warp.")
     vr_eye_angle = param.Number(default=0.5, softbounds=(0,1), doc="Y-axis rotation of the eyes towards the center.")
