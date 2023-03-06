@@ -65,15 +65,19 @@ logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
 
-def open_channel(host: str, api_key: str = None) -> grpc.Channel:
+def open_channel(host: str, api_key: str = None, max_message_len: int = 10*1024*1024) -> grpc.Channel:
+    options=[
+        ('grpc.max_send_message_length', max_message_len),
+        ('grpc.max_receive_message_length', max_message_len),
+    ]    
     if host.endswith(":443"):
         call_credentials = [grpc.access_token_call_credentials(api_key)]
         channel_credentials = grpc.composite_channel_credentials(
             grpc.ssl_channel_credentials(), *call_credentials
         )
-        channel = grpc.secure_channel(host, channel_credentials)
+        channel = grpc.secure_channel(host, channel_credentials, options=options)
     else:
-        channel = grpc.insecure_channel(host)
+        channel = grpc.insecure_channel(host, options=options)
     return channel
 
 def process_artifacts_from_answers(
