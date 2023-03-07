@@ -851,7 +851,7 @@ class Animator:
                 prev_b64 = base64.b64encode(image_to_png_bytes(self.video_prev_frame)).decode('utf-8')
                 next_b64 = base64.b64encode(image_to_png_bytes(video_next_frame)).decode('utf-8')
                 extras = { "warp_flow": { "prev_frame": prev_b64, "next_frame": next_b64, "export_mask": args.inpaint_border } }
-                transformed_prior_frames, masks = self.api.transform(self.prior_frames, None, extras=extras)
+                transformed_prior_frames, masks = self.api.transform(self.prior_frames, generation.TransformParameters(), extras=extras)
                 if masks is not None:
                     mask = masks[0]
                 self.prior_frames.extend(transformed_prior_frames)
