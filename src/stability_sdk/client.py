@@ -303,6 +303,7 @@ class Api:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        extras: Optional[Dict] = None,
         return_request: bool = False,
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
@@ -326,6 +327,7 @@ class Api:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
+        :param extras: Extras
         :return: dict mapping artifact type to data
         """
         if not prompts and init_image is None:
@@ -347,7 +349,12 @@ class Api:
                                                 start_schedule, init_noise_scale, masked_area_init, 
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
-        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params)
+        extras_struct = None
+        if extras is not None:
+            extras_struct = Struct()
+            extras_struct.update(extras)
+
+        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params, extras=extras_struct)
         if return_request:
             return request
 

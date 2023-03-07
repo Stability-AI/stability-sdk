@@ -1,3 +1,4 @@
+import base64
 import cv2
 import numpy as np
 import pytest
@@ -68,6 +69,17 @@ def test_api_generate():
     image = results[generation.ARTIFACT_IMAGE][0]
     assert isinstance(image, np.ndarray)
     assert image.shape == (height, width, 3)
+
+def test_api_generate_mse_loss():
+    api = client.Api(stub=MockStub())
+    width, height = 512, 768
+    mse_loss_im = Image.new('RGB', (1,1))
+    mse_loss_im_b64 = base64.b64encode(image_to_png_bytes(mse_loss_im)).decode('utf-8')
+    extras = { "mse_loss": { "mse_image": mse_loss_im_b64,
+                             "adj_mse_scale": 0.1 } }
+    result = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height, extras=extras)
+    assert isinstance(result[1][0], np.ndarray)
+    assert result[1][0].shape == (height, width, 3)
 
 def test_api_inpaint():
     api = client.Api(stub=MockStub())
