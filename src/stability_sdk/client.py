@@ -653,7 +653,7 @@ class Api:
         if attempt > 0 and request.image.parameters and request.image.parameters[0].HasField("schedule"):
             schedule = request.image.parameters[0].schedule
             if schedule.HasField("start"):
-                schedule.start = min(1.0, schedule.start + self._retry_schedule_offset)
+                schedule.start = max(0.0, min(1.0, schedule.start + self._retry_schedule_offset))
 
     def _build_image_params(self, width, height, sampler, steps, seed, samples, cfg_scale, 
                             schedule_start, init_noise_scale, masked_area_init, 
