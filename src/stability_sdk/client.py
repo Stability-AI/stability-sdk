@@ -65,15 +65,19 @@ logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
 
-def open_channel(host: str, api_key: str = None) -> grpc.Channel:
+def open_channel(host: str, api_key: str = None, max_message_len: int = 10*1024*1024) -> grpc.Channel:
+    options=[
+        ('grpc.max_send_message_length', max_message_len),
+        ('grpc.max_receive_message_length', max_message_len),
+    ]    
     if host.endswith(":443"):
         call_credentials = [grpc.access_token_call_credentials(api_key)]
         channel_credentials = grpc.composite_channel_credentials(
             grpc.ssl_channel_credentials(), *call_credentials
         )
-        channel = grpc.secure_channel(host, channel_credentials)
+        channel = grpc.secure_channel(host, channel_credentials, options=options)
     else:
-        channel = grpc.insecure_channel(host)
+        channel = grpc.insecure_channel(host, options=options)
     return channel
 
 def process_artifacts_from_answers(
@@ -275,6 +279,7 @@ class Api:
         self._max_retries = 3 # retry request on RPC error
         self._retry_delay = 1.0 # base delay in seconds between retries, each attempt will double
         self._retry_obfuscation = False # retry request with different seed on classifier obfuscation
+        self._retry_schedule_offset = 0.1 # increase schedule start by this amount on each retry after the first
 
         logger.warning(
             "\n"
@@ -642,6 +647,14 @@ class Api:
 
         return warped_images, warp_mask
 
+    def _adjust_request_for_retry(self, request: generation.Request, attempt: int):
+        logger.warning(f"  adjusting request, will retry {self._max_retries-attempt} more times")
+        request.image.seed[:] = [seed + 1 for seed in request.image.seed]
+        if attempt > 0 and request.image.parameters and request.image.parameters[0].HasField("schedule"):
+            schedule = request.image.parameters[0].schedule
+            if schedule.HasField("start"):
+                schedule.start = max(0.0, min(1.0, schedule.start + self._retry_schedule_offset))
+
     def _build_image_params(self, width, height, sampler, steps, seed, samples, cfg_scale, 
                             schedule_start, init_noise_scale, masked_area_init, 
                             guidance_preset, guidance_cuts, guidance_strength):
@@ -737,13 +750,11 @@ class Api:
                             logger.warning(f"  {concept.concept} ({concept.threshold})")
                 
                 if isinstance(request, generation.Request) and request.HasField("image"):
-                    request.image.seed[:] = [seed + 1 for seed in request.image.seed]
-                    logger.warning(f"  adjusting seed, will retry {self._max_retries-attempt} more times")
+                    self._adjust_request_for_retry(request, attempt)
                 elif isinstance(request, generation.ChainRequest):
                     for stage in request.stage:
                         if stage.request.HasField("image"):
-                            stage.request.image.seed[:] = [seed + 1 for seed in stage.request.image.seed]
-                            logger.warning(f"  adjusting seed, will retry {self._max_retries-attempt} more times")
+                            self._adjust_request_for_retry(stage.request, attempt)
                 else:
                     raise ce
             except grpc.RpcError as rpc_error:
