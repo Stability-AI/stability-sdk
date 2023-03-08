@@ -70,13 +70,13 @@ def test_api_generate():
     assert isinstance(image, np.ndarray)
     assert image.shape == (height, width, 3)
 
-def test_api_generate_mse_loss():
+def test_api_generate_latent_mse_loss():
     api = client.Api(stub=MockStub())
     width, height = 512, 768
     mse_loss_im = Image.new('RGB', (1,1))
     mse_loss_im_b64 = base64.b64encode(image_to_png_bytes(mse_loss_im)).decode('utf-8')
-    extras = { "mse_loss": { "mse_image": mse_loss_im_b64,
-                             "adj_mse_scale": 0.1 } }
+    extras = { "target_loss": { "target_loss_img": mse_loss_im_b64,
+                                "adj_latent_mse_scale": 0.1 } }
     result = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height, extras=extras)
     assert isinstance(result[1][0], np.ndarray)
     assert result[1][0].shape == (height, width, 3)

@@ -95,7 +95,7 @@ class CameraSettings(param.Parameterized):
 
 class CoherenceSettings(param.Parameterized):
     diffusion_cadence_curve = param.String(default="0:(1)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
-    mse_loss_curve = param.String(default="0:(0.0)", doc="MSE loss scale. Strength of MSE loss influence. `mse_loss=0.0` doesn't use MSE loss.")
+    latent_mse_loss_curve = param.String(default="0:(0.0)", doc="Latent MSE loss scale. Strength of latent MSE loss influence. `latent_mse_loss=0.0` doesn't use latent MSE loss.")
     cadence_interp = param.ObjectSelector(default='mix', objects=['mix', 'rife', 'vae-lerp', 'vae-slerp'])
     cadence_spans = param.Boolean(default=False, doc="Experimental diffusion cadence mode for better outpainting")
 
@@ -423,7 +423,7 @@ class Animator:
             steps_series = curve_to_series(args.steps_curve),
             strength_series = curve_to_series(args.strength_curve),
             diffusion_cadence_series = curve_to_series(args.diffusion_cadence_curve),
-            mse_loss_series = curve_to_series(args.mse_loss_curve),
+            latent_mse_loss_series = curve_to_series(args.latent_mse_loss_curve),
             fov_series = curve_to_series(args.fov_curve),
             depth_blur_series = curve_to_series(args.depth_blur_curve),
             depth_warp_series = curve_to_series(args.depth_warp_curve),
@@ -656,11 +656,11 @@ class Animator:
                 init_strength = (strength if not do_inpainting else start_diffusion_from) if init_image is not None else 0.0
 
                 extras = None
-                mse_scale = self.frame_args.mse_loss_series[frame_idx]
-                if mse_scale != 0.0 and init_image is not None:
+                latent_mse_scale = self.frame_args.latent_mse_loss_series[frame_idx]
+                if latent_mse_scale != 0.0 and init_image is not None:
                     mse_loss_im_b64 = base64.b64encode(image_to_png_bytes(init_image)).decode('utf-8')
-                    extras = { "mse_loss": { "mse_image": mse_loss_im_b64,
-                                             "adj_mse_scale": mse_scale } }
+                    extras = { "target_loss": { "target_loss_img": mse_loss_im_b64,
+                                                "adj_latent_mse_scale": latent_mse_scale } }
 
                 generate_request = self.api.generate(
                     prompts, weights, 
