@@ -14,10 +14,7 @@ from PIL import Image
 from types import SimpleNamespace
 from typing import Deque, Generator, List, Optional, Tuple, Union
 
-from stability_sdk.client import (
-    Api,
-    generation,
-)
+from stability_sdk.api import Api, generation
 from stability_sdk.utils import (
     color_adjust_op,
     cv2_to_pil,
