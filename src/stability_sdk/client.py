@@ -276,7 +276,7 @@ class Api:
         self._interpolate = ApiEndpoint(stub, 'interpolation-server-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
         self._debug_no_chains = False
-        self._max_retries = 3 # retry request on RPC error
+        self._max_retries = 5 # retry request on RPC error
         self._retry_delay = 1.0 # base delay in seconds between retries, each attempt will double
         self._retry_obfuscation = False # retry request with different seed on classifier obfuscation
         self._retry_schedule_offset = 0.1 # increase schedule start by this amount on each retry after the first
