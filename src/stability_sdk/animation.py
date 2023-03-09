@@ -49,8 +49,21 @@ docstring_bordermode = (
 class BasicSettings(param.Parameterized):
     width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
-    sampler = param.ObjectSelector(default='K_euler_ancestral', objects=["DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"])
-    model = param.ObjectSelector(default=DEFAULT_MODEL, objects=["stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1", "stable-diffusion-depth-v2-0", "custom"])
+    sampler = param.ObjectSelector(
+        default='K_euler_ancestral', 
+        objects=[
+            "DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", 
+            "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"
+        ]
+    )
+    model = param.ObjectSelector(
+        default=DEFAULT_MODEL, 
+        objects=[
+            "stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1", 
+            "stable-diffusion-depth-v2-0", "stable-diffusion-xl-v2-2", "stable-diffusion-xl-tiling-v2-2", 
+            "custom"
+        ]
+    )
     custom_model = param.String(default="", doc="Identifier of custom model to use.")
     seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
@@ -205,8 +218,19 @@ def make_xform_2d(
     translate = matrix.translation(translate_x, translate_y, 0)
     return matrix.multiply(rotate_scale, translate)
 
+def model_supports_clip_guidance(model_name: str) -> bool:
+    return not model_name.startswith('stable-diffusion-xl')
+
 def model_requires_depth(model_name: str) -> bool:
     return model_name == 'stable-diffusion-depth-v2-0'
+
+def sampler_supports_clip_guidance(sampler_name: str) -> bool:
+    supported_samplers = [
+        generation.SAMPLER_K_EULER_ANCESTRAL,
+        generation.SAMPLER_K_DPM_2_ANCESTRAL,
+        generation.SAMPLER_K_DPMPP_2S_ANCESTRAL
+    ]
+    return sampler_from_string(sampler_name) in supported_samplers
 
 def to_3x3(m: matrix.Matrix) -> matrix.Matrix:
     # convert 4x4 matrix with 2D rotation, scale, and translation to 3x3 matrix
@@ -394,6 +418,13 @@ class Animator:
         # change request for random seed into explicit value so it is saved to settings
         if args.seed <= 0:
             args.seed = random.randint(0, 2**32 - 1)
+
+        # validate clip guidance setting against selected model and sampler
+        if args.clip_guidance.lower() != 'none':
+            if not (model_supports_clip_guidance(args.model) and sampler_supports_clip_guidance(args.sampler)):
+                unsupported = args.model if not model_supports_clip_guidance(args.model) else args.sampler
+                logger.warning(f"CLIP guidance is not supported by {unsupported}, disabling guidance.")
+                args.clip_guidance = 'None'
 
         def curve_to_series(curve: str) -> List[float]:
             return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)    

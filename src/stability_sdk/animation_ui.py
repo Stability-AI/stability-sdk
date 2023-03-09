@@ -333,7 +333,7 @@ def ui_for_generation(args: AnimationSettings, open=False):
         controls["sampler"] = gr.Dropdown(label="Sampler", choices=p.sampler.objects, value=p.sampler.default, interactive=True)
         controls["seed"] = gr.Number(label="Seed", value=p.seed.default, interactive=True, precision=0)
         controls["cfg_scale"] = gr.Number(label="Guidance scale", value=p.cfg_scale.default, interactive=True)
-        controls["clip_guidance"] = gr.Dropdown(label="Clip guidance", choices=p.clip_guidance.objects, value=p.clip_guidance.default, interactive=True)
+        controls["clip_guidance"] = gr.Dropdown(label="CLIP guidance", choices=p.clip_guidance.objects, value=p.clip_guidance.default, interactive=True)
 
 def ui_for_init_and_mask(args_generation):
     p = args_generation.param
@@ -449,12 +449,10 @@ def render_tab():
             run_index += 1
 
         # gather up all the settings from sub-objects
-        args_d = {}
-        for k, v in zip(controls.keys(), render_args):
-            args_d[k] = v
+        args_d = {k: v for k, v in zip(controls.keys(), render_args)}
+        animation_prompts, negative_prompt = args_d['animation_prompts'], args_d['negative_prompt']
+        del args_d['animation_prompts'], args_d['negative_prompt']
         args = AnimationArgs(**args_d)
-        animation_prompts = args.animation_prompts
-        negative_prompt = args.negative_prompt
 
         if args.animation_mode == "Video Input" and not args.video_init_path:
             raise gr.Error("No video input file selected!")
