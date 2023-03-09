@@ -101,6 +101,7 @@ negative_prompt_weight = -1.0
 controls: Dict[str, gr.components.Component] = {}
 header = gr.HTML("", show_progress=False)
 interrupt = False
+last_project_settings_path = None
 projects: List[Project] = []
 project: Project = None
 
@@ -111,6 +112,8 @@ project_new_title = gr.Text(label="Name", value="My amazing animation", interact
 project_preset_dropdown = gr.Dropdown(label="Preset", choices=list(PRESETS.keys()), value=list(PRESETS.keys())[0], interactive=True)
 projects_dropdown = gr.Dropdown([p.title for p in projects], label="Project", visible=True, interactive=True)
 projects_row = None
+video_update_button = gr.Button("Update last video", visible=False)
+
 
 def accordion_for_color(args: ColorSettings, open=False):
     p = args.param
@@ -311,114 +314,6 @@ def project_tab():
     button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, projects_row, header])
     button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, projects_row, project_data_log])
 
-def ui_for_animation_settings(args: AnimationSettings, open=False):
-    with gr.Row():
-        controls["steps_strength_adj"] = gr.Checkbox(label="Steps strength adj", value=args.param.steps_strength_adj.default, interactive=True)
-        controls["interpolate_prompts"] = gr.Checkbox(label="Interpolate prompts", value=args.param.interpolate_prompts.default, interactive=True)
-        controls["locked_seed"] = gr.Checkbox(label="Locked seed", value=args.param.locked_seed.default, interactive=True)
-    controls["noise_add_curve"] = gr.Text(label="Noise add curve", value=args.param.noise_add_curve.default, interactive=True)
-    controls["noise_scale_curve"] = gr.Text(label="Noise scale curve", value=args.param.noise_scale_curve.default, interactive=True)
-    controls["strength_curve"] = gr.Text(label="Previous frame strength curve", value=args.param.strength_curve.default, interactive=True)
-    controls["steps_curve"] = gr.Text(label="Steps curve", value=args.param.steps_curve.default, interactive=True)
-
-def ui_for_generation(args: AnimationSettings, open=False):
-    p = args.param
-    with gr.Row():
-        controls["width"] = gr.Number(label="Width", value=p.width.default, interactive=True, precision=0)
-        controls["height"] = gr.Number(label="Height", value=p.height.default, interactive=True, precision=0)
-    with gr.Row():
-        controls["model"] = gr.Dropdown(label="Model", choices=p.model.objects, value=p.model.default, interactive=True)
-        controls["custom_model"] = gr.Text(label="Custom model", value=p.custom_model.default, interactive=True)
-    with gr.Row():
-        controls["sampler"] = gr.Dropdown(label="Sampler", choices=p.sampler.objects, value=p.sampler.default, interactive=True)
-        controls["seed"] = gr.Number(label="Seed", value=p.seed.default, interactive=True, precision=0)
-        controls["cfg_scale"] = gr.Number(label="Guidance scale", value=p.cfg_scale.default, interactive=True)
-        controls["clip_guidance"] = gr.Dropdown(label="CLIP guidance", choices=p.clip_guidance.objects, value=p.clip_guidance.default, interactive=True)
-
-def ui_for_init_and_mask(args_generation):
-    p = args_generation.param
-    with gr.Row():
-        controls["init_image"] = gr.Text(label="Init image", value=p.custom_model.default, interactive=True)
-        controls["init_sizing"] = gr.Dropdown(label="Init sizing", choices=p.init_sizing.objects, value=p.init_sizing.default, interactive=True)
-    with gr.Row():
-        controls["mask_path"] = gr.Text(label="Mask path", value=p.mask_path.default, interactive=True)
-        controls["mask_invert"] = gr.Checkbox(label="Mask invert", value=p.mask_invert.default, interactive=True)
-
-def ui_for_video_output(args: VideoOutputSettings, open=False):
-    p = args.param
-    controls["fps"] = gr.Number(label="FPS", value=p.fps.default, interactive=True, precision=0)
-    controls["reverse"] = gr.Checkbox(label="Reverse", value=p.reverse.default, interactive=True)
-    with gr.Row():
-        controls["vr_mode"] = gr.Checkbox(label="VR Mode", value=p.vr_mode.default, interactive=True)
-        controls["vr_eye_angle"] = gr.Number(label="Eye angle", value=p.vr_eye_angle.default, interactive=True)
-        controls["vr_eye_dist"] = gr.Number(label="Eye distance", value=p.vr_eye_dist.default, interactive=True)
-        controls["vr_projection"] = gr.Number(label="Spherical projection", value=p.vr_projection.default, interactive=True)
-
-def ui_from_args(args: param.Parameterized, exclude: List[str]=[]):
-    for k, v in args.param.objects().items():
-        if k == "name" or k in exclude:
-            continue
-        elif isinstance(v, param.Integer):
-            t = gr.Number(label=v.label, value=v.default, interactive=True, precision=0)
-        elif isinstance(v, param.ObjectSelector):
-            t = gr.Dropdown(label=v.label, choices=v.objects, value=v.default, interactive=True)
-        elif isinstance(v, param.Boolean):
-            t = gr.Checkbox(label=v.label, value=v.default, interactive=True)
-        elif isinstance(v, param.String):
-            t = gr.Text(label=v.label, value=v.default, interactive=True)
-        elif isinstance(v, param.Number):
-            t = gr.Number(label=v.label, value=v.default, interactive=True)
-        controls[k] = t
-
-def ui_layout_tabs():
-    with gr.Tab("Prompts"):
-        with gr.Row():
-            controls['animation_prompts'] = gr.TextArea(label="Animation prompts", max_lines=8, value=animation_prompts, interactive=True)
-        with gr.Row():
-            controls['negative_prompt'] = gr.Textbox(label="Negative prompt", max_lines=1, value=negative_prompt, interactive=True)
-    with gr.Tab("Config"):
-        with gr.Row():
-            args = args_animation
-            controls["animation_mode"] = gr.Dropdown(label="Animation mode", choices=args.param.animation_mode.objects, value=args.param.animation_mode.default, interactive=True)
-            controls["max_frames"] = gr.Number(label="Max frames", value=args.param.max_frames.default, interactive=True, precision=0)
-            controls["border"] = gr.Dropdown(label="Border", choices=args.param.border.objects, value=args.param.border.default, interactive=True)
-        ui_for_generation(args_generation, open=True)
-        ui_for_animation_settings(args_animation)
-        accordion_from_args("Coherence", args_coherence, open=False)
-        accordion_for_color(args_color, open=False)
-        accordion_from_args("Depth", args_depth, exclude=["near_plane", "far_plane"], open=False)
-        accordion_from_args("Realistic 3D", args_render_3d, open=False)
-        accordion_from_args("Inpainting", args_inpaint, open=False)
-    with gr.Tab("Input"):
-        ui_for_init_and_mask(args_generation)
-        with gr.Column():
-            p = args_vid_in.param
-            with gr.Row():
-                controls["video_init_path"] = gr.Text(label="Video init path", value=p.video_init_path.default, interactive=True)
-            with gr.Row():
-                controls["video_mix_in_curve"] = gr.Text(label="Mix in curve", value=p.video_mix_in_curve.default, interactive=True)
-                controls["extract_nth_frame"] = gr.Number(label="Extract nth frame", value=p.extract_nth_frame.default, interactive=True, precision=0)
-                controls["video_flow_warp"] = gr.Checkbox(label="Flow warp", value=p.video_flow_warp.default, interactive=True)
-
-    with gr.Tab("Camera"):
-        p = args_camera.param
-        gr.Markdown("2D Camera")
-        controls["angle"] = gr.Text(label="Angle", value=p.angle.default, interactive=True)
-        controls["zoom"] = gr.Text(label="Zoom", value=p.zoom.default, interactive=True)
-
-        gr.Markdown("2D and 3D Camera translation")
-        controls["translation_x"] = gr.Text(label="Translation X", value=p.translation_x.default, interactive=True)
-        controls["translation_y"] = gr.Text(label="Translation Y", value=p.translation_y.default, interactive=True)
-        controls["translation_z"] = gr.Text(label="Translation Z", value=p.translation_z.default, interactive=True)
-
-        gr.Markdown("3D Camera rotation")
-        controls["rotation_x"] = gr.Text(label="Rotation X", value=p.rotation_x.default, interactive=True)
-        controls["rotation_y"] = gr.Text(label="Rotation Y", value=p.rotation_y.default, interactive=True)
-        controls["rotation_z"] = gr.Text(label="Rotation Z", value=p.rotation_z.default, interactive=True)
-
-    with gr.Tab("Output"):
-        ui_for_video_output(args_vid_out, open=True)
-
 def render_tab():
     with gr.Row():
         with gr.Column():
@@ -431,7 +326,7 @@ def render_tab():
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
     def render(*render_args):
-        global interrupt, project
+        global interrupt, last_project_settings_path, project
         if not project:
             raise gr.Error("No project active!")
         
@@ -508,7 +403,8 @@ def render_tab():
                     image_out: gr.update(value=frame, label=f"frame {frame_idx}/{args.max_frames}", visible=True),
                     video_out: gr.update(visible=False),
                     header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
-                    error_log: gr.update(visible=False)
+                    error_log: gr.update(visible=False),
+                    video_update_button: gr.update(visible=False),
                 }
         except ClassifierException as ce:
             error = "Animation terminated early due to classifier."
@@ -516,6 +412,7 @@ def render_tab():
             error = f"Animation terminated early due to exception: {e}"
 
         if frame_idx:
+            last_project_settings_path = project_settings_path
             output_video = project_settings_path.replace(".json", ".mp4")
             frames_to_video(outdir, output_video, fps=args.fps, reverse=args.reverse)
         else:
@@ -527,23 +424,142 @@ def render_tab():
             image_out: gr.update(visible=False),
             video_out: gr.update(value=output_video, visible=True),
             header: gr.update(value=format_header_html()),
-            error_log: gr.update(value=error, visible=bool(error))
+            error_log: gr.update(value=error, visible=bool(error)),
+            video_update_button: gr.update(visible=bool(output_video)),
         }
 
     button.click(
         render,
         inputs=list(controls.values()),
-        outputs=[button, button_stop, image_out, video_out, header, error_log]
+        outputs=[button, button_stop, image_out, video_out, header, error_log, video_update_button]
     )
 
+    # rebuild mp4 from frames with updated settings
+    def update_last_video(*render_args):
+        args = {k: v for k, v in zip(controls.keys(), render_args)}
+        outdir = os.path.dirname(last_project_settings_path)
+        output_video = last_project_settings_path.replace(".json", ".mp4")
+        frames_to_video(outdir, output_video, fps=args['fps'], reverse=args['reverse'])
+        yield {
+            video_out: gr.update(value=output_video, visible=True),
+        }
+    video_update_button.click(update_last_video, inputs=list(controls.values()), outputs=[video_out])
+
+    # stop animation in progress 
     def stop():
         global interrupt
         interrupt = True
-        yield {
-            button: gr.update(visible=True),
-            button_stop: gr.update(visible=False),
-        }
+        yield { button: gr.update(visible=True), button_stop: gr.update(visible=False) }
     button_stop.click(stop, inputs=[], outputs=[button, button_stop])
+
+def ui_for_animation_settings(args: AnimationSettings, open=False):
+    with gr.Row():
+        controls["steps_strength_adj"] = gr.Checkbox(label="Steps strength adj", value=args.param.steps_strength_adj.default, interactive=True)
+        controls["interpolate_prompts"] = gr.Checkbox(label="Interpolate prompts", value=args.param.interpolate_prompts.default, interactive=True)
+        controls["locked_seed"] = gr.Checkbox(label="Locked seed", value=args.param.locked_seed.default, interactive=True)
+    controls["noise_add_curve"] = gr.Text(label="Noise add curve", value=args.param.noise_add_curve.default, interactive=True)
+    controls["noise_scale_curve"] = gr.Text(label="Noise scale curve", value=args.param.noise_scale_curve.default, interactive=True)
+    controls["strength_curve"] = gr.Text(label="Previous frame strength curve", value=args.param.strength_curve.default, interactive=True)
+    controls["steps_curve"] = gr.Text(label="Steps curve", value=args.param.steps_curve.default, interactive=True)
+
+def ui_for_generation(args: AnimationSettings, open=False):
+    p = args.param
+    with gr.Row():
+        controls["width"] = gr.Number(label="Width", value=p.width.default, interactive=True, precision=0)
+        controls["height"] = gr.Number(label="Height", value=p.height.default, interactive=True, precision=0)
+    with gr.Row():
+        controls["model"] = gr.Dropdown(label="Model", choices=p.model.objects, value=p.model.default, interactive=True)
+        controls["custom_model"] = gr.Text(label="Custom model", value=p.custom_model.default, interactive=True)
+    with gr.Row():
+        controls["sampler"] = gr.Dropdown(label="Sampler", choices=p.sampler.objects, value=p.sampler.default, interactive=True)
+        controls["seed"] = gr.Number(label="Seed", value=p.seed.default, interactive=True, precision=0)
+        controls["cfg_scale"] = gr.Number(label="Guidance scale", value=p.cfg_scale.default, interactive=True)
+        controls["clip_guidance"] = gr.Dropdown(label="CLIP guidance", choices=p.clip_guidance.objects, value=p.clip_guidance.default, interactive=True)
+
+def ui_for_init_and_mask(args_generation):
+    p = args_generation.param
+    with gr.Row():
+        controls["init_image"] = gr.Text(label="Init image", value=p.custom_model.default, interactive=True)
+        controls["init_sizing"] = gr.Dropdown(label="Init sizing", choices=p.init_sizing.objects, value=p.init_sizing.default, interactive=True)
+    with gr.Row():
+        controls["mask_path"] = gr.Text(label="Mask path", value=p.mask_path.default, interactive=True)
+        controls["mask_invert"] = gr.Checkbox(label="Mask invert", value=p.mask_invert.default, interactive=True)
+
+def ui_for_video_output(args: VideoOutputSettings, open=False):
+    p = args.param
+    controls["fps"] = gr.Number(label="FPS", value=p.fps.default, interactive=True, precision=0)
+    controls["reverse"] = gr.Checkbox(label="Reverse", value=p.reverse.default, interactive=True)
+    with gr.Row():
+        controls["vr_mode"] = gr.Checkbox(label="VR Mode", value=p.vr_mode.default, interactive=True)
+        controls["vr_eye_angle"] = gr.Number(label="Eye angle", value=p.vr_eye_angle.default, interactive=True)
+        controls["vr_eye_dist"] = gr.Number(label="Eye distance", value=p.vr_eye_dist.default, interactive=True)
+        controls["vr_projection"] = gr.Number(label="Spherical projection", value=p.vr_projection.default, interactive=True)
+    video_update_button.render()   
+
+def ui_from_args(args: param.Parameterized, exclude: List[str]=[]):
+    for k, v in args.param.objects().items():
+        if k == "name" or k in exclude:
+            continue
+        elif isinstance(v, param.Integer):
+            t = gr.Number(label=v.label, value=v.default, interactive=True, precision=0)
+        elif isinstance(v, param.ObjectSelector):
+            t = gr.Dropdown(label=v.label, choices=v.objects, value=v.default, interactive=True)
+        elif isinstance(v, param.Boolean):
+            t = gr.Checkbox(label=v.label, value=v.default, interactive=True)
+        elif isinstance(v, param.String):
+            t = gr.Text(label=v.label, value=v.default, interactive=True)
+        elif isinstance(v, param.Number):
+            t = gr.Number(label=v.label, value=v.default, interactive=True)
+        controls[k] = t
+
+def ui_layout_tabs():
+    with gr.Tab("Prompts"):
+        with gr.Row():
+            controls['animation_prompts'] = gr.TextArea(label="Animation prompts", max_lines=8, value=animation_prompts, interactive=True)
+        with gr.Row():
+            controls['negative_prompt'] = gr.Textbox(label="Negative prompt", max_lines=1, value=negative_prompt, interactive=True)
+    with gr.Tab("Config"):
+        with gr.Row():
+            args = args_animation
+            controls["animation_mode"] = gr.Dropdown(label="Animation mode", choices=args.param.animation_mode.objects, value=args.param.animation_mode.default, interactive=True)
+            controls["max_frames"] = gr.Number(label="Max frames", value=args.param.max_frames.default, interactive=True, precision=0)
+            controls["border"] = gr.Dropdown(label="Border", choices=args.param.border.objects, value=args.param.border.default, interactive=True)
+        ui_for_generation(args_generation, open=True)
+        ui_for_animation_settings(args_animation)
+        accordion_from_args("Coherence", args_coherence, open=False)
+        accordion_for_color(args_color, open=False)
+        accordion_from_args("Depth", args_depth, exclude=["near_plane", "far_plane"], open=False)
+        accordion_from_args("Realistic 3D", args_render_3d, open=False)
+        accordion_from_args("Inpainting", args_inpaint, open=False)
+    with gr.Tab("Input"):
+        ui_for_init_and_mask(args_generation)
+        with gr.Column():
+            p = args_vid_in.param
+            with gr.Row():
+                controls["video_init_path"] = gr.Text(label="Video init path", value=p.video_init_path.default, interactive=True)
+            with gr.Row():
+                controls["video_mix_in_curve"] = gr.Text(label="Mix in curve", value=p.video_mix_in_curve.default, interactive=True)
+                controls["extract_nth_frame"] = gr.Number(label="Extract nth frame", value=p.extract_nth_frame.default, interactive=True, precision=0)
+                controls["video_flow_warp"] = gr.Checkbox(label="Flow warp", value=p.video_flow_warp.default, interactive=True)
+
+    with gr.Tab("Camera"):
+        p = args_camera.param
+        gr.Markdown("2D Camera")
+        controls["angle"] = gr.Text(label="Angle", value=p.angle.default, interactive=True)
+        controls["zoom"] = gr.Text(label="Zoom", value=p.zoom.default, interactive=True)
+
+        gr.Markdown("2D and 3D Camera translation")
+        controls["translation_x"] = gr.Text(label="Translation X", value=p.translation_x.default, interactive=True)
+        controls["translation_y"] = gr.Text(label="Translation Y", value=p.translation_y.default, interactive=True)
+        controls["translation_z"] = gr.Text(label="Translation Z", value=p.translation_z.default, interactive=True)
+
+        gr.Markdown("3D Camera rotation")
+        controls["rotation_x"] = gr.Text(label="Rotation X", value=p.rotation_x.default, interactive=True)
+        controls["rotation_y"] = gr.Text(label="Rotation Y", value=p.rotation_y.default, interactive=True)
+        controls["rotation_z"] = gr.Text(label="Rotation Z", value=p.rotation_z.default, interactive=True)
+
+    with gr.Tab("Output"):
+        ui_for_video_output(args_vid_out, open=True)
 
 
 def create_ui(api_: Api, outputs_path_: str):
