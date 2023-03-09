@@ -18,6 +18,8 @@ except ImportError:
         "   pip install --upgrade stability_sdk[anim]"
     )
 
+import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2 as dashboard
+import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2_grpc as dashboard_grpc
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 import stability_sdk.interfaces.gooseai.project.project_pb2 as project
@@ -194,21 +196,28 @@ class Project():
 class Api:
     def __init__(self, host: str="", api_key: str=None, stub: generation_grpc.GenerationServiceStub=None):
         if not host and stub is None:
-            raise Exception("Must provide either GRPC host or stub to Api")        
+            raise Exception("Must provide either GRPC host or stub to Api")
         channel = open_channel(host, api_key) if host else None
         if not stub:
             stub = generation_grpc.GenerationServiceStub(channel)
+
+        self._dashboard_stub = dashboard_grpc.DashboardServiceStub(channel) if channel else None
         self._proj_stub = project_grpc.ProjectServiceStub(channel) if channel else None
+
         self._asset = ApiEndpoint(stub, 'asset-service')
         self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
         self._inpaint = ApiEndpoint(stub, 'stable-inpainting-512-v2-0')
         self._interpolate = ApiEndpoint(stub, 'interpolation-server-v1')
         self._transform = ApiEndpoint(stub, 'transform-server-v1')
+
         self._debug_no_chains = False
-        self._max_retries = 3 # retry request on RPC error
-        self._retry_delay = 1.0 # base delay in seconds between retries, each attempt will double
-        self._retry_obfuscation = False # retry request with different seed on classifier obfuscation
+        self._max_retries = 5             # retry request on RPC error
+        self._retry_delay = 1.0           # base delay in seconds between retries, each attempt will double
+        self._retry_obfuscation = False   # retry request with different seed on classifier obfuscation
         self._retry_schedule_offset = 0.1 # increase schedule start by this amount on each retry after the first
+
+        self._user_organization_id = None
+        self._user_profile_picture = None
 
         logger.warning(
             "\n"
@@ -293,6 +302,15 @@ class Api:
             results[generation.ARTIFACT_IMAGE] = [image_mix(image, init_image, mask) for image in results[generation.ARTIFACT_IMAGE]]
 
         return results
+
+    def get_user_info(self) -> Tuple[float, str]:
+        """Get the number of credits the user has remaining and their profile picture."""
+        if not self._user_organization_id:
+            user = self._dashboard_stub.GetMe(dashboard.EmptyRequest())
+            self._user_profile_picture = user.profile_picture
+            self._user_organization_id = user.organizations[0].organization.id
+        organization = self._dashboard_stub.GetOrganization(dashboard.GetOrganizationRequest(id=self._user_organization_id))
+        return organization.payment_info.balance * 100, self._user_profile_picture
 
     def inpaint(
         self,
