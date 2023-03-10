@@ -91,7 +91,6 @@ def test_api_interpolate():
     assert len(results) == 3
 
 def test_api_transform():
-    api = Context(stub=MockStub())
     # TODO: implement transform tests after API finalized
 
 def test_client_import():

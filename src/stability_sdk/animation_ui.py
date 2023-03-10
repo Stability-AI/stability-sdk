@@ -104,7 +104,7 @@ header = gr.HTML("", show_progress=False)
 interrupt = False
 last_project_settings_path = None
 projects: List[Project] = []
-project: Project = None
+project: Optional[Project] = None
 
 project_create_button = gr.Button("Create")
 project_data_log = gr.Textbox(label="Status", visible=False)
@@ -116,9 +116,9 @@ projects_row = None
 video_update_button = gr.Button("Update last video", visible=False)
 
 
-def accordion_for_color(args: ColorSettings, open=False):
+def accordion_for_color(args: ColorSettings):
     p = args.param
-    with gr.Accordion("Color", open=open):
+    with gr.Accordion("Color", open=False):
         controls["color_coherence"] = gr.Dropdown(label="Color coherence", choices=p.color_coherence.objects, value=p.color_coherence.default, interactive=True)
         with gr.Row():
             controls["brightness_curve"] = gr.Text(label="Brightness curve", value=p.brightness_curve.default, interactive=True)
@@ -367,7 +367,7 @@ def render_tab():
             try:
                 prompts = eval(animation_prompts)
             except Exception as e:
-                raise gr.Error(f"Invalid JSON or Python code for animation_prompts!")
+                raise gr.Error("Invalid JSON or Python code for animation_prompts!")
         prompts = {int(k): v for k, v in prompts.items()}
 
         # save settings to a dict
@@ -417,7 +417,7 @@ def render_tab():
                     error_log: gr.update(visible=False),
                     video_update_button: gr.update(visible=False),
                 }
-        except ClassifierException as ce:
+        except ClassifierException:
             error = "Animation terminated early due to NSFW classifier."
         except OutOfCreditsException as e:
             error = f"Animation terminated early, out of credits.\n{e.details}"
@@ -465,7 +465,7 @@ def render_tab():
         yield { button: gr.update(visible=True), button_stop: gr.update(visible=False) }
     button_stop.click(stop, inputs=[], outputs=[button, button_stop])
 
-def ui_for_animation_settings(args: AnimationSettings, open=False):
+def ui_for_animation_settings(args: AnimationSettings):
     with gr.Row():
         controls["steps_strength_adj"] = gr.Checkbox(label="Steps strength adj", value=args.param.steps_strength_adj.default, interactive=True)
         controls["interpolate_prompts"] = gr.Checkbox(label="Interpolate prompts", value=args.param.interpolate_prompts.default, interactive=True)
@@ -475,7 +475,7 @@ def ui_for_animation_settings(args: AnimationSettings, open=False):
     controls["strength_curve"] = gr.Text(label="Previous frame strength curve", value=args.param.strength_curve.default, interactive=True)
     controls["steps_curve"] = gr.Text(label="Steps curve", value=args.param.steps_curve.default, interactive=True)
 
-def ui_for_generation(args: AnimationSettings, open=False):
+def ui_for_generation(args: AnimationSettings):
     p = args.param
     with gr.Row():
         controls["width"] = gr.Number(label="Width", value=p.width.default, interactive=True, precision=0)
@@ -498,7 +498,7 @@ def ui_for_init_and_mask(args_generation):
         controls["mask_path"] = gr.Text(label="Mask path", value=p.mask_path.default, interactive=True)
         controls["mask_invert"] = gr.Checkbox(label="Mask invert", value=p.mask_invert.default, interactive=True)
 
-def ui_for_video_output(args: VideoOutputSettings, open=False):
+def ui_for_video_output(args: VideoOutputSettings):
     p = args.param
     controls["fps"] = gr.Number(label="FPS", value=p.fps.default, interactive=True, precision=0)
     controls["reverse"] = gr.Checkbox(label="Reverse", value=p.reverse.default, interactive=True)
@@ -537,10 +537,10 @@ def ui_layout_tabs():
             controls["animation_mode"] = gr.Dropdown(label="Animation mode", choices=args.param.animation_mode.objects, value=args.param.animation_mode.default, interactive=True)
             controls["max_frames"] = gr.Number(label="Max frames", value=args.param.max_frames.default, interactive=True, precision=0)
             controls["border"] = gr.Dropdown(label="Border", choices=args.param.border.objects, value=args.param.border.default, interactive=True)
-        ui_for_generation(args_generation, open=True)
+        ui_for_generation(args_generation)
         ui_for_animation_settings(args_animation)
         accordion_from_args("Coherence", args_coherence, open=False)
-        accordion_for_color(args_color, open=False)
+        accordion_for_color(args_color)
         accordion_from_args("Depth", args_depth, exclude=["near_plane", "far_plane"], open=False)
         accordion_from_args("Realistic 3D", args_render_3d, open=False)
         accordion_from_args("Inpainting", args_inpaint, open=False)
@@ -572,12 +572,12 @@ def ui_layout_tabs():
         controls["rotation_z"] = gr.Text(label="Rotation Z", value=p.rotation_z.default, interactive=True)
 
     with gr.Tab("Output"):
-        ui_for_video_output(args_vid_out, open=True)
+        ui_for_video_output(args_vid_out)
 
 
 def create_ui(api_context: Context, outputs_root_path: str):
     global context, outputs_path
-    context, outputs_path = api_context, outputs_path
+    context, outputs_path = api_context, outputs_root_path
 
     locale.setlocale(locale.LC_ALL, '')
 
