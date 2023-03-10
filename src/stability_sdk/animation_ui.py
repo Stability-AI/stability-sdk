@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional
 from .api import (
     Api,
     ClassifierException, 
-    Project
+    Project,
+    OutOfCreditsException,
 )
 from .animation import (
     AnimationArgs,
@@ -251,7 +252,14 @@ def project_load(title: str):
     ensure_api()
     global project
     project = next(p for p in projects if p.title == title)
-    data = project.load_settings()
+    try:
+        data = project.load_settings()
+    except OutOfCreditsException as e:
+        log = f"Not enough credits to load project '{title}'\n{e.details}"
+        returns = args_to_controls(get_default_project())
+        returns[project_data_log] = gr.update(value=log, visible=True)
+        return returns
+
     log = f"Loaded project '{title}' with id {project.id}\n{json.dumps(data, indent=4)}"
 
     # filter project file to latest version
@@ -369,7 +377,10 @@ def render_tab():
         save_dict.update(args.param.values())
         save_dict['animation_prompts'] = animation_prompts
         save_dict['negative_prompt'] = negative_prompt
-        project.save_settings(save_dict)
+        try:
+            project.save_settings(save_dict)
+        except OutOfCreditsException as e:
+            raise gr.Error(e.details)
         with open(project_settings_path, 'w', encoding='utf-8') as f:
             json.dump(save_dict, f, indent=4)
 
@@ -407,7 +418,9 @@ def render_tab():
                     video_update_button: gr.update(visible=False),
                 }
         except ClassifierException as ce:
-            error = "Animation terminated early due to classifier."
+            error = "Animation terminated early due to NSFW classifier."
+        except OutOfCreditsException as e:
+            error = f"Animation terminated early, out of credits.\n{e.details}"
         except Exception as e:
             error = f"Animation terminated early due to exception: {e}"
 

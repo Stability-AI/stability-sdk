@@ -57,6 +57,11 @@ class ClassifierException(Exception):
     def __init__(self, classifier_result: generation.ClassifierParameters):
         self.classifier_result = classifier_result
 
+class OutOfCreditsException(Exception):
+    """Raised when account doesn't have enough credits to perform a request."""
+    def __init__(self, details: str):
+        self.details = details
+
 
 class ApiEndpoint:
     def __init__(self, stub, engine_id):
@@ -119,10 +124,9 @@ class Project():
                 use=generation.ASSET_USE_PROJECT
             )
         )
-        for resp in self._api._asset.stub.Generate(request, wait_for_ready=True):
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_TEXT:
-                    return json.loads(artifact.text)
+        results = self._api._run_request(self._api._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return json.loads(results[generation.ARTIFACT_TEXT][0])
         raise Exception(f"Failed to load project file for {self.id}")
 
     def save_settings(self, data: dict) -> str:
@@ -143,12 +147,9 @@ class Project():
                 use=generation.ASSET_USE_PROJECT
             )
         )
-        for resp in self._api._asset.stub.Generate(request, wait_for_ready=True):
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_TEXT:
-                    self.update(file_id=artifact.uuid, file_uri=artifact.text)
-                    logger.info(f"Saved project file {artifact.uuid} for {self.id}")
-                    return artifact.uuid
+        results = self._api._run_request(self._api._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return results[generation.ARTIFACT_TEXT][0]
         raise Exception(f"Failed to save project file for {self.id}")
 
     def put_image_asset(
@@ -156,7 +157,7 @@ class Project():
         image: Union[Image.Image, np.ndarray],
         use: generation.AssetUse=generation.ASSET_USE_OUTPUT
     ):
-        store_rq = generation.Request(
+        request = generation.Request(
             engine_id=self._api._asset.engine_id,
             prompt=[image_to_prompt(image)],
             asset=generation.AssetParameters(
@@ -165,11 +166,9 @@ class Project():
                 use=use
             )
         )
-
-        for resp in self._api._asset.stub.Generate(store_rq, wait_for_ready=True):
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_TEXT:
-                    return artifact.uuid
+        results = self._api._run_request(self._api._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return results[generation.ARTIFACT_TEXT][0]
         raise Exception(f"Failed to store image asset for project {self.id}")
 
     def update(self, title:str=None, file_id:str=None, file_uri:str=None):
@@ -705,8 +704,12 @@ class Api:
                 else:
                     raise ce
             except grpc.RpcError as rpc_error:
+                if hasattr(rpc_error, "code") and rpc_error.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
+                    raise OutOfCreditsException(rpc_error.details())
+
                 if attempt == self._max_retries:
                     raise rpc_error
+
                 logger.warning(f"Received RpcError: {rpc_error} will retry {self._max_retries-attempt} more times")
                 time.sleep(self._retry_delay * 2**attempt)
         return results
