@@ -92,6 +92,7 @@ def test_api_interpolate():
 
 def test_api_transform():
     # TODO: implement transform tests after API finalized
+    pass
 
 def test_client_import():
     from stability_sdk import client
