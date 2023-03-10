@@ -172,9 +172,9 @@ def format_header_html() -> str:
     balance, profile_picture = context.get_user_info()
     formatted_number = locale.format_string("%d", balance, grouping=True)
     return f"""
-        <div class="flex flex-row items-center" style="justify-content: space-between; margin-top: 8px;">
+        <div class="flex flex-row items-center" style="display:flex; justify-content: space-between; margin-top: 8px;">
             <div>StabilityAI Stable Diffusion Animation</div>
-            <div class="flex cursor-pointer flex-row items-center gap-1" style="justify-content: flex-end;">
+            <div class="flex cursor-pointer flex-row items-center gap-1" style="display:flex; gap: 0.25rem; justify-content: flex-end;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
                     <circle cx="8" cy="8" r="6"></circle>
                     <path d="M18.09 10.37A6 6 0 1 1 10.34 18"></path>
