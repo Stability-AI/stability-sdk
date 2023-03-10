@@ -14,7 +14,7 @@ from PIL import Image
 from types import SimpleNamespace
 from typing import Deque, Generator, List, Optional, Tuple, Union
 
-from stability_sdk.api import Api, generation
+from stability_sdk.api import Context, generation
 from stability_sdk.utils import (
     color_adjust_op,
     cv2_to_pil,
@@ -242,7 +242,7 @@ def to_3x3(m: matrix.Matrix) -> matrix.Matrix:
 class Animator:
     def __init__(
         self,
-        api: Api,
+        api_context: Context,
         animation_prompts,
         args=None,
         out_dir='.',
@@ -250,7 +250,7 @@ class Animator:
         negative_prompt_weight=-1.0,
         resume: bool = False
     ):
-        self.api = api
+        self.api = api_context
         self.animation_prompts = animation_prompts
         self.args = args
         self.color_match_image: Optional[np.ndarray] = None

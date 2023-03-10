@@ -63,14 +63,14 @@ class OutOfCreditsException(Exception):
         self.details = details
 
 
-class ApiEndpoint:
+class Endpoint:
     def __init__(self, stub, engine_id):
         self.stub = stub
         self.engine_id = engine_id
 
 class Project():
-    def __init__(self, api: 'Api', project: project.Project):
-        self._api = api
+    def __init__(self, context: 'Context', project: project.Project):
+        self._context = context
         self._project = project
 
     @property
@@ -87,30 +87,30 @@ class Project():
 
     @staticmethod
     def create(
-        api: 'Api', 
+        context: 'Context', 
         title: str, 
         access: project.ProjectAccess=project.PROJECT_ACCESS_PRIVATE,
         status: project.ProjectStatus=project.PROJECT_STATUS_ACTIVE
     ) -> 'Project':
         req = project.CreateProjectRequest(title=title, access=access, status=status)
-        proj: project.Project = api._proj_stub.Create(req, wait_for_ready=True)
-        return Project(api, proj)
+        proj: project.Project = context._proj_stub.Create(req, wait_for_ready=True)
+        return Project(context, proj)
 
     def delete(self):
-        self._api._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
+        self._context._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
 
     @staticmethod
-    def list_projects(api: 'Api') -> List['Project']:
+    def list_projects(context: 'Context') -> List['Project']:
         list_req = project.ListProjectRequest(owner_id="")
         results = []
-        for proj in api._proj_stub.List(list_req, wait_for_ready=True):
-            results.append(Project(api, proj))
+        for proj in context._proj_stub.List(list_req, wait_for_ready=True):
+            results.append(Project(context, proj))
         results.sort(key=lambda x: x.title.lower())
         return results
 
     def load_settings(self) -> dict:
         request = generation.Request(
-            engine_id=self._api._asset.engine_id,
+            engine_id=self._context._asset.engine_id,
             prompt=[generation.Prompt(
                 artifact=generation.Artifact(
                     type=generation.ARTIFACT_TEXT,
@@ -124,7 +124,7 @@ class Project():
                 use=generation.ASSET_USE_PROJECT
             )
         )
-        results = self._api._run_request(self._api._asset, request)
+        results = self._context._run_request(self._context._asset, request)
         if generation.ARTIFACT_TEXT in results:
             return json.loads(results[generation.ARTIFACT_TEXT][0])
         raise Exception(f"Failed to load project file for {self.id}")
@@ -132,7 +132,7 @@ class Project():
     def save_settings(self, data: dict) -> str:
         contents = json.dumps(data)
         request = generation.Request(
-            engine_id=self._api._asset.engine_id,
+            engine_id=self._context._asset.engine_id,
             prompt=[generation.Prompt(
                 artifact=generation.Artifact(
                     type=generation.ARTIFACT_TEXT,
@@ -147,7 +147,7 @@ class Project():
                 use=generation.ASSET_USE_PROJECT
             )
         )
-        results = self._api._run_request(self._api._asset, request)
+        results = self._context._run_request(self._context._asset, request)
         if generation.ARTIFACT_TEXT in results:
             return results[generation.ARTIFACT_TEXT][0]
         raise Exception(f"Failed to save project file for {self.id}")
@@ -158,7 +158,7 @@ class Project():
         use: generation.AssetUse=generation.ASSET_USE_OUTPUT
     ):
         request = generation.Request(
-            engine_id=self._api._asset.engine_id,
+            engine_id=self._context._asset.engine_id,
             prompt=[image_to_prompt(image)],
             asset=generation.AssetParameters(
                 action=generation.ASSET_PUT, 
@@ -166,7 +166,7 @@ class Project():
                 use=use
             )
         )
-        results = self._api._run_request(self._api._asset, request)
+        results = self._context._run_request(self._context._asset, request)
         if generation.ARTIFACT_TEXT in results:
             return results[generation.ARTIFACT_TEXT][0]
         raise Exception(f"Failed to store image asset for project {self.id}")
@@ -178,7 +178,7 @@ class Project():
             use=project.PROJECT_ASSET_USE_PROJECT,
         ) if file_id and file_uri else None
         
-        self._api._proj_stub.Update(project.UpdateProjectRequest(
+        self._context._proj_stub.Update(project.UpdateProjectRequest(
             id=self.id, 
             title=title,
             file=file
@@ -192,7 +192,7 @@ class Project():
             self._project.file.uri = file_uri
 
 
-class Api:
+class Context:
     def __init__(self, host: str="", api_key: str=None, stub: generation_grpc.GenerationServiceStub=None):
         if not host and stub is None:
             raise Exception("Must provide either GRPC host or stub to Api")
@@ -203,11 +203,11 @@ class Api:
         self._dashboard_stub = dashboard_grpc.DashboardServiceStub(channel) if channel else None
         self._proj_stub = project_grpc.ProjectServiceStub(channel) if channel else None
 
-        self._asset = ApiEndpoint(stub, 'asset-service')
-        self._generate = ApiEndpoint(stub, 'stable-diffusion-v1-5')
-        self._inpaint = ApiEndpoint(stub, 'stable-inpainting-512-v2-0')
-        self._interpolate = ApiEndpoint(stub, 'interpolation-server-v1')
-        self._transform = ApiEndpoint(stub, 'transform-server-v1')
+        self._asset = Endpoint(stub, 'asset-service')
+        self._generate = Endpoint(stub, 'stable-diffusion-v1-5')
+        self._inpaint = Endpoint(stub, 'stable-inpainting-512-v2-0')
+        self._interpolate = Endpoint(stub, 'interpolation-server-v1')
+        self._transform = Endpoint(stub, 'transform-server-v1')
 
         self._debug_no_chains = False
         self._max_retries = 5             # retry request on RPC error
@@ -220,7 +220,7 @@ class Api:
 
         logger.warning(
             "\n"
-            "The functionality available through this Api class is in beta and subject to changes in both functionality and pricing.\n"
+            "The functionality available through this API Context class is in beta and subject to changes in both functionality and pricing.\n"
             "Please be aware that these changes may affect your implementation and usage of this class.\n"
             "\n"
         )
@@ -665,7 +665,7 @@ class Api:
 
     def _run_request(
         self, 
-        endpoint: ApiEndpoint, 
+        endpoint: Endpoint, 
         request: Union[generation.ChainRequest, generation.Request]
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         for attempt in range(self._max_retries+1):

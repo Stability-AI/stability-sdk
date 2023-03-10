@@ -11,8 +11,8 @@ from tqdm import tqdm
 from typing import Any, Dict, List, Optional
 
 from .api import (
-    Api,
     ClassifierException, 
+    Context,
     Project,
     OutOfCreditsException,
 )
@@ -69,7 +69,7 @@ PRESETS = {
     },
 }
 
-api = None
+context = None
 outputs_path = None
 
 args_generation = BasicSettings()
@@ -164,12 +164,12 @@ def args_to_controls(data: Optional[dict]=None) -> dict:
 
     return returns
 
-def ensure_api():
-    if api is None:
+def ensure_api_context():
+    if context is None:
         raise gr.Error("Not connected to Stability API")
 
 def format_header_html() -> str:
-    balance, profile_picture = api.get_user_info()
+    balance, profile_picture = context.get_user_info()
     formatted_number = locale.format_string("%d", balance, grouping=True)
     return f"""
         <div class="flex flex-row items-center" style="justify-content: space-between; margin-top: 8px;">
@@ -225,12 +225,12 @@ def get_default_project():
     return data
 
 def project_create(title, preset):
-    ensure_api()
+    ensure_api_context()
     global project, projects
     titles = [p.title for p in projects]
     if title in titles:
         raise gr.Error(f"Project with title '{title}' already exists")
-    project = Project.create(api, title)
+    project = Project.create(context, title)
     settings = get_default_project()
 
     # grab each setting from the preset and add to settings
@@ -238,7 +238,7 @@ def project_create(title, preset):
         settings[k] = v
 
     project.save_settings(settings)
-    projects = Project.list_projects(api)
+    projects = Project.list_projects(context)
     log = f"Created project '{title}' with id {project.id}\n{json.dumps(settings)}"
 
     args_reset_to_defaults()
@@ -249,7 +249,7 @@ def project_create(title, preset):
     return returns
 
 def project_load(title: str):
-    ensure_api()
+    ensure_api_context()
     global project
     project = next(p for p in projects if p.title == title)
     try:
@@ -295,12 +295,12 @@ def project_tab():
     project_data_log.render()
 
     def delete_project(title: str):
-        ensure_api()
+        ensure_api_context()
         global project, projects
         project = next(p for p in projects if p.title == title)
         project.delete()
         log = f"Deleted project '{title}' with id {project.id}"
-        projects = Project.list_projects(api)
+        projects = Project.list_projects(context)
         project = None
         return {
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
@@ -309,9 +309,9 @@ def project_tab():
         }
 
     def load_projects():
-        ensure_api()
+        ensure_api_context()
         global projects
-        projects = Project.list_projects(api)
+        projects = Project.list_projects(context)
         return {
             button_load_projects: gr.update(visible=len(projects)==0),
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
@@ -390,7 +390,7 @@ def render_tab():
             os.remove(f)
 
         animator = Animator(
-            api=api,
+            api_context=context,
             animation_prompts=prompts,
             args=args,
             out_dir=outdir,
@@ -575,9 +575,9 @@ def ui_layout_tabs():
         ui_for_video_output(args_vid_out, open=True)
 
 
-def create_ui(api_: Api, outputs_path_: str):
-    global api, outputs_path
-    api, outputs_path = api_, outputs_path_
+def create_ui(api_context: Context, outputs_root_path: str):
+    global context, outputs_path
+    context, outputs_path = api_context, outputs_path
 
     locale.setlocale(locale.LC_ALL, '')
 
