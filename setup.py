@@ -10,7 +10,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.3.0',
+    version='0.3.2',
     author='Wes Brown',
     author_email='wesbrown18@gmail.com',
     maintainer='David Marx',

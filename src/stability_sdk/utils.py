@@ -26,6 +26,9 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as genera
 from stability_sdk.matrix import Matrix
 
 
+logger = logging.getLogger(__name__)
+logger.setLevel(level=logging.INFO)
+
 SAMPLERS: Dict[str, int] = {
     "ddim": generation.SAMPLER_DDIM,
     "plms": generation.SAMPLER_DDPM,
@@ -72,6 +75,7 @@ CAMERA_TYPES = {
     'orthographic': generation.CAMERA_ORTHOGRAPHIC,
 }
 
+    
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
 

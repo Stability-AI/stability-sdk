@@ -4,6 +4,7 @@ import pytest
 from PIL import Image
 
 from stability_sdk import client
+from stability_sdk.api import Context
 from stability_sdk.utils import image_to_png_bytes
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
@@ -59,7 +60,7 @@ class MockStub:
 
 
 def test_api_generate():
-    api = client.Api(stub=MockStub())
+    api = Context(stub=MockStub())
     width, height = 512, 768
     results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height)
     assert isinstance(results, dict)
@@ -70,7 +71,7 @@ def test_api_generate():
     assert image.shape == (height, width, 3)
 
 def test_api_inpaint():
-    api = client.Api(stub=MockStub())
+    api = Context(stub=MockStub())
     width, height = 512, 768
     image = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
     mask = np.random.randint(0, 255, (height, width), dtype=np.uint8)
@@ -82,7 +83,7 @@ def test_api_inpaint():
     assert image.shape == (height, width, 3)
 
 def test_api_interpolate():
-    api = client.Api(stub=MockStub())
+    api = Context(stub=MockStub())
     width, height = 512, 768
     image_a = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
     image_b = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
@@ -90,8 +91,8 @@ def test_api_interpolate():
     assert len(results) == 3
 
 def test_api_transform():
-    api = client.Api(stub=MockStub())
     # TODO: implement transform tests after API finalized
+    pass
 
 def test_client_import():
     from stability_sdk import client
