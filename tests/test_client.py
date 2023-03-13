@@ -62,3 +62,13 @@ def test_server_mocking(grpc_server, grpc_addr):
     # might need this link later:
     # - https://stackoverflow.com/questions/54541338/calling-function-that-yields-from-a-pytest-fixture
     assert isinstance(response, Generator)
+
+def test_upscale(grpc_server, grpc_addr):
+    class_instance = client.StabilityInference(host=grpc_addr[0])
+    im = Image.new('RGB',(1,1))
+    response = class_instance.upscale(init_image=im)
+    print(response)
+    # might need this link later:
+    # - https://stackoverflow.com/questions/54541338/calling-function-that-yields-from-a-pytest-fixture
+    assert isinstance(response, Generator)
+
