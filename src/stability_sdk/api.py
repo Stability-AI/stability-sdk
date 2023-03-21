@@ -1,20 +1,24 @@
 import grpc
 import json
 import logging
+import os
 import random
+import shutil
 import time
+import uuid
 import warnings
 
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from abc import ABC, abstractmethod
 
 try:
     import cv2
     import numpy as np
 except ImportError:
     warnings.warn(
-        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
+        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:"
         "   pip install --upgrade stability_sdk[anim]"
     )
 
@@ -27,6 +31,7 @@ import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
 
 from .utils import (
     image_mix,
+    image_to_png_bytes,
     image_to_prompt,
     tensor_to_prompt,
 )
@@ -40,7 +45,7 @@ def open_channel(host: str, api_key: str = None, max_message_len: int = 10*1024*
     options=[
         ('grpc.max_send_message_length', max_message_len),
         ('grpc.max_receive_message_length', max_message_len),
-    ]    
+    ]
     if host.endswith(":443"):
         call_credentials = [grpc.access_token_call_credentials(api_key)]
         channel_credentials = grpc.composite_channel_credentials(
@@ -68,10 +73,210 @@ class Endpoint:
         self.stub = stub
         self.engine_id = engine_id
 
+
+class StorageBackend(ABC):
+    def __init__(self, project_id: str, project_file_id: str, context: 'Context', primary: bool = False, primary_fs: bool = False):
+        self._project_id = project_id
+        self._project_file_id = project_file_id
+        self._context = context
+        self.primary = primary
+        self.primary_fs = primary_fs
+
+    @abstractmethod
+    def load_settings(self) -> dict:
+        pass
+
+    @abstractmethod
+    def save_settings(self, data: dict) -> str:
+        pass
+
+    @abstractmethod
+    def put_image_asset(self, image: Union[Image.Image, np.ndarray], use: generation.AssetUse, name: str = None) -> str:
+        pass
+
+    @abstractmethod
+    def put_video_asset(self, video_path: str, asset_id: str) -> str:
+        pass
+
+
+class AssetServiceBackend(StorageBackend):
+    def __init__(self, project_id: str, project_file_id: str, context: 'Context', primary: bool = False):
+        super().__init__(project_id, project_file_id, context, primary)
+
+    def load_settings(self) -> dict:
+        request = generation.Request(
+            engine_id=self._context._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(
+                    type=generation.ARTIFACT_TEXT,
+                    mime="application/json",
+                    uuid=self._project_file_id,
+                )
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_GET,
+                project_id=self._project_id,
+                use=generation.ASSET_USE_PROJECT
+            )
+        )
+        results = self._context._run_request(self._context._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return json.loads(results[generation.ARTIFACT_TEXT][0])
+        raise Exception(f"Failed to load project file for {self._project_id}")
+
+
+    def save_settings(self, data: dict) -> str:
+        contents = json.dumps(data)
+        request = generation.Request(
+            engine_id=self._context._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(
+                    type=generation.ARTIFACT_TEXT,
+                    text=contents,
+                    mime="application/json",
+                    uuid=self._project_file_id
+                )
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_PUT,
+                project_id=self._project_id,
+                use=generation.ASSET_USE_PROJECT
+            )
+        )
+        results = self._context._run_request(self._context._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return results[generation.ARTIFACT_TEXT][0]
+        raise Exception(f"Failed to save project file for {self._project_id}")
+
+    def put_image_asset(self, image: Union[Image.Image, np.ndarray], use: generation.AssetUse, asset_id: str = None) -> str:
+        request = generation.Request(
+            engine_id=self._context._asset.engine_id,
+            prompt=[image_to_prompt(image)],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_PUT,
+                project_id=self._project_id,
+                use=use
+            )
+        )
+        results = self._context._run_request(self._context._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return results[generation.ARTIFACT_TEXT][0]
+        raise Exception(f"Failed to store image asset for project {self._project_id}")
+
+    def get_image_asset(self, name: str, use: generation.AssetUse) -> str:
+        request = generation.Request(
+            engine_id=self._context._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(
+                    type=generation.ARTIFACT_TEXT,
+                    mime="image/png",
+                    uuid=name,
+                )
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_GET,
+                project_id=self._project_id,
+                use=generation.ASSET_USE_PROJECT
+            )
+        )
+        results = self._context._run_request(self._context._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return results[generation.ARTIFACT_TEXT][0]
+        raise Exception(f"Failed to store image asset for project {self._project_id}")
+
+    def put_video_asset(self, video_path: str, asset_id: str) -> str:
+        if not os.path.isfile(video_path) or not video_path.endswith(".mp4"):
+            raise ValueError("Invalid video file path. Must be an existing .mp4 file.")
+
+        with open(video_path, "rb") as f:
+            binary_data = f.read()
+
+        request = generation.Request(
+            engine_id=self._context._asset.engine_id,
+            prompt=[
+                generation.Prompt(
+                    artifact=generation.Artifact(
+                        type=generation.ARTIFACT_VIDEO,
+                        mime="video/mp4",
+                        binary=binary_data,
+                    )
+                )
+            ],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_PUT,
+                project_id=self._project_id,
+                use=generation.ASSET_USE_INPUT,
+            ),
+        )
+        results = self._context._run_request(self._context._asset, request)
+        if generation.ARTIFACT_TEXT in results:
+            return results[generation.ARTIFACT_TEXT][0]
+        raise Exception(f"Failed to store video asset for project {self._project_id}")
+
+
+class LocalFileBackend(StorageBackend):
+    def __init__(self, project_id: str, project_file_id: str, context: 'Context', primary: bool = False, primary_fs: bool = True, projects_root = 'projects'):
+        super().__init__(project_id, project_file_id, context, primary, primary_fs = primary_fs)
+        self._projects_root = projects_root
+
+    def load_settings(self) -> dict:
+        # TODO(ADAM): Implement
+        pass
+
+    def save_settings(self, data: dict) -> str:
+        # TODO(ADAM): Implement
+        pass
+
+    def put_image_asset(self, image: Union[Image.Image, np.ndarray],
+                        use: generation.AssetUse,
+                        asset_id: str = None) -> str:
+        png = image_to_png_bytes(image)
+        if asset_id is not None:
+            filename = asset_id
+        else:
+            if not self.primary:
+                raise ValueError("If name is None, then LocalFileBackend must be primary.")
+            filename = str(uuid.uuid4())
+        output_path = self.get_path_for_asset(filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path + '.png', "wb") as file:
+            file.write(png)
+        return filename
+
+    def put_video_asset(self, video_path: str, asset_id: str = None) -> str:
+        if not os.path.isfile(video_path) or not video_path.endswith(".mp4"):
+            raise ValueError("Invalid video file path. Must be an existing .mp4 file.")
+
+        if asset_id is not None:
+            filename = asset_id
+        else:
+            if not self.primary:
+                raise ValueError("If name is None, then LocalFileBackend must be primary.")
+            filename = str(uuid.uuid4())
+        output_path = self.get_path_for_asset(filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        shutil.copy(video_path, output_path)
+        return filename
+
+    def get_path_for_asset(self, filename: str):
+        path = os.path.join(self._projects_root, self._project_id, filename)
+        return path
+
 class Project():
     def __init__(self, context: 'Context', project: project.Project):
+        ## __init__ could take backends: Optional[List[StorageBackend]] = None
+        # self._backends = backends if backends else [AssetServiceBackend(primary=True)]
+        self._backends = [AssetServiceBackend(project_id=project.id, project_file_id = project.file_id, context=context, primary=True),
+                          LocalFileBackend(project_id=project.id, project_file_id = project.file_id, context=context, primary=False)]
         self._context = context
         self._project = project
+        self._metadata_index = self.load_metadata_index()
+
+    def _primary_backend(self) -> Optional[StorageBackend]:
+        for backend in self._backends:
+            if backend.primary:
+                return backend
+        return None
 
     @property
     def id(self) -> str:
@@ -87,14 +292,29 @@ class Project():
 
     @staticmethod
     def create(
-        context: 'Context', 
-        title: str, 
-        access: project.ProjectAccess=project.PROJECT_ACCESS_PRIVATE,
-        status: project.ProjectStatus=project.PROJECT_STATUS_ACTIVE
+            context: 'Context',
+            title: str,
+            access: project.ProjectAccess = project.PROJECT_ACCESS_PRIVATE,
+            status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE
     ) -> 'Project':
         req = project.CreateProjectRequest(title=title, access=access, status=status)
         proj: project.Project = context._proj_stub.Create(req, wait_for_ready=True)
         return Project(context, proj)
+
+    @staticmethod
+    def get(
+            context: 'Context',
+            id: str
+    ) -> 'Project':
+        req = project.GetProjectRequest(id=id)
+        proj: project.Project = context._proj_stub.Get(req, wait_for_ready=True)
+        return Project(context, proj)
+
+    def list_assets(self):
+        req = project.QueryAssetsRequest(id=self.id)
+        query_assets_response: project.QueryAssetsResponse = self._context._proj_stub.QueryAssets(req,
+                                                                                                  wait_for_ready=True)
+        return query_assets_response.assets
 
     def delete(self):
         self._context._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
@@ -109,77 +329,66 @@ class Project():
         return results
 
     def load_settings(self) -> dict:
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[generation.Prompt(
-                artifact=generation.Artifact(
-                    type=generation.ARTIFACT_TEXT,
-                    mime="application/json",
-                    uuid=self.file_id,
-                )
-            )],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_GET, 
-                project_id=self.id,
-                use=generation.ASSET_USE_PROJECT
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return json.loads(results[generation.ARTIFACT_TEXT][0])
+        for backend in self._backends:
+            if backend.primary:
+                result = backend.load_settings()
+                return result
         raise Exception(f"Failed to load project file for {self.id}")
 
     def save_settings(self, data: dict) -> str:
-        contents = json.dumps(data)
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[generation.Prompt(
-                artifact=generation.Artifact(
-                    type=generation.ARTIFACT_TEXT,
-                    text=contents,
-                    mime="application/json",
-                    uuid=self.file_id
-                )
-            )],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_PUT, 
-                project_id=self.id, 
-                use=generation.ASSET_USE_PROJECT
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return results[generation.ARTIFACT_TEXT][0]
-        raise Exception(f"Failed to save project file for {self.id}")
+        results = None
+        for backend in self._backends:
+            temp = backend.save_settings(data)
+            if backend.primary:
+                results = temp
+        return results
 
     def put_image_asset(
-        self, 
-        image: Union[Image.Image, np.ndarray],
-        use: generation.AssetUse=generation.ASSET_USE_OUTPUT
+            self,
+            image: Union[Image.Image, np.ndarray],
+            use: generation.AssetUse = generation.ASSET_USE_PROJECT
     ):
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[image_to_prompt(image)],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_PUT, 
-                project_id=self.id, 
-                use=use
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return results[generation.ARTIFACT_TEXT][0]
-        raise Exception(f"Failed to store image asset for project {self.id}")
+        results = []
+        asset_id = None
+        filename = None
+        for backend in self._backends:
+            result = backend.put_image_asset(image, use, asset_id=asset_id)
+            if backend.primary:
+                rsplit_res = result.rsplit('/', 1)
+                asset_id = rsplit_res[1] if len(rsplit_res) > 1 else rsplit_res[0]
+                results.append(asset_id)
+            if backend.primary_fs:
+                filename = result
+        mimetype = "image/png"
+        self.add_asset_metadata(asset_id, mimetype, filename)
+        return results
 
-    def update(self, title:str=None, file_id:str=None, file_uri:str=None):
+    def put_video_asset(self, video_path: str) -> List[str]:
+        results = []
+        filename = None
+        asset_id = None
+        for backend in self._backends:
+            result = backend.put_video_asset(video_path, asset_id=asset_id)
+            if backend.primary:
+                rsplit_res = result.rsplit('/', 1)
+                asset_id = rsplit_res[1] if len(rsplit_res) > 1 else rsplit_res[0]
+                results.append(asset_id)
+            if backend.primary_fs:
+                filename = result
+        # E.g.: {3: ['https://object.lga1.coreweave.com/stability-assets-dev/org-yP0GBrIgOnDA6wwfyohorEPw/178c0ff3-5e01-4e4e-9f49-278510d80289/b8912c3b-eb98-4c8e-b346-fe483ba17f83']}
+        mimetype = "video/mp4"
+        self.add_asset_metadata(asset_id, mimetype, filename)
+        return results
+
+    def update(self, title: str = None, file_id: str = None, file_uri: str = None):
         file = project.ProjectAsset(
             id=file_id,
             uri=file_uri,
             use=project.PROJECT_ASSET_USE_PROJECT,
         ) if file_id and file_uri else None
-        
+
         self._context._proj_stub.Update(project.UpdateProjectRequest(
-            id=self.id, 
+            id=self.id,
             title=title,
             file=file
         ))
@@ -191,9 +400,33 @@ class Project():
         if file_uri:
             self._project.file.uri = file_uri
 
+    def add_asset_metadata(self, asset_id: str, mime_type: str, filename: str) -> None:
+        # metadata_index = self.load_metadata_index() # I assume metadata is updated by each operation
+        self._metadata_index[asset_id] = {
+            "mime_type": mime_type
+        }
+        if filename is not None:
+            self._metadata_index[asset_id]["file_name"] = filename
+        self.save_metadata_index()
+
+    def save_metadata_index(self, metadata_index: dict = None) -> None:
+        if metadata_index is None:
+            metadata_index = self._metadata_index
+        index_file = f"{self.id}_metadata_index.json"
+        with open(index_file, "w") as f:
+            json.dump(metadata_index, f)
+
+    def load_metadata_index(self) -> dict:
+        index_file = f"{self.id}_metadata_index.json"
+        if os.path.exists(index_file):
+            with open(index_file, "r") as f:
+                metadata_index = json.load(f)
+            return metadata_index
+        return {}
+
 
 class Context:
-    def __init__(self, host: str="", api_key: str=None, stub: generation_grpc.GenerationServiceStub=None):
+    def __init__(self, host: str = "", api_key: str = None, stub: generation_grpc.GenerationServiceStub = None):
         if not host and stub is None:
             raise Exception("Must provide either GRPC host or stub to Api")
         channel = open_channel(host, api_key) if host else None
@@ -332,7 +565,7 @@ class Context:
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
         Apply inpainting to an image.
-        
+
         :param image: Source image
         :param mask: Mask image with 0 for pixels to change and 255 for pixels to keep
         :param prompts: List of text prompts
@@ -340,7 +573,7 @@ class Context:
         :param steps: Number of steps to run
         :param seed: Random seed
         :param samples: Number of samples to generate
-        :param cfg_scale: Classifier free guidance scale        
+        :param cfg_scale: Classifier free guidance scale
         :param sampler: Sampler to use for the diffusion process
         :param init_strength: Strength of the initial image
         :param init_noise_scale: Scale of the initial noise
@@ -396,7 +629,7 @@ class Context:
             elif ratios[0] == 1.0:
                 return [images[1]]
             elif mode == generation.INTERPOLATE_LINEAR:
-               return [image_mix(images[0], images[1], ratios[0])]
+                return [image_mix(images[0], images[1], ratios[0])]
 
         p = [image_to_prompt(image) for image in images]
         request = generation.Request(
@@ -584,7 +817,7 @@ class Context:
                         id=op_id,
                         request=rq_transform,
                         on_status=[generation.OnStatus(action=[generation.STAGE_ACTION_RETURN])]
-                    ) 
+                    )
                 ])
             results = self._run_request(self._transform, chain_rq)
 
@@ -688,13 +921,13 @@ class Context:
             except ClassifierException as ce:
                 if attempt == self._max_retries or not self._retry_obfuscation:
                     raise ce
-                
+
                 for exceed in ce.classifier_result.exceeds:
                     logger.warning(f"Received classifier obfuscation. Exceeded {exceed.name} threshold")
                     for concept in exceed.concepts:
                         if concept.HasField("threshold"):
                             logger.warning(f"  {concept.concept} ({concept.threshold})")
-                
+
                 if isinstance(request, generation.Request) and request.HasField("image"):
                     self._adjust_request_for_retry(request, attempt)
                 elif isinstance(request, generation.ChainRequest):
