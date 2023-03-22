@@ -1,6 +1,7 @@
 import base64
 import bisect
 import cv2
+import glob
 import json
 import logging
 import math
@@ -8,6 +9,7 @@ import numpy as np
 import os
 import param
 import random
+import shutil
 
 from collections import OrderedDict, deque
 from PIL import Image
@@ -104,7 +106,7 @@ class CameraSettings(param.Parameterized):
 
 class CoherenceSettings(param.Parameterized):
     diffusion_cadence_curve = param.String(default="0:(1)", doc="One greater than the number of frames between diffusion operations. A cadence of 1 performs diffusion on each frame. Values greater than one will generate frames using interpolation methods.")
-    cadence_interp = param.ObjectSelector(default='mix', objects=['mix', 'rife', 'vae-lerp', 'vae-slerp'])
+    cadence_interp = param.ObjectSelector(default='mix', objects=['film', 'mix', 'rife', 'vae-lerp', 'vae-slerp'])
     cadence_spans = param.Boolean(default=False, doc="Experimental diffusion cadence mode for better outpainting")
 
 
@@ -192,6 +194,36 @@ def args2dict_simplenamespace(args):
 
 def args2dict_param(args):
     return OrderedDict(args.param.values())
+
+def interpolate_frames(
+    context: Context, 
+    frames_path: str, 
+    out_path: str, 
+    interp_mode: generation.InterpolateMode, 
+    interp_factor: int
+) -> Generator[Image.Image, None, None]:
+    """Interpolates frames in a directory using the specified interpolation mode."""
+    assert interp_factor > 1, "Interpolation factor must be greater than 1"
+
+    # gather source frames
+    frame_files = glob.glob(os.path.join(frames_path, "frame_*.png"))
+    frame_files.sort()
+
+    # perform frame interpolation
+    os.makedirs(out_path, exist_ok=True)
+    ratios = np.linspace(0, 1, interp_factor+1)[1:-1]
+    for i in range(len(frame_files) - 1):
+        shutil.copy(frame_files[i], os.path.join(out_path, f"frame_{i * interp_factor:05d}.png"))
+        frame1 = cv2.imread(frame_files[i])
+        frame2 = cv2.imread(frame_files[i + 1])
+        yield cv2_to_pil(frame1)
+        tweens = context.interpolate([frame1, frame2], ratios, interp_mode)
+        for ti, tween in enumerate(tweens):
+            cv2.imwrite(os.path.join(out_path, f"frame_{i * interp_factor + ti + 1:05d}.png"), tween)
+            yield cv2_to_pil(tween)
+
+    # copy final frame
+    shutil.copy(frame_files[-1], os.path.join(out_path, f"frame_{(len(frame_files)-1) * interp_factor:05d}.png"))        
 
 def mask_erode_blur(mask: np.ndarray, mask_erode: int, mask_blur: int) -> np.ndarray:
     if mask_erode > 0:

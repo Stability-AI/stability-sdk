@@ -64,6 +64,7 @@ BORDER_MODES = {
 }
 
 INTERP_MODES = {
+    'film': generation.INTERPOLATE_FILM,
     'mix': generation.INTERPOLATE_LINEAR,
     'rife': generation.INTERPOLATE_RIFE,
     'vae-lerp': generation.INTERPOLATE_VAE_LINEAR,
