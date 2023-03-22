@@ -323,10 +323,18 @@ class StabilityInference:
         height: int = None,
         width: int = None,
         prompt: Union[str, generation.Prompt] = None,
+        seed: Union[Sequence[int], int] = 0,
     ) -> Generator[generation.Answer, None, None]:
+        
+        if isinstance(seed, int):
+            seed = [seed]
+        else:
+            seed = list(seed)
+
         image_parameters=generation.ImageParameters(
             height=height,
             width=width,
+            seed=seed,
         )
 
         prompts = [image_to_prompt(init_image, init=True)]
