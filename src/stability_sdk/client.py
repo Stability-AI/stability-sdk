@@ -322,6 +322,7 @@ class StabilityInference:
         init_image: Image.Image,
         height: int = None,
         width: int = None,
+        prompt: Union[str, generation.Prompt] = None,
     ) -> Generator[generation.Answer, None, None]:
         image_parameters=generation.ImageParameters(
             height=height,
@@ -329,6 +330,13 @@ class StabilityInference:
         )
 
         prompts = [image_to_prompt(init_image, init=True)]
+
+        if prompt:
+            if isinstance(prompt, str):
+                prompt = generation.Prompt(text=prompt)
+            elif not isinstance(prompt, generation.Prompt):
+                raise ValueError("prompt must be a string or Prompt object")
+            prompts.append(prompt)
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters, engine_id=self.upscale_engine)
 
