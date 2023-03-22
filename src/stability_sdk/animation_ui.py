@@ -29,7 +29,10 @@ from .animation import (
     Rendering3dSettings,
     VideoInputSettings,
     VideoOutputSettings,
+    interpolate_frames
 )
+from .utils import interp_mode_from_str
+
 
 DATA_VERSION = "0.1"
 DATA_GENERATOR = "alpha-test-notebook"
@@ -103,6 +106,8 @@ controls: Dict[str, gr.components.Component] = {}
 header = gr.HTML("", show_progress=False)
 interrupt = False
 last_project_settings_path = None
+last_interp_factor = None
+last_interp_mode = None
 projects: List[Project] = []
 project: Optional[Project] = None
 
@@ -113,7 +118,6 @@ project_new_title = gr.Text(label="Name", value="My amazing animation", interact
 project_preset_dropdown = gr.Dropdown(label="Preset", choices=list(PRESETS.keys()), value=list(PRESETS.keys())[0], interactive=True)
 projects_dropdown = gr.Dropdown([p.title for p in projects], label="Project", visible=True, interactive=True)
 projects_row = None
-video_update_button = gr.Button("Update last video", visible=False)
 
 
 def accordion_for_color(args: ColorSettings):
@@ -224,6 +228,77 @@ def get_default_project():
     }
     return data
 
+def post_process_tab():
+    with gr.Row():
+        with gr.Column():
+            fps = gr.Number(label="FPS", value=24, interactive=True, precision=0)
+            reverse = gr.Checkbox(label="Reverse", value=False, interactive=True)
+            with gr.Row():
+                frame_interp_mode = gr.Dropdown(label="Frame interpolation mode", choices=['None', 'film', 'rife'], value='None', interactive=True)       
+                frame_interp_factor = gr.Dropdown(label="Frame interpolation factor", choices=[2, 4, 8], value=2, interactive=True)
+        with gr.Column():
+            image_out = gr.Image(label="image", visible=True)
+            video_out = gr.Video(label="video", visible=False)
+            process_button = gr.Button("Process")
+            stop_button = gr.Button("Stop", visible=False)
+
+    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int):
+        global interrupt, last_interp_factor, last_interp_mode
+        interrupt = False
+        if last_project_settings_path is None:
+            raise gr.Error("Must render an animation first")
+
+        yield {
+            header: gr.update(),
+            image_out: gr.update(visible=True, label=""),
+            video_out: gr.update(visible=False),
+            process_button: gr.update(visible=False),
+            stop_button: gr.update(visible=True),
+        }
+
+        outdir = os.path.dirname(last_project_settings_path)
+
+        if interp_mode != 'None':
+            interp_dir = os.path.join(outdir, "post")
+            interp_mode = interp_mode_from_str(interp_mode)
+            if last_interp_mode != interp_mode or last_interp_factor != interp_factor:                
+                remove_frames_from_path(interp_dir)
+                num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))
+                for frame_idx, frame in enumerate(tqdm(interpolate_frames(context, outdir, interp_dir, interp_mode, interp_factor), total=num_frames)):
+                    yield {
+                        header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
+                        image_out: gr.update(value=frame, label=f"frame {frame_idx}/{num_frames}", visible=True),
+                        video_out: gr.update(visible=False),
+                        process_button: gr.update(visible=False),
+                        stop_button: gr.update(visible=True),
+                    }
+                    if interrupt:
+                        break
+                last_interp_mode, last_interp_factor = interp_mode, interp_factor
+            outdir = interp_dir
+
+        output_video = last_project_settings_path.replace(".json", ".mp4")
+        frames_to_video(outdir, output_video, fps=fps, reverse=reverse)
+        yield {
+            header: gr.update(value=format_header_html()),
+            image_out: gr.update(visible=False),
+            video_out: gr.update(value=output_video, visible=True),
+            process_button: gr.update(visible=True),
+            stop_button: gr.update(visible=False),
+        }
+
+    process_button.click(
+        postprocess_video, 
+        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor], 
+        outputs=[header, image_out, video_out, process_button, stop_button]
+    )    
+
+    def stop_button_click():
+        global interrupt
+        interrupt = True
+    stop_button.click(stop_button_click)
+
+
 def project_create(title, preset):
     ensure_api_context()
     global project, projects
@@ -322,6 +397,11 @@ def project_tab():
     button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, projects_row, header])
     button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, projects_row, project_data_log])
 
+def remove_frames_from_path(path):
+    if os.path.isdir(path):
+        for f in glob.glob(os.path.join(path, "frame_*.png")):
+            os.remove(f)
+
 def render_tab():
     with gr.Row():
         with gr.Column():
@@ -334,7 +414,9 @@ def render_tab():
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
     def render(*render_args):
-        global interrupt, last_project_settings_path, project
+        global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, project
+        interrupt = False
+
         if not project:
             raise gr.Error("No project active!")
         
@@ -384,10 +466,18 @@ def render_tab():
         with open(project_settings_path, 'w', encoding='utf-8') as f:
             json.dump(save_dict, f, indent=4)
 
+        # initial yield to switch render button to stop button
+        yield {
+            button: gr.update(visible=False),
+            button_stop: gr.update(visible=True),
+            image_out: gr.update(visible=True, label=""),
+            video_out: gr.update(visible=False),
+            header: gr.update(),
+            error_log: gr.update(visible=False),
+        }
+
         # delete frames from previous animation
-        image_path = os.path.join(outdir, "frame_*.png")
-        for f in glob.glob(image_path):
-            os.remove(f)
+        remove_frames_from_path(outdir)
 
         animator = Animator(
             api_context=context,
@@ -415,7 +505,6 @@ def render_tab():
                     video_out: gr.update(visible=False),
                     header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
                     error_log: gr.update(visible=False),
-                    video_update_button: gr.update(visible=False),
                 }
         except ClassifierException:
             error = "Animation terminated early due to NSFW classifier."
@@ -426,11 +515,11 @@ def render_tab():
 
         if frame_idx:
             last_project_settings_path = project_settings_path
+            last_interp_factor, last_interp_mode = None, None
             output_video = project_settings_path.replace(".json", ".mp4")
             frames_to_video(outdir, output_video, fps=args.fps, reverse=args.reverse)
         else:
             output_video = None
-        interrupt = False
         yield {
             button: gr.update(visible=True),
             button_stop: gr.update(visible=False),
@@ -438,32 +527,19 @@ def render_tab():
             video_out: gr.update(value=output_video, visible=True),
             header: gr.update(value=format_header_html()),
             error_log: gr.update(value=error, visible=bool(error)),
-            video_update_button: gr.update(visible=bool(output_video)),
         }
 
     button.click(
         render,
         inputs=list(controls.values()),
-        outputs=[button, button_stop, image_out, video_out, header, error_log, video_update_button]
+        outputs=[button, button_stop, image_out, video_out, header, error_log]
     )
-
-    # rebuild mp4 from frames with updated settings
-    def update_last_video(*render_args):
-        args = {k: v for k, v in zip(controls.keys(), render_args)}
-        outdir = os.path.dirname(last_project_settings_path)
-        output_video = last_project_settings_path.replace(".json", ".mp4")
-        frames_to_video(outdir, output_video, fps=args['fps'], reverse=args['reverse'])
-        yield {
-            video_out: gr.update(value=output_video, visible=True),
-        }
-    video_update_button.click(update_last_video, inputs=list(controls.values()), outputs=[video_out])
 
     # stop animation in progress 
     def stop():
         global interrupt
         interrupt = True
-        yield { button: gr.update(visible=True), button_stop: gr.update(visible=False) }
-    button_stop.click(stop, inputs=[], outputs=[button, button_stop])
+    button_stop.click(stop)
 
 def ui_for_animation_settings(args: AnimationSettings):
     with gr.Row():
@@ -507,7 +583,6 @@ def ui_for_video_output(args: VideoOutputSettings):
         controls["vr_eye_angle"] = gr.Number(label="Eye angle", value=p.vr_eye_angle.default, interactive=True)
         controls["vr_eye_dist"] = gr.Number(label="Eye distance", value=p.vr_eye_dist.default, interactive=True)
         controls["vr_projection"] = gr.Number(label="Spherical projection", value=p.vr_projection.default, interactive=True)
-    video_update_button.render()   
 
 def ui_from_args(args: param.Parameterized, exclude: List[str]=[]):
     for k, v in args.param.objects().items():
@@ -589,6 +664,9 @@ def create_ui(api_context: Context, outputs_root_path: str):
 
         with gr.Tab("Render"):
             render_tab()
+
+        with gr.Tab("Post-process"):
+            post_process_tab()
 
         load_project_outputs = [project_data_log]
         load_project_outputs.extend(controls.values())
