@@ -2,18 +2,19 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stability-ai/stability-sdk/blob/main/nbs/demo_colab.ipynb)
 
-Client implementations that interact with the Stability Generator API
+Client implementations that interact with the Stability API. 
 
-# Installation
+## Getting an API key
 
-Install the PyPI package via:
+Follow the [instructions](https://platform.stability.ai/docs/getting-started/authentication) on [Platform](https://platform.stability.ai) to obtain an API key.
+
+## PyPI Package Installation
+
+Install the [PyPI](https://pypi.org/project/stability-sdk/) package via:
 
 `pip install stability-sdk`
 
-# Getting an API key
-You can manage API keys in your dreamstudio account [here](https://beta.dreamstudio.ai/membership?tab=apiKeys)
-
-# Python client
+## Python Client
 
 `client.py` is both a command line client and an API class that wraps the gRPC based API. To try the client:
 
@@ -34,7 +35,7 @@ To upscale:
 
 ## SDK Usage
 
-See usage demo notebooks in ./nbs
+Be sure to check out [Platform](https://platform.stability.ai) for comprehensive documentation on how to interact with our API.
 
 ## Command line usage
 
@@ -112,11 +113,7 @@ options:
 
 ## Connecting to the API using languages other than Python
 
-The `src` subdirectory contains pre-compiled gRPC stubs for the following languages:
-
-- [Javascript/Typescript](https://github.com/Stability-AI/stability-sdk/tree/main/src/js)
-
-If a language you would like to connect to the API with is not listed above, you can use the following
+If a language you would like to connect to the API with is not currently documented on [Platform](https://platform.stability.ai) you can use the following
 protobuf definition to compile stubs for your language:
 
 - [protobuf spec](https://github.com/Stability-AI/api-interfaces/blob/main/src/proto/)
@@ -126,8 +123,7 @@ protobuf definition to compile stubs for your language:
 * Typescript client: https://github.com/jakiestfu/stability-ts
 * Guide to building for Ruby: https://github.com/kmcphillips/stability-sdk/blob/main/src/ruby/README.md
 
-## DreamStudio API TOS
+## Stability API TOS
 
-Unless otherwise specified, usage of the dreamstudio API falls under the same usage terms as the dreamstudio web interface: 
-
-* https://beta.dreamstudio.ai/terms-of-service
+Usage of the Stability API falls under the [STABILITY AI API Terms of Service.
+](https://platform.stability.ai/docs/terms-of-service)
