@@ -82,20 +82,26 @@ class StorageBackend(ABC):
 
     @staticmethod
     @abstractmethod
-    def create(
+    def create_project(
             context: 'Context',
             title: str,
             access: project.ProjectAccess = project.PROJECT_ACCESS_PRIVATE,
-            status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE
+            status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE,
+            proj_id_to_use: str = None
     ) -> 'Project':
         pass
 
     @staticmethod
     @abstractmethod
-    def load_project(
+    def get_project(
                   context: 'Context',
                   id: str
     ) -> 'Project':
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def delete_project(context: 'Context', id: str) -> None:
         pass
 
     @staticmethod
@@ -104,11 +110,11 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def load_settings(self, proj: 'Project') -> dict:
+    def get_project_settings(self, proj: 'Project', asset_id: str = None) -> dict:
         pass
 
     @abstractmethod
-    def save_settings(self, proj: 'Project', data: dict, asset_id: str = None) -> str:
+    def put_project_settings(self, context: 'Context', proj: 'Project', data: dict) -> str:
         pass
 
     def get_image_asset(self, proj: 'Project', asset_id: str, use: generation.AssetUse) -> Image.Image:
@@ -125,27 +131,35 @@ class StorageBackend(ABC):
     def put_video_asset(self, proj: 'Project', video_path: str, asset_id: str) -> str:
         pass
 
+    def update_project(context: 'Context', proj: 'Project', title: str = None, file_id: str = None, file_uri: str = None) -> None:
+        pass
+
 
 class AssetServiceBackend(StorageBackend):
     def __init__(self, context: 'Context', primary: bool = False):
         super().__init__(context, primary)
 
     @staticmethod
-    def create(
+    def create_project(
             context: 'Context',
             title: str,
             access: project.ProjectAccess = project.PROJECT_ACCESS_PRIVATE,
-            status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE
+            status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE,
+            proj_id_to_use: str = None
     ) -> 'Project':
         req = project.CreateProjectRequest(title=title, access=access, status=status)
         proj: project.Project = context._proj_stub.Create(req, wait_for_ready=True)
         return Project(context, proj)
 
     @staticmethod
-    def load_project(context: 'Context', id: str) -> 'Project':
+    def get_project(context: 'Context', id: str) -> 'Project':
         req = project.GetProjectRequest(id=id)
         proj: project.Project = context._proj_stub.Get(req, wait_for_ready=True)
         return Project(context, proj)
+
+    @staticmethod
+    def delete_project(context: 'Context', id: str) -> None:
+        context._proj_stub.Delete(project.DeleteProjectRequest(id=id))
 
     @staticmethod
     def list_projects(context: 'Context') -> List['Project']:
@@ -156,14 +170,15 @@ class AssetServiceBackend(StorageBackend):
         results.sort(key=lambda x: x.title.lower())
         return results
 
-    def load_settings(self, proj: 'Project') -> dict:
+    def get_project_settings(self, proj: 'Project', asset_id: str = None) -> dict:
+        asset_id = asset_id if asset_id else proj.file.id
         request = generation.Request(
             engine_id=self._context._asset.engine_id,
             prompt=[generation.Prompt(
                 artifact=generation.Artifact(
                     type=generation.ARTIFACT_TEXT,
                     mime="application/json",
-                    uuid=proj.file_id,
+                    uuid=asset_id,
                 )
             )],
             asset=generation.AssetParameters(
@@ -178,11 +193,10 @@ class AssetServiceBackend(StorageBackend):
             return settings_json
         raise Exception(f"Failed to load project file for {proj.id}")
 
-
-    def save_settings(self, proj: 'Project', data: dict, asset_id: str = None) -> str:
+    def put_project_settings(self, context: 'Context', proj: 'Project', data: dict) -> str:
         contents = json.dumps(data)
         request = generation.Request(
-            engine_id=self._context._asset.engine_id,
+            engine_id=context._asset.engine_id,
             prompt=[generation.Prompt(
                 artifact=generation.Artifact(
                     type=generation.ARTIFACT_TEXT,
@@ -197,7 +211,7 @@ class AssetServiceBackend(StorageBackend):
                 use=generation.ASSET_USE_PROJECT
             )
         )
-        results = self._context._run_request(self._context._asset, request)
+        results = context._run_request(context._asset, request)
         if generation.ARTIFACT_TEXT in results:
             return results[generation.ARTIFACT_TEXT][0]
         raise Exception(f"Failed to save project file for {proj.id}")
@@ -266,6 +280,19 @@ class AssetServiceBackend(StorageBackend):
             return results[generation.ARTIFACT_TEXT][0]
         raise Exception(f"Failed to store video asset for project {proj.id}")
 
+    def update_project(context: 'Context', proj: 'Project', title: str = None, file_id: str = None, file_uri: str = None) -> None:
+        file = project.ProjectAsset(
+            id=file_id,
+            uri=file_uri,
+            use=project.PROJECT_ASSET_USE_PROJECT,
+        ) if file_id and file_uri else None
+
+        context._proj_stub.Update(project.UpdateProjectRequest(
+            id=proj.id,
+            title=title,
+            file=file
+        ))
+
 
 class LocalFileBackend(StorageBackend):
     _projects_root = None
@@ -275,14 +302,15 @@ class LocalFileBackend(StorageBackend):
         LocalFileBackend._projects_root = projects_root
 
     @staticmethod
-    def create(
+    def create_project(
             context: 'Context',
             title: str,
             access: project.ProjectAccess = project.PROJECT_ACCESS_PRIVATE,
-            status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE
+            status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE,
+            proj_id_to_use: str = None
     ) -> 'Project':
-        proj_id = str(uuid.uuid4())
-        proj_file_id = proj_id # str(uuid.uuid4()) # Let's keep it the same as the proj_id for now..
+        proj_id = proj_id_to_use if proj_id_to_use else str(uuid.uuid4())
+        proj_file_id = proj_id # Let's keep it the same as the proj_id for now
         proj = {"id": proj_id,
                 "title": title,
                 "file": {"id": proj_file_id}}
@@ -293,11 +321,18 @@ class LocalFileBackend(StorageBackend):
         return Project(context, proj)
 
     @staticmethod
-    def load_project(context: 'Context', id: str) -> 'Project':
+    def get_project(context: 'Context', id: str) -> 'Project':
         input_path = os.path.join(LocalFileBackend._projects_root, id, id)
         with open(input_path, "r") as file:
             proj = json.load(file)
         return Project(context, proj)
+
+    @staticmethod
+    def delete_project(context: 'Context', id: str):
+        if not id:
+            return
+        project_dir_path = os.path.join(LocalFileBackend._projects_root, id)
+        shutil.rmtree(project_dir_path)
 
     @staticmethod
     def list_projects(context: 'Context') -> List['Project']:
@@ -321,19 +356,14 @@ class LocalFileBackend(StorageBackend):
                 pass
         return projects
 
-    def load_settings(self, proj: 'Project') -> dict:
-        input_path = self.get_path_for_asset(proj.id, proj.file_id)
+    def get_project_settings(self, proj: 'Project', asset_id: str = None) -> dict:
+        input_path = self.get_path_for_asset(proj.id, "project_settings.json")
         with open(input_path, "r") as file:
             settings_json = json.load(file)
         return settings_json
 
-    def save_settings(self, proj: 'Project', data: dict, asset_id: str = None) -> str:
-        if asset_id is not None:
-            filename = asset_id
-        else:
-            if not self.primary:
-                raise ValueError("If asset_id is None, then LocalFileBackend must be primary.")
-            filename = str(uuid.uuid4())
+    def put_project_settings(self, context: 'Context', proj: 'Project', data: dict) -> str:
+        filename = "project_settings.json"
         output_path = self.get_path_for_asset(proj.id, filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w") as file:
@@ -388,6 +418,17 @@ class LocalFileBackend(StorageBackend):
         path = os.path.join(LocalFileBackend._projects_root, project_id, filename)
         return path
 
+    def update_project(context: 'Context', proj: 'Project', title: str = None, file_id: str = None, file_uri: str = None):
+        proj_file_id = proj.file.id
+        proj = {"id": proj.id,
+                "title": title if title is not None else proj.title,
+                "file": {"id": file_id if file_id is not None else proj_file_id}}
+        output_path = os.path.join(LocalFileBackend._projects_root, proj.id, proj_file_id)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w") as file:
+            json.dump(proj, file)
+        return Project(context, proj)
+
 
 class Project():
     _backends = None
@@ -432,7 +473,10 @@ class Project():
 
     @classmethod
     def init_backends(cls, context: 'Context'):
-        cls._backends = [LocalFileBackend(context=context, primary=True)]
+        cls._backends = [
+            AssetServiceBackend(context=context, primary=True),
+            LocalFileBackend(context=context, primary=False)]
+        #cls._backends = [LocalFileBackend(context=context, primary=True)]
         cls._metadata_index = cls.load_metadata_index()
 
     @staticmethod
@@ -442,9 +486,9 @@ class Project():
             access: project.ProjectAccess = project.PROJECT_ACCESS_PRIVATE,
             status: project.ProjectStatus = project.PROJECT_STATUS_ACTIVE
     ) -> 'Project':
-        proj_file_id = ''
+        asset_id = None
         for backend in Project._backends:
-            proj = backend.create(context, title, access, status)
+            proj = backend.create_project(context, title, access, status, asset_id)
             if isinstance(proj, dict):
                 proj_id = proj["id"]
                 proj_title = proj["title"]
@@ -457,7 +501,7 @@ class Project():
                 filename = proj_id
                 proj_file_id = proj.file_id
         mimetype = "application/json"
-        Project.add_asset_metadata(asset_id, asset_id, mimetype, filename, project_key="project_file_id")
+        Project.add_asset_metadata(proj_id, asset_id, mimetype, filename, project_key="project_file_id")
         return proj
 
     @classmethod
@@ -467,7 +511,7 @@ class Project():
     ) -> 'Project':
         for backend in cls._backends:
             if backend.primary:
-                proj = backend.load_project(context, id)
+                proj = backend.get_project(context, id)
                 return proj
         raise Exception(f"Failed to list projects")
 
@@ -478,7 +522,9 @@ class Project():
         return query_assets_response.assets
 
     def delete(self):
-        self._context._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
+        for backend in self.backends:
+            backend.delete_project(self._context, self.id)
+        Project.delete_project_metadata(self.id)
 
     @classmethod
     def list_projects(cls, context: 'Context') -> List['Project']:
@@ -488,10 +534,10 @@ class Project():
                 return results
         raise Exception(f"Failed to list projects")
 
-    def load_settings(self) -> dict:
+    def get_settings(self) -> dict:
         for backend in self.backends:
             if backend.primary:
-                result = backend.load_settings(self)
+                result = backend.get_project_settings(self, self._metadata_index[self.id]["project_file_id"])
                 return result
         raise Exception(f"Failed to load project file for {self.id}")
 
@@ -499,14 +545,14 @@ class Project():
         asset_id = None
         filename = None
         for backend in self.backends:
-            temp = backend.save_settings(data)
+            temp = backend.put_project_settings(self._context, self, data)
             if backend.primary:
                 rsplit_res = temp.rsplit('/', 1)
                 asset_id = rsplit_res[1] if len(rsplit_res) > 1 else rsplit_res[0]
             if backend.primary_fs:
                 filename = temp
         mimetype = "application/json"
-        self.add_asset_metadata(asset_id, mimetype, filename, project_key="project_file_id")
+        Project.add_asset_metadata(self.id, asset_id, mimetype, filename, project_key="project_file_id")
         return asset_id
 
     def put_image_asset(
@@ -526,7 +572,7 @@ class Project():
             if backend.primary_fs:
                 filename = result
         mimetype = "image/png"
-        self.add_asset_metadata(asset_id, mimetype, filename)
+        Project.add_asset_metadata(self.id, asset_id, mimetype, filename)
         return results
 
     def put_video_asset(self, video_path: str) -> List[str]:
@@ -543,28 +589,19 @@ class Project():
                 filename = result
         # E.g.: {3: ['https://object.lga1.coreweave.com/stability-assets-dev/org-yP0GBrIgOnDA6wwfyohorEPw/178c0ff3-5e01-4e4e-9f49-278510d80289/b8912c3b-eb98-4c8e-b346-fe483ba17f83']}
         mimetype = "video/mp4"
-        self.add_asset_metadata(asset_id, mimetype, filename)
+        Project.add_asset_metadata(self.id, asset_id, mimetype, filename)
         return results
 
-    def update(self, title: str = None, file_id: str = None, file_uri: str = None):
-        file = project.ProjectAsset(
-            id=file_id,
-            uri=file_uri,
-            use=project.PROJECT_ASSET_USE_PROJECT,
-        ) if file_id and file_uri else None
-
-        self._context._proj_stub.Update(project.UpdateProjectRequest(
-            id=self.id,
-            title=title,
-            file=file
-        ))
-
+    def update_project(self, title: str = None, file_id: str = None, file_uri: str = None):
+        for backend in self.backends:
+            result = backend.update_project(self._context, self, title, file_id, file_uri)
         if title:
             self._project.title = title
         if file_id:
             self._project.file.id = file_id
         if file_uri:
             self._project.file.uri = file_uri
+
 
     @staticmethod
     def add_asset_metadata(project_id: str, asset_id: str, mime_type: str, filename: str, project_key: str = None) -> None:
@@ -579,6 +616,10 @@ class Project():
         if project_key is not None:
             Project._metadata_index[project_id][project_key] = asset_id
         Project.save_metadata_index()
+
+    @staticmethod
+    def delete_project_metadata(project_id: str) -> None:
+        Project._metadata_index.pop(project_id, None)
 
     @classmethod
     def save_metadata_index(cls, metadata_index: dict = None) -> None:

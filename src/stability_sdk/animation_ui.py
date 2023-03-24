@@ -253,7 +253,7 @@ def project_load(title: str):
     global project
     project = next(p for p in projects if p.title == title)
     try:
-        data = project.load_settings()
+        data = project.get_settings()
     except OutOfCreditsException as e:
         log = f"Not enough credits to load project '{title}'\n{e.details}"
         returns = args_to_controls(get_default_project())
