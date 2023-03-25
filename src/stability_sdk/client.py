@@ -323,18 +323,45 @@ class StabilityInference:
         height: int = None,
         width: int = None,
         prompt: Union[str, generation.Prompt] = None,
-        seed: Union[Sequence[int], int] = 0,
+        steps: Optional[int] = 20,
+        cfg_scale: int = 7,
+        seed: Union[Sequence[int], int] = 0
     ) -> Generator[generation.Answer, None, None]:
-        
+        """
+        Upscale an image.
+
+        :param init_image: Image to upscale.
+
+        Optional parameters for upscale method:
+
+        :param height: Height of the output images.
+        :param width: Width of the output images.
+        :param prompt: Prompt used in text conditioned models
+        :param steps: Number of diffusion steps
+        :param cfg_scale: Intensity of the prompt, when a prompt is used
+        :param seed: Seed for the random number generator.
+
+        Some variables are not used for specific engines, but are included for consistency.
+
+        Variables ignored in ESRGAN engines: prompt, steps, cfg_scale, seed
+
+        :return: Tuple of (prompts, image_parameters)
+        """
         if isinstance(seed, int):
             seed = [seed]
         else:
             seed = list(seed)
 
+        step_parameters = dict(
+            sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
+        )
+
         image_parameters=generation.ImageParameters(
             height=height,
             width=width,
             seed=seed,
+            steps=steps,
+            parameters=[generation.StepParameter(**step_parameters)],
         )
 
         prompts = [image_to_prompt(init_image, init=True)]
@@ -347,7 +374,7 @@ class StabilityInference:
             prompts.append(prompt)
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters, engine_id=self.upscale_engine)
-
+    
 
     # The motivation here is to facilitate constructing requests by passing protobuf objects directly.
     def emit_request(
