@@ -216,11 +216,11 @@ class AssetServiceBackend(StorageBackend):
             return results[generation.ARTIFACT_TEXT][0]
         raise Exception(f"Failed to save project file for {proj.id}")
 
-    def get_image_asset(self, proj: 'Project', asset_id: str, use: generation.AssetUse) -> str:
+    def get_image_asset(self, proj: 'Project', asset_id: str, use: generation.AssetUse) -> Image.Image:
         request = generation.Request(
             engine_id=self._context._asset.engine_id,
             prompt=[generation.Prompt(
-                artifact=generation.Artifact(generation.ARTIFACT_IMAGE, mime="image/png", uuid=asset_id)
+                artifact=generation.Artifact(type=generation.ARTIFACT_IMAGE, mime="image/png", uuid=asset_id)
             )],
             asset=generation.AssetParameters(
                 action=generation.ASSET_GET,
@@ -230,8 +230,10 @@ class AssetServiceBackend(StorageBackend):
         )
         results = self._context._run_request(self._context._asset, request)
         if generation.ARTIFACT_IMAGE in results:
-            return results[generation.ARTIFACT_IMAGE][0]
-        raise Exception(f"Failed to load image asset for project {proj.id}")
+            img = results[generation.ARTIFACT_IMAGE][0]
+            pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            return pil_img
+        raise Exception(f"Failed to load image asset {asset_id} for project {proj.id}")
 
     def put_image_asset(self, proj: 'Project', image: Union[Image.Image, np.ndarray], use: generation.AssetUse, asset_id: str = None) -> str:
         request = generation.Request(
@@ -249,7 +251,23 @@ class AssetServiceBackend(StorageBackend):
         raise Exception(f"Failed to store image asset for project {proj.id}")
 
     def get_video_asset(self, proj: 'Project', asset_id: str, use: generation.AssetUse) -> str:
-        pass
+        request = generation.Request(
+            engine_id=self._context._asset.engine_id,
+            prompt=[generation.Prompt(
+                artifact=generation.Artifact(type=generation.ARTIFACT_VIDEO, mime="video/mp4", uuid=asset_id)
+            )],
+            asset=generation.AssetParameters(
+                action=generation.ASSET_GET,
+                project_id=proj.id,
+                use=use
+            )
+        )
+        results = self._context._run_request(self._context._asset, request)
+        # TODO: In testing so far, results contains ARTIFACT_VIDEO key.. but the value for it is an empty list.
+        # Thus it doesn't seem to be working.
+        if generation.ARTIFACT_VIDEO in results:
+            return results[generation.ARTIFACT_VIDEO][0]
+        raise Exception(f"Failed to load video asset {asset_id} for project {proj.id}")
 
     def put_video_asset(self, proj: 'Project', video_path: str, asset_id: str) -> str:
         if not os.path.isfile(video_path) or not video_path.endswith(".mp4"):
@@ -371,7 +389,7 @@ class LocalFileBackend(StorageBackend):
         return filename
 
     def get_image_asset(self, proj: 'Project', asset_id: str, use: generation.AssetUse) -> Image.Image:
-        input_path = self.get_path_for_asset(proj.id, asset_id)
+        input_path = self.get_path_for_asset(proj.id, asset_id + '.png')
         pil_image = Image.open(input_path)
         return pil_image
 
@@ -555,6 +573,13 @@ class Project():
         Project.add_asset_metadata(self.id, asset_id, mimetype, filename, project_key="project_file_id")
         return asset_id
 
+    def get_image_asset(self, asset_id: str, use: generation.AssetUse = generation.ASSET_USE_PROJECT) -> Image.Image:
+        for backend in self.backends:
+            if backend.primary:
+                result = backend.get_image_asset(self, asset_id, use)
+                return result
+        raise Exception(f"Failed to load image asset {asset_id}")
+
     def put_image_asset(
             self,
             image: Union[Image.Image, np.ndarray],
@@ -564,7 +589,7 @@ class Project():
         asset_id = None
         filename = None
         for backend in self.backends:
-            result = backend.put_image_asset(image, use, asset_id=asset_id)
+            result = backend.put_image_asset(self, image, use, asset_id=asset_id)
             if backend.primary:
                 rsplit_res = result.rsplit('/', 1)
                 asset_id = rsplit_res[1] if len(rsplit_res) > 1 else rsplit_res[0]
@@ -575,12 +600,19 @@ class Project():
         Project.add_asset_metadata(self.id, asset_id, mimetype, filename)
         return results
 
+    def get_video_asset(self, asset_id: str, use: generation.AssetUse = generation.ASSET_USE_INPUT) -> bytes:
+        for backend in self.backends:
+            if backend.primary:
+                result = backend.get_video_asset(self, asset_id, use)
+                return result
+        raise Exception(f"Failed to load video asset {asset_id}")
+
     def put_video_asset(self, video_path: str) -> List[str]:
         results = []
         filename = None
         asset_id = None
         for backend in self.backends:
-            result = backend.put_video_asset(video_path, asset_id=asset_id)
+            result = backend.put_video_asset(self, video_path, asset_id=asset_id)
             if backend.primary:
                 rsplit_res = result.rsplit('/', 1)
                 asset_id = rsplit_res[1] if len(rsplit_res) > 1 else rsplit_res[0]
