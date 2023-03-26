@@ -354,9 +354,7 @@ class LocalFileBackend(StorageBackend):
 
     @staticmethod
     def list_projects(context: 'Context') -> List['Project']:
-        # TODO: Replace with something more reliable than listing directories
-        # It's not reliable because the user might create directories there for various reasons.
-        # It may however be useful to require existence of the directory as an additional filter.
+        # This returns a listing of directories in the projects root.
         proj_root = LocalFileBackend._projects_root
         all_entries = os.listdir(proj_root)
         directories = [entry for entry in all_entries if os.path.isdir(os.path.join(proj_root, entry))]
@@ -619,7 +617,6 @@ class Project():
                 results.append(asset_id)
             if backend.primary_fs:
                 filename = result
-        # E.g.: {3: ['https://object.lga1.coreweave.com/stability-assets-dev/org-yP0GBrIgOnDA6wwfyohorEPw/178c0ff3-5e01-4e4e-9f49-278510d80289/b8912c3b-eb98-4c8e-b346-fe483ba17f83']}
         mimetype = "video/mp4"
         Project.add_asset_metadata(self.id, asset_id, mimetype, filename)
         return results
