@@ -10,11 +10,13 @@ import os
 import param
 import random
 import shutil
+import subprocess
 
 from collections import OrderedDict, deque
+from dataclasses import dataclass, fields
 from PIL import Image
 from types import SimpleNamespace
-from typing import Deque, Generator, List, Optional, Tuple, Union
+from typing import cast, Deque, Generator, List, Optional, Tuple
 
 from stability_sdk.api import Context, generation
 from stability_sdk.utils import (
@@ -173,27 +175,82 @@ class AnimationArgs(
     VideoInputSettings,
     VideoOutputSettings
 ):
-    pass
+    """
+    Aggregates parameters from the multiple settings classes.
+    """
+
+@dataclass
+class FrameArgs:
+    """Expansion of key framed Args to per-frame values"""
+    angle: List[float]
+    zoom: List[float]
+    translation_x: List[float]
+    translation_y: List[float]
+    translation_z: List[float]
+    rotation_x: List[float]
+    rotation_y: List[float]
+    rotation_z: List[float]
+    brightness_curve: List[float]
+    contrast_curve: List[float]
+    hue_curve: List[float]
+    saturation_curve: List[float]
+    lightness_curve: List[float]
+    noise_add_curve: List[float]
+    noise_scale_curve: List[float]
+    steps_curve: List[float]
+    strength_curve: List[float]
+    diffusion_cadence_curve: List[float]
+    fov_curve: List[float]
+    depth_blur_curve: List[float]
+    depth_warp_curve: List[float]
+    video_mix_in_curve: List[float]
+    mask_min_value: List[float]
 
 
-def args2dict(args):
+def args_to_dict(args):
     """
     Converts arguments object to an OrderedDict
     """
-    f = None
     if isinstance(args, param.Parameterized):
-        f = args2dict_param
-    if isinstance(args, SimpleNamespace):
-        f = args2dict_simplenamespace
-    if f is None:
+        return OrderedDict(args.param.values())
+    elif isinstance(args, SimpleNamespace):
+        return OrderedDict(vars(args))
+    else:
         raise NotImplementedError(f"Unsupported arguments object type: {type(args)}")
-    return f(args)
 
-def args2dict_simplenamespace(args):
-    return OrderedDict(vars(args))
+def create_video_from_frames(frames_path: str, mp4_path: str, fps: int=24, reverse: bool=False):
+    """
+    Convert a series of image frames to a video file using ffmpeg.
 
-def args2dict_param(args):
-    return OrderedDict(args.param.values())
+    :param frames_path: The path to the directory containing the image frames named frame_00000.png, frame_00001.png, etc.
+    :param mp4_path: The path to save the output video file.
+    :param fps: The frames per second for the output video. Default is 24.
+    :param reverse: A flag to reverse the order of the frames in the output video. Default is False.
+    """
+
+    cmd = [
+        'ffmpeg',
+        '-y',
+        '-vcodec', 'png',
+        '-r', str(fps),
+        '-start_number', str(0),
+        '-i', os.path.join(frames_path, "frame_%05d.png"),
+        '-c:v', 'libx264',
+        '-vf',
+        f'fps={fps}',
+        '-pix_fmt', 'yuv420p',
+        '-crf', '17',
+        '-preset', 'veryslow',
+        mp4_path
+    ]
+    if reverse:
+        cmd.insert(-1, '-vf')
+        cmd.insert(-1, 'reverse')    
+
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, stderr = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(stderr)
 
 def interpolate_frames(
     context: Context, 
@@ -211,7 +268,7 @@ def interpolate_frames(
 
     # perform frame interpolation
     os.makedirs(out_path, exist_ok=True)
-    ratios = np.linspace(0, 1, interp_factor+1)[1:-1]
+    ratios = np.linspace(0, 1, interp_factor+1)[1:-1].tolist()
     for i in range(len(frame_files) - 1):
         shutil.copy(frame_files[i], os.path.join(out_path, f"frame_{i * interp_factor:05d}.png"))
         frame1 = cv2.imread(frame_files[i])
@@ -236,16 +293,16 @@ def mask_erode_blur(mask: np.ndarray, mask_erode: int, mask_blur: int) -> np.nda
 
 def make_xform_2d(
     w: float, h: float,
-    rotate: float, # in radians
-    scale: float,
+    rotation_angle: float, # in radians
+    scale_factor: float,
     translate_x: float,
     translate_y: float,
 ) -> matrix.Matrix:
     center = (w / 2, h / 2)
     pre = matrix.translation(-center[0], -center[1], 0)
     post = matrix.translation(center[0], center[1], 0)
-    rotate = matrix.rotation_euler(0, 0, rotate)
-    scale = matrix.scale(scale, scale, 1)
+    rotate = matrix.rotation_euler(0, 0, rotation_angle)
+    scale = matrix.scale(scale_factor, scale_factor, 1)
     rotate_scale = matrix.multiply(post, matrix.multiply(rotate, matrix.multiply(scale, pre)))
     translate = matrix.translation(translate_x, translate_y, 0)
     return matrix.multiply(rotate_scale, translate)
@@ -275,24 +332,25 @@ class Animator:
     def __init__(
         self,
         api_context: Context,
-        animation_prompts,
-        args=None,
-        out_dir='.',
-        negative_prompt='',
-        negative_prompt_weight=-1.0,
+        animation_prompts: dict,
+        args: Optional[AnimationArgs] = None,
+        out_dir: Optional[str] = None,
+        negative_prompt: str = '',
+        negative_prompt_weight: float = -1.0,
         resume: bool = False
     ):
         self.api = api_context
         self.animation_prompts = animation_prompts
-        self.args = args
+        self.args = args or AnimationArgs()
         self.color_match_image: Optional[np.ndarray] = None
         self.diffusion_cadence_ofs: int = 0
-        self.frame_args = None
-        self.keyframe_values: List[int] = None
-        self.out_dir: str = out_dir
+        self.frame_args: FrameArgs
+        self.inpaint_mask: Optional[np.ndarray] = None
+        self.key_frame_values: List[int] = []
+        self.out_dir: Optional[str] = out_dir
         self.mask: Optional[np.ndarray] = None
         self.mask_reader = None
-        self.cadence_on = False
+        self.cadence_on: bool = False
         self.prior_frames: Deque[np.ndarray] = deque([], 1)    # forward warped prior frames. stores one image with cadence off, two images otherwise
         self.prior_diffused: Deque[np.ndarray] = deque([], 1)  # results of diffusion. stores one image with cadence off, two images otherwise
         self.prior_xforms: Deque[matrix.Matrix] = deque([], 1)   # accumulated transforms since last diffusion. stores one with cadence off, two otherwise
@@ -300,10 +358,16 @@ class Animator:
         self.negative_prompt_weight: float = negative_prompt_weight
         self.start_frame_idx: int = 0
         self.video_prev_frame: Optional[np.ndarray] = None
-        self.video_reader = None
+        self.video_reader: Optional[cv2.VideoCapture] = None
 
         # configure Api to retry on classifier obfuscations
         self.api._retry_obfuscation = True
+
+        # create output directory
+        if self.out_dir is not None:
+            os.makedirs(self.out_dir, exist_ok=True)
+        elif self.args.save_depth_maps or self.args.save_inpaint_masks:
+            raise ValueError('out_dir must be specified when saving depth maps or inpaint masks')
 
         self.setup_animation(resume)
 
@@ -311,19 +375,19 @@ class Animator:
         args, frame_args = self.args, self.frame_args
 
         if self.args.animation_mode == '2D':
-            angle = frame_args.angle_series[frame_idx]
-            scale = frame_args.zoom_series[frame_idx]
-            dx = frame_args.translation_x_series[frame_idx]
-            dy = frame_args.translation_y_series[frame_idx]
+            angle = frame_args.angle[frame_idx]
+            scale = frame_args.zoom[frame_idx]
+            dx = frame_args.translation_x[frame_idx]
+            dy = frame_args.translation_y[frame_idx]
             return make_xform_2d(args.width, args.height, math.radians(angle), scale, dx, dy)
 
         elif self.args.animation_mode in ('3D warp', '3D render'):
-            dx = frame_args.translation_x_series[frame_idx]
-            dy = frame_args.translation_y_series[frame_idx]
-            dz = frame_args.translation_z_series[frame_idx]
-            rx = frame_args.rotation_x_series[frame_idx]
-            ry = frame_args.rotation_y_series[frame_idx]
-            rz = frame_args.rotation_z_series[frame_idx]
+            dx = frame_args.translation_x[frame_idx]
+            dy = frame_args.translation_y[frame_idx]
+            dz = frame_args.translation_z[frame_idx]
+            rx = frame_args.rotation_x[frame_idx]
+            ry = frame_args.rotation_y[frame_idx]
+            rz = frame_args.rotation_z[frame_idx]
 
             dx, dy, dz = -dx*TRANSLATION_SCALE, dy*TRANSLATION_SCALE, -dz*TRANSLATION_SCALE
             rx, ry, rz = math.radians(rx), math.radians(ry), math.radians(rz)
@@ -338,18 +402,16 @@ class Animator:
     def emit_frame(self, frame_idx: int, out_frame: np.ndarray) -> Image.Image:
         if self.args.save_depth_maps:
             depth_image = self.generate_depth_image(out_frame)
-            cv2.imwrite(self.get_frame_filename(frame_idx, prefix='depth'), depth_image)
+            self.save_to_out_dir(frame_idx, depth_image, prefix='depth')
 
         if self.args.save_inpaint_masks and self.inpaint_mask is not None:
-            cv2.imwrite(self.get_frame_filename(frame_idx, prefix='mask'), self.inpaint_mask)
+            self.save_to_out_dir(frame_idx, self.inpaint_mask, prefix='mask')
 
         if self.args.vr_mode:
-            stereo_frame = self.render_stereo_eye_views(frame_idx, out_frame)
-            cv2.imwrite(self.get_frame_filename(frame_idx), stereo_frame)
-            return cv2_to_pil(stereo_frame)
-        else:
-            cv2.imwrite(self.get_frame_filename(frame_idx), out_frame)
-            return cv2_to_pil(out_frame)
+            out_frame = self.render_stereo_eye_views(frame_idx, out_frame)
+
+        self.save_to_out_dir(frame_idx, out_frame)
+        return cv2_to_pil(out_frame)
 
     def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
         results, _ = self.api.transform(
@@ -370,8 +432,8 @@ class Animator:
             tween = (frame_idx - keys[prev]) / (keys[next] - keys[prev])
             return [self.animation_prompts[keys[prev]], self.animation_prompts[keys[next]]], [1.0 - tween, tween]
 
-    def get_frame_filename(self, frame_idx, prefix="frame"):
-        return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png")
+    def get_frame_filename(self, frame_idx, prefix="frame") -> Optional[str]:
+        return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png") if self.out_dir else None
 
     def image_resize(self, img: np.ndarray, mode: str='stretch') -> np.ndarray:
         height, width, _ = img.shape
@@ -391,8 +453,8 @@ class Animator:
     def inpaint_frame(self, frame_idx: int, image: np.ndarray, mask: np.ndarray,
                       use_inpaint_model: bool=True, mask_fixup: Optional[bool]=None) -> np.ndarray:
         args = self.args
-        steps = int(self.frame_args.steps_series[frame_idx])
-        strength = max(0.0, self.frame_args.strength_series[frame_idx])
+        steps = int(self.frame_args.steps_curve[frame_idx])
+        strength = max(0.0, self.frame_args.strength_curve[frame_idx])
         adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
         sampler = sampler_from_string(args.sampler.lower())
         guidance = guidance_from_string(args.clip_guidance)
@@ -432,96 +494,6 @@ class Animator:
                 guidance_preset=guidance,
             )
         return results[generation.ARTIFACT_IMAGE][0]
-
-    def save_settings(self, filename: str):
-        settings_filepath = os.path.join(self.out_dir, filename)
-        with open(settings_filepath, "w+", encoding="utf-8") as f:
-            save_dict = args2dict(self.args)
-            for k in ['angle', 'zoom', 'translation_x', 'translation_y', 'translation_z', 'rotation_x', 'rotation_y', 'rotation_z']:
-                save_dict.move_to_end(k, last=True)
-            save_dict['animation_prompts'] = self.animation_prompts
-            save_dict['negative_prompt'] = self.negative_prompt
-            save_dict['negative_prompt_weight'] = self.negative_prompt_weight
-            json.dump(save_dict, f, ensure_ascii=False, indent=4)
-
-    def setup_animation(self, resume):
-        args = self.args
-
-        # change request for random seed into explicit value so it is saved to settings
-        if args.seed <= 0:
-            args.seed = random.randint(0, 2**32 - 1)
-
-        # validate clip guidance setting against selected model and sampler
-        if args.clip_guidance.lower() != 'none':
-            if not (model_supports_clip_guidance(args.model) and sampler_supports_clip_guidance(args.sampler)):
-                unsupported = args.model if not model_supports_clip_guidance(args.model) else args.sampler
-                logger.warning(f"CLIP guidance is not supported by {unsupported}, disabling guidance.")
-                args.clip_guidance = 'None'
-
-        def curve_to_series(curve: str) -> List[float]:
-            return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)    
-
-        # expand key frame strings to per frame series
-        self.frame_args = SimpleNamespace(**dict(
-            angle_series = curve_to_series(args.angle),
-            zoom_series = curve_to_series(args.zoom),
-            translation_x_series = curve_to_series(args.translation_x),
-            translation_y_series = curve_to_series(args.translation_y),
-            translation_z_series = curve_to_series(args.translation_z),
-            rotation_x_series = curve_to_series(args.rotation_x),
-            rotation_y_series = curve_to_series(args.rotation_y),
-            rotation_z_series = curve_to_series(args.rotation_z),
-            brightness_series = curve_to_series(args.brightness_curve),
-            contrast_series = curve_to_series(args.contrast_curve),
-            hue_series = curve_to_series(args.hue_curve),
-            saturation_series = curve_to_series(args.saturation_curve),
-            lightness_series = curve_to_series(args.lightness_curve),
-            noise_add_series = curve_to_series(args.noise_add_curve),
-            noise_scale_series = curve_to_series(args.noise_scale_curve),
-            steps_series = curve_to_series(args.steps_curve),
-            strength_series = curve_to_series(args.strength_curve),
-            diffusion_cadence_series = curve_to_series(args.diffusion_cadence_curve),
-            fov_series = curve_to_series(args.fov_curve),
-            depth_blur_series = curve_to_series(args.depth_blur_curve),
-            depth_warp_series = curve_to_series(args.depth_warp_curve),
-            video_mix_in_series = curve_to_series(args.video_mix_in_curve),
-            mask_min_value = curve_to_series(args.mask_min_value),
-        ))
-
-        # prepare sorted list of key frames
-        self.key_frame_values = sorted(list(self.animation_prompts.keys()))
-        if self.key_frame_values[0] != 0:
-            raise ValueError("First keyframe must be 0")
-        if len(self.key_frame_values) != len(set(self.key_frame_values)):
-            raise ValueError("Duplicate keyframes are not allowed!")
-
-        diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[self.start_frame_idx]))
-        # initialize accumulated transforms
-        self.set_cadence_mode(enabled=(diffusion_cadence > 1))
-        self.prior_xforms.extend([matrix.identity, matrix.identity])
-
-        if args.animation_mode=="3D render":
-            args.near_plane = -1  # Needed for mesh rendering
-
-        # prepare inputs
-        self.load_mask()
-        self.load_video()
-        self.load_init_image()
-
-        # handle resuming animation from last frames of a previous run
-        if resume:
-            frames = [f for f in os.listdir(self.out_dir) if f.endswith(".png") and f.startswith("frame_")]
-            self.start_frame_idx = len(frames)
-            self.diffusion_cadence_ofs = self.start_frame_idx
-            if self.start_frame_idx > 2:
-                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-2))
-                next = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
-                self.prior_frames.extend([prev, next])
-                self.prior_diffused.extend([prev, next])
-            elif self.start_frame_idx > 1 and not self.cadence_on:
-                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
-                self.prior_frames.append(prev)
-                self.prior_diffused.append(prev)
 
     def load_init_image(self, fpath=None):
         if fpath is None:
@@ -580,12 +552,12 @@ class Animator:
             return []
 
         args, frame_args = self.args, self.frame_args
-        brightness = frame_args.brightness_series[frame_idx]
-        contrast = frame_args.contrast_series[frame_idx]
-        hue = frame_args.hue_series[frame_idx]
-        saturation = frame_args.saturation_series[frame_idx]
-        lightness = frame_args.lightness_series[frame_idx]
-        noise_amount = frame_args.noise_add_series[frame_idx]
+        brightness = frame_args.brightness_curve[frame_idx]
+        contrast = frame_args.contrast_curve[frame_idx]
+        hue = frame_args.hue_curve[frame_idx]
+        saturation = frame_args.saturation_curve[frame_idx]
+        lightness = frame_args.lightness_curve[frame_idx]
+        noise_amount = frame_args.noise_add_curve[frame_idx]
 
         do_color_match = args.color_coherence != 'None' and self.color_match_image is not None
         do_bchsl = brightness != 1.0 or contrast != 1.0 or hue != 0.0 or saturation != 1.0 or lightness != 0.0
@@ -624,12 +596,12 @@ class Animator:
             if model_requires_depth(args.model) and not self.prior_frames:
                 self.api._generate.engine_id = DEFAULT_MODEL
 
-            diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
+            diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_curve[frame_idx]))
             self.set_cadence_mode(enabled=(diffusion_cadence > 1))
             is_diffusion_frame = (frame_idx - self.diffusion_cadence_ofs) % diffusion_cadence == 0
 
-            steps = int(self.frame_args.steps_series[frame_idx])
-            strength = max(0.0, self.frame_args.strength_series[frame_idx])
+            steps = int(self.frame_args.steps_curve[frame_idx])
+            strength = max(0.0, self.frame_args.strength_curve[frame_idx])
 
             # fetch set of prompts and weights for this frame
             prompts, weights = self.get_animation_prompts_weights(frame_idx)
@@ -647,7 +619,7 @@ class Animator:
                     args.mask_render_method = "mesh"
             
             # transform prior frames
-            stashed_prior_frames = [i.copy() for i in self.prior_frames] if self.mask is not None else None
+            stashed_prior_frames = [i.copy() for i in self.prior_frames] if self.mask is not None else []
             self.inpaint_mask = None
             if args.animation_mode == '2D':
                 self.inpaint_mask = self.transform_2d(frame_idx)
@@ -681,7 +653,7 @@ class Animator:
                 init_image = self.prior_frames[-1] if len(self.prior_frames) and strength > 0 else None
 
                 # mix video frame into init image
-                mix_in = self.frame_args.video_mix_in_series[frame_idx]
+                mix_in = self.frame_args.video_mix_in_curve[frame_idx]
                 if init_image is not None and mix_in > 0 and self.video_prev_frame is not None:
                     init_image = image_mix(init_image, self.video_prev_frame, mix_in)
 
@@ -708,7 +680,7 @@ class Animator:
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
                 guidance = guidance_from_string(args.clip_guidance)
-                noise_scale = self.frame_args.noise_scale_series[frame_idx]
+                noise_scale = self.frame_args.noise_scale_curve[frame_idx]
                 adjusted_steps = int(max(5, steps*(1.0-start_diffusion_from))) if args.steps_strength_adj else int(steps)
                 init_strength = (strength if not do_inpainting else start_diffusion_from) if init_image is not None else 0.0
                 generate_request = self.api.generate(
@@ -760,7 +732,7 @@ class Animator:
 
     def render_stereo_eye_views(self, frame_idx, frame: np.ndarray) -> np.ndarray:
         args, frame_args = self.args, self.frame_args
-        fov = frame_args.fov_series[frame_idx]
+        fov = frame_args.fov_curve[frame_idx]
         projection = matrix.projection_fov(math.radians(fov), 1.0, args.near_plane, args.far_plane)
 
         # VR spherical projection is experimental development feature and may change or be removed
@@ -781,6 +753,21 @@ class Animator:
         
         return np.concatenate(eye_images, axis=1)
 
+    def save_settings(self, filename: str):
+        settings_filepath = os.path.join(self.out_dir, filename) if self.out_dir else filename
+        with open(settings_filepath, "w+", encoding="utf-8") as f:
+            save_dict = args_to_dict(self.args)
+            for k in ['angle', 'zoom', 'translation_x', 'translation_y', 'translation_z', 'rotation_x', 'rotation_y', 'rotation_z']:
+                save_dict.move_to_end(k, last=True)
+            save_dict['animation_prompts'] = self.animation_prompts
+            save_dict['negative_prompt'] = self.negative_prompt
+            save_dict['negative_prompt_weight'] = self.negative_prompt_weight
+            json.dump(save_dict, f, ensure_ascii=False, indent=4)
+
+    def save_to_out_dir(self, frame_idx: int, image: np.ndarray, prefix: str = "frame"):
+        if self.out_dir is not None:
+            cv2.imwrite(self.get_frame_filename(frame_idx, prefix=prefix), image)
+
     def set_mask(self, mask: np.ndarray):
         self.mask = cv2.resize(mask, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
         self.mask = cv2.cvtColor(self.mask, cv2.COLOR_BGR2GRAY)
@@ -796,7 +783,7 @@ class Animator:
             assert new_length in (1, 2)
             if new_length == prev_length:
                 return prior_queue
-            new_queue = deque([], new_length)
+            new_queue: deque = deque([], new_length)
             if len(prior_queue) > 0:
                 if new_length == 2 and prev_length == 1:
                     new_queue.extend([prior_queue[0], prior_queue[0]])
@@ -815,6 +802,64 @@ class Animator:
             self.prior_diffused = set_queue_size(self.prior_diffused, 2, 1)
             self.prior_xforms = set_queue_size(self.prior_xforms, 2, 1)
         self.cadence_on = enabled
+
+    def setup_animation(self, resume):
+        args = self.args
+
+        # change request for random seed into explicit value so it is saved to settings
+        if args.seed <= 0:
+            args.seed = random.randint(0, 2**32 - 1)
+
+        # validate clip guidance setting against selected model and sampler
+        if args.clip_guidance.lower() != 'none':
+            if not (model_supports_clip_guidance(args.model) and sampler_supports_clip_guidance(args.sampler)):
+                unsupported = args.model if not model_supports_clip_guidance(args.model) else args.sampler
+                logger.warning(f"CLIP guidance is not supported by {unsupported}, disabling guidance.")
+                args.clip_guidance = 'None'
+
+        def curve_to_series(curve: str) -> List[float]:
+            return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)    
+
+        # expand key frame strings to per frame series
+        frame_args_dict = {f.name: curve_to_series(getattr(args, f.name)) for f in fields(FrameArgs)}
+        self.frame_args = FrameArgs(**frame_args_dict)        
+
+        # prepare sorted list of key frames
+        self.key_frame_values = sorted(list(self.animation_prompts.keys()))
+        if self.key_frame_values[0] != 0:
+            raise ValueError("First keyframe must be 0")
+        if len(self.key_frame_values) != len(set(self.key_frame_values)):
+            raise ValueError("Duplicate keyframes are not allowed!")
+
+        diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_curve[self.start_frame_idx]))
+        # initialize accumulated transforms
+        self.set_cadence_mode(enabled=(diffusion_cadence > 1))
+        self.prior_xforms.extend([matrix.identity, matrix.identity])
+
+        if args.animation_mode=="3D render":
+            args.near_plane = -1  # Needed for mesh rendering
+
+        # prepare inputs
+        self.load_mask()
+        self.load_video()
+        self.load_init_image()
+
+        # handle resuming animation from last frames of a previous run
+        if resume:
+            if not self.out_dir:
+                raise ValueError("Cannot resume animation without out_dir specified")
+            frames = [f for f in os.listdir(self.out_dir) if f.endswith(".png") and f.startswith("frame_")]
+            self.start_frame_idx = len(frames)
+            self.diffusion_cadence_ofs = self.start_frame_idx
+            if self.start_frame_idx > 2:
+                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-2))
+                next = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
+                self.prior_frames.extend([prev, next])
+                self.prior_diffused.extend([prev, next])
+            elif self.start_frame_idx > 1 and not self.cadence_on:
+                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
+                self.prior_frames.append(prev)
+                self.prior_diffused.append(prev)
 
     def transform_2d(self, frame_idx) -> Optional[np.ndarray]:
         if not len(self.prior_frames):
@@ -851,9 +896,9 @@ class Animator:
 
         args, frame_args = self.args, self.frame_args
         near, far = args.near_plane, args.far_plane
-        fov = frame_args.fov_series[frame_idx]
-        depth_blur = int(frame_args.depth_blur_series[frame_idx])
-        depth_warp = frame_args.depth_warp_series[frame_idx]
+        fov = frame_args.fov_curve[frame_idx]
+        depth_blur = int(frame_args.depth_blur_curve[frame_idx])
+        depth_warp = frame_args.depth_warp_curve[frame_idx]
         
         depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
 
@@ -897,6 +942,7 @@ class Animator:
             return mask[0] if isinstance(mask, list) else mask
 
     def transform_video(self, frame_idx) -> Optional[np.ndarray]:
+        assert self.video_reader is not None
         if not len(self.prior_frames):
             return None
 
@@ -936,8 +982,8 @@ class Animator:
         strength: Optional[float]=None
     ) -> np.ndarray:
         args = self.args
-        steps = int(self.frame_args.steps_series[frame_idx])
-        strength = strength if strength is not None else max(0.0, self.frame_args.strength_series[frame_idx])
+        steps = int(self.frame_args.steps_curve[frame_idx])
+        strength = strength if strength is not None else max(0.0, self.frame_args.strength_curve[frame_idx])
         adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
 
         # fetch set of prompts and weights for this frame
@@ -959,7 +1005,7 @@ class Animator:
             sampler = sampler, 
             init_image = init if init_ops is None else None, 
             init_strength = strength if init is not None else 0.0,
-            init_noise_scale = self.frame_args.noise_scale_series[frame_idx], 
+            init_noise_scale = self.frame_args.noise_scale_curve[frame_idx], 
             mask = mask if mask is not None else self.mask,
             masked_area_init = generation.MASKED_AREA_INIT_ORIGINAL,
             mask_fixup = True,
@@ -983,14 +1029,15 @@ class Animator:
                 xform = to_3x3(xform)
                 frames, masks = self.api.transform([frame], resample_op(args.border, xform, export_mask=True))
             else:
-                fov = frame_args.fov_series[frame_idx]
-                depth_blur = int(frame_args.depth_blur_series[frame_idx])
-                depth_warp = frame_args.depth_warp_series[frame_idx]
+                fov = frame_args.fov_curve[frame_idx]
+                depth_blur = int(frame_args.depth_blur_curve[frame_idx])
+                depth_warp = frame_args.depth_warp_curve[frame_idx]
                 projection = matrix.projection_fov(math.radians(fov), 1.0, args.near_plane, args.far_plane)                
                 wvp = matrix.multiply(projection, xform)
                 depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
                 resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=True)
                 frames, masks = self.api.transform_3d([frame], depth_calc, resample)
+            masks = cast(List[np.ndarray], masks)
             return frames[0], masks[0]
 
         if prev_frame is None:
@@ -1010,7 +1057,7 @@ class Animator:
             forward_frames[-1] = self.inpaint_frame(end-1, forward_frames[-1], forward_masks[-1])
 
         # run diffusion on top of the final result to allow content to evolve over time
-        strength = max(0.0, self.frame_args.strength_series[end-1])
+        strength = max(0.0, self.frame_args.strength_curve[end-1])
         if strength < 1.0:
             final_frame = self._span_render_frame(end-1, seed, forward_frames[-1])
         else:
@@ -1042,10 +1089,10 @@ class Animator:
     def _spans_render(self) -> Generator[Tuple[int, np.ndarray], None, None]:
         frame_idx = self.start_frame_idx
         seed = self.args.seed
-        prev_frame: np.ndarray = None
+        prev_frame: Optional[np.ndarray] = None
         while frame_idx < self.args.max_frames:
             # determine how many frames the span will process together
-            diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_series[frame_idx]))
+            diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_curve[frame_idx]))
             if frame_idx + diffusion_cadence > self.args.max_frames:
                 diffusion_cadence = self.args.max_frames - frame_idx
 
