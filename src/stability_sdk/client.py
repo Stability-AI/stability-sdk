@@ -14,7 +14,7 @@ import mimetypes
 
 import grpc
 from argparse import ArgumentParser, Namespace
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
+from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple, Struct
 from google.protobuf.json_format import MessageToJson
 from PIL import Image
 
@@ -122,6 +122,7 @@ class StabilityInference:
         key: str = "",
         engine: str = "stable-diffusion-v1-5",
         upscale_engine: str = "esrgan-v1-x2plus",
+        enhance_engine: str = None,
         verbose: bool = False,
         wait_for_ready: bool = True,
     ):
@@ -178,7 +179,7 @@ class StabilityInference:
 
     def generate(
         self,
-        prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]],
+        prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]] = None,
         init_image: Optional[Image.Image] = None,
         mask_image: Optional[Image.Image] = None,
         height: int = 512,
@@ -314,9 +315,23 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-
         return self.emit_request(prompt=prompts, image_parameters=image_parameters)
     
+    def enhance(
+        self,
+        init_image: Image.Image,
+        weight: float = 1.0
+    ) -> Generator[generation.Answer, None, None]:
+        
+        prompts = [image_to_prompt(init_image, init=True)]
+
+        extras = Struct()
+        extras.update({
+            'weight': weight
+        })
+        
+        return self.emit_request(prompt=prompts, extra_parameters=extras, engine_id=self.enhance_engine)
+
     def upscale(
         self,
         init_image: Image.Image,
@@ -381,6 +396,7 @@ class StabilityInference:
         self,
         prompt: generation.Prompt,
         image_parameters: generation.ImageParameters,
+        extra_parameters: Optional[Struct] = None,
         engine_id: str = None,
         request_id: str = None,
     ):
@@ -393,7 +409,8 @@ class StabilityInference:
             engine_id=engine_id,
             request_id=request_id,
             prompt=prompt,
-            image=image_parameters
+            image=image_parameters,
+            extras=extra_parameters
         )
 
         if self.verbose:
