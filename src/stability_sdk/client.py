@@ -14,8 +14,9 @@ import mimetypes
 
 import grpc
 from argparse import ArgumentParser, Namespace
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple, Struct
+from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 from google.protobuf.json_format import MessageToJson
+from google.protobuf.struct_pb2 import Struct
 from PIL import Image
 
 try:
@@ -179,7 +180,7 @@ class StabilityInference:
 
     def generate(
         self,
-        prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]] = None,
+        prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]],
         init_image: Optional[Image.Image] = None,
         mask_image: Optional[Image.Image] = None,
         height: int = 512,
