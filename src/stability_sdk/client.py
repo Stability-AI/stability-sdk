@@ -331,8 +331,10 @@ class StabilityInference:
         extras.update({
             'weight': weight
         })
+
+        image_parameters = generation.ImageParameters()
         
-        return self.emit_request(prompt=prompts, extra_parameters=extras, engine_id=self.enhance_engine)
+        return self.emit_request(prompt=prompts, image_parameters=image_parameters, extra_parameters=extras, engine_id=self.enhance_engine)
 
     def upscale(
         self,
