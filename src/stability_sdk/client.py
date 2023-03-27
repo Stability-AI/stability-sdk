@@ -141,6 +141,7 @@ class StabilityInference:
         self.verbose = verbose
         self.engine = engine
         self.upscale_engine = upscale_engine
+        self.enhance_engine = enhance_engine
 
         self.grpc_args = {"wait_for_ready": wait_for_ready}
 
