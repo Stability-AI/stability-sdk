@@ -1137,6 +1137,8 @@ class Context:
                     results[artifact.type].append(artifact.tensor)
                 elif artifact.type == generation.ARTIFACT_TEXT:
                     results[artifact.type].append(artifact.text)
+                elif artifact.type == generation.ARTIFACT_VIDEO:
+                    results[artifact.type].append(artifact.binary)
         return results
 
     def _run_request(
