@@ -53,9 +53,15 @@ def open_channel(host: str, api_key: str = None, max_message_len: int = 10*1024*
 
 
 class ClassifierException(Exception):
-    """Raised when server classifies generated content as inappropriate."""
-    def __init__(self, classifier_result: generation.ClassifierParameters):
+    """Raised when server classifies generated content as inappropriate.
+
+    Attributes:
+        classifier_result: Categories the result image exceeded the threshold for
+        prompt: The prompt that was classified as inappropriate
+    """    
+    def __init__(self, classifier_result: Optional[generation.ClassifierParameters]=None, prompt: Optional[str]=None):
         self.classifier_result = classifier_result
+        self.prompt = prompt
 
 class OutOfCreditsException(Exception):
     """Raised when account doesn't have enough credits to perform a request."""
@@ -104,6 +110,8 @@ class Project():
         list_req = project.ListProjectRequest(owner_id="")
         results = []
         for proj in context._proj_stub.List(list_req, wait_for_ready=True):
+            if proj.id == "00000000-0000-0000-0000-000000000000":                
+                continue # skip the default project with still image history
             results.append(Project(context, proj))
         results.sort(key=lambda x: x.title.lower())
         return results
@@ -410,7 +418,7 @@ class Context:
 
     def transform_and_generate(
         self,
-        image: np.ndarray,
+        image: Optional[np.ndarray],
         params: List[generation.TransformParameters],
         generate_request: generation.Request,
         extras: Optional[Dict] = None,
@@ -424,6 +432,7 @@ class Context:
             results = self._run_request(self._generate, generate_request)
             return results[generation.ARTIFACT_IMAGE][0]
 
+        assert image is not None
         requests = [
             generation.Request(
                 engine_id=self._transform.engine_id,
@@ -649,8 +658,13 @@ class Context:
         results: Dict[int, List[np.ndarray]] = {}
         for resp in response:
             for artifact in resp.artifacts:
+                # check for classifier rejecting a text prompt
+                if artifact.finish_reason == generation.FILTER and artifact.type == generation.ARTIFACT_TEXT:
+                    raise ClassifierException(prompt=artifact.text)
+
                 if artifact.type not in results:
                     results[artifact.type] = []
+
                 if artifact.type == generation.ARTIFACT_CLASSIFICATIONS:
                     results[artifact.type].append(artifact.classifier)
                 elif artifact.type in (generation.ARTIFACT_DEPTH, generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
@@ -661,6 +675,7 @@ class Context:
                     results[artifact.type].append(artifact.tensor)
                 elif artifact.type == generation.ARTIFACT_TEXT:
                     results[artifact.type].append(artifact.text)
+
         return results
 
     def _run_request(
@@ -686,7 +701,7 @@ class Context:
 
                 break
             except ClassifierException as ce:
-                if attempt == self._max_retries or not self._retry_obfuscation:
+                if attempt == self._max_retries or not self._retry_obfuscation or ce.prompt is not None:
                     raise ce
                 
                 for exceed in ce.classifier_result.exceeds:

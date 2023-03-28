@@ -4,7 +4,6 @@ import json
 import locale
 import os
 import param
-import subprocess
 
 from collections import OrderedDict
 from tqdm import tqdm
@@ -29,7 +28,11 @@ from .animation import (
     Rendering3dSettings,
     VideoInputSettings,
     VideoOutputSettings,
+    create_video_from_frames,
+    interpolate_frames
 )
+from .utils import interp_mode_from_str
+
 
 DATA_VERSION = "0.1"
 DATA_GENERATOR = "alpha-test-notebook"
@@ -55,9 +58,9 @@ PRESETS = {
         "mask_min_value":"0:(0.1)", "non_inpainting_model_off_cadence":True,
     },
     "Prompt interpolate": {
-        "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":24, 
-        "strength_curve":"0:(0)", "diffusion_cadence_curve":"0:(2)", "cadence_interp":"rife",
-        "clip_guidance":"None", "animation_prompts": "{\n0:\"a cute cat\",\n24:\"a cute dog\"\n}"
+        "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":48, 
+        "strength_curve":"0:(0)", "diffusion_cadence_curve":"0:(4)", "cadence_interp":"film",
+        "clip_guidance":"None", "animation_prompts": "{\n0:\"a photo of a cute cat\",\n24:\"a photo of a cute dog\"\n}"
     },
     "Outpaint": {
         "animation_mode":"2D", "diffusion_cadence_curve":"0:(24)", "cadence_spans":True, "strength_curve":"0:(0.75)",
@@ -103,6 +106,8 @@ controls: Dict[str, gr.components.Component] = {}
 header = gr.HTML("", show_progress=False)
 interrupt = False
 last_project_settings_path = None
+last_interp_factor = None
+last_interp_mode = None
 projects: List[Project] = []
 project: Optional[Project] = None
 
@@ -111,9 +116,14 @@ project_data_log = gr.Textbox(label="Status", visible=False)
 project_load_button = gr.Button("Load")
 project_new_title = gr.Text(label="Name", value="My amazing animation", interactive=True)
 project_preset_dropdown = gr.Dropdown(label="Preset", choices=list(PRESETS.keys()), value=list(PRESETS.keys())[0], interactive=True)
+project_row_create = None
+project_row_import = None
+project_row_load = None
 projects_dropdown = gr.Dropdown([p.title for p in projects], label="Project", visible=True, interactive=True)
-projects_row = None
-video_update_button = gr.Button("Update last video", visible=False)
+
+project_import_button = gr.Button("Import")
+project_import_file = gr.File(label="Project file", file_types=[".json", ".txt"], type="binary")
+project_import_title = gr.Text(label="Name", value="Imported project", interactive=True)
 
 
 def accordion_for_color(args: ColorSettings):
@@ -189,40 +199,83 @@ def format_header_html() -> str:
         </div>
     """
 
-def frames_to_video(frames_path: str, mp4_path: str, fps: int=24, reverse: bool=False):
-    image_path = os.path.join(frames_path, "frame_%05d.png")
-
-    cmd = [
-        'ffmpeg',
-        '-y',
-        '-vcodec', 'png',
-        '-r', str(fps),
-        '-start_number', str(0),
-        '-i', image_path,
-        '-c:v', 'libx264',
-        '-vf',
-        f'fps={fps}',
-        '-pix_fmt', 'yuv420p',
-        '-crf', '17',
-        '-preset', 'veryslow',
-        mp4_path
-    ]
-    if reverse:
-        cmd.insert(-1, '-vf')
-        cmd.insert(-1, 'reverse')    
-
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        print(stderr)
-        raise RuntimeError(stderr)
-
 def get_default_project():
     data = {
         "version": DATA_VERSION,
         "generator": DATA_GENERATOR
     }
     return data
+
+def post_process_tab():
+    with gr.Row():
+        with gr.Column():
+            fps = gr.Number(label="FPS", value=24, interactive=True, precision=0)
+            reverse = gr.Checkbox(label="Reverse", value=False, interactive=True)
+            with gr.Row():
+                frame_interp_mode = gr.Dropdown(label="Frame interpolation mode", choices=['None', 'film', 'rife'], value='None', interactive=True)       
+                frame_interp_factor = gr.Dropdown(label="Frame interpolation factor", choices=[2, 4, 8], value=2, interactive=True)
+        with gr.Column():
+            image_out = gr.Image(label="image", visible=True)
+            video_out = gr.Video(label="video", visible=False)
+            process_button = gr.Button("Process")
+            stop_button = gr.Button("Stop", visible=False)
+
+    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int):
+        global interrupt, last_interp_factor, last_interp_mode
+        interrupt = False
+        if last_project_settings_path is None:
+            raise gr.Error("Must render an animation first")
+
+        yield {
+            header: gr.update(),
+            image_out: gr.update(visible=True, label=""),
+            video_out: gr.update(visible=False),
+            process_button: gr.update(visible=False),
+            stop_button: gr.update(visible=True),
+        }
+
+        outdir = os.path.dirname(last_project_settings_path)
+
+        if interp_mode != 'None':
+            interp_dir = os.path.join(outdir, "post")
+            interp_mode = interp_mode_from_str(interp_mode)
+            if last_interp_mode != interp_mode or last_interp_factor != interp_factor:                
+                remove_frames_from_path(interp_dir)
+                num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))
+                for frame_idx, frame in enumerate(tqdm(interpolate_frames(context, outdir, interp_dir, interp_mode, interp_factor), total=num_frames)):
+                    yield {
+                        header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
+                        image_out: gr.update(value=frame, label=f"frame {frame_idx}/{num_frames}", visible=True),
+                        video_out: gr.update(visible=False),
+                        process_button: gr.update(visible=False),
+                        stop_button: gr.update(visible=True),
+                    }
+                    if interrupt:
+                        break
+                last_interp_mode, last_interp_factor = interp_mode, interp_factor
+            outdir = interp_dir
+
+        output_video = last_project_settings_path.replace(".json", ".mp4")
+        create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
+        yield {
+            header: gr.update(value=format_header_html()),
+            image_out: gr.update(visible=False),
+            video_out: gr.update(value=output_video, visible=True),
+            process_button: gr.update(visible=True),
+            stop_button: gr.update(visible=False),
+        }
+
+    process_button.click(
+        postprocess_video, 
+        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor], 
+        outputs=[header, image_out, video_out, process_button, stop_button]
+    )    
+
+    def stop_button_click():
+        global interrupt
+        interrupt = True
+    stop_button.click(stop_button_click)
+
 
 def project_create(title, preset):
     ensure_api_context()
@@ -245,7 +298,32 @@ def project_create(title, preset):
     returns = args_to_controls(settings)
     returns[project_data_log] = gr.update(value=log, visible=True)
     returns[projects_dropdown] = gr.update(choices=[p.title for p in projects], visible=True, value=title)
-    returns[projects_row] = gr.update(visible=len(projects) > 0)
+    returns[project_row_load] = gr.update(visible=len(projects) > 0)
+    return returns
+
+def project_import(title, file):
+    ensure_api_context()
+    global project, projects
+    titles = [p.title for p in projects]
+    if title in titles:
+        raise gr.Error(f"Project with title '{title}' already exists")
+    project = Project.create(context, title)
+
+    # read json from file
+    try:
+        settings = json.loads(file.decode('utf-8'))
+    except Exception as e:
+        raise gr.Error(f"Failed to read settings from file: {e}")
+
+    project.save_settings(settings)
+    projects = Project.list_projects(context)
+    log = f"Created project '{title}' with id {project.id}\n{json.dumps(settings)}"
+
+    args_reset_to_defaults()
+    returns = args_to_controls(settings)
+    returns[project_data_log] = gr.update(value=log, visible=True)
+    returns[projects_dropdown] = gr.update(choices=[p.title for p in projects], visible=True, value=title)
+    returns[project_row_load] = gr.update(visible=len(projects) > 0)
     return returns
 
 def project_load(title: str):
@@ -275,23 +353,34 @@ def project_load(title: str):
     return returns
 
 def project_tab():
-    global projects_row
-    with gr.Column(variant="panel"):
-        gr.Markdown("Create a new project")
-        with gr.Row():
-            with gr.Row():
-                project_new_title.render()
-                project_preset_dropdown.render()
-            project_create_button.render()
+    global project_row_create, project_row_import, project_row_load
+
     button_load_projects = gr.Button("Load Projects")
-    with gr.Column(visible=False, variant="panel") as projects_row_:
-        projects_row = projects_row_
-        gr.Markdown("Existing projects")
+    with gr.Accordion("Load a project", open=True, visible=False) as projects_row_:
+        project_row_load = projects_row_
         with gr.Row():
             projects_dropdown.render()
             with gr.Column():
                 project_load_button.render()
                 button_delete_project = gr.Button("Delete")
+
+    with gr.Accordion("Create a new project", open=True, visible=False) as project_row_create_:
+        project_row_create = project_row_create_
+        with gr.Row():
+            with gr.Row():
+                project_new_title.render()
+                project_preset_dropdown.render()
+            project_create_button.render()
+
+    with gr.Accordion("Import a project file", open=False, visible=False) as project_row_import_:
+        project_row_import = project_row_import_
+        with gr.Row():
+            with gr.Column():
+                project_import_file.render()
+            with gr.Column():
+                project_import_title.render()
+                project_import_button.render()
+
     project_data_log.render()
 
     def delete_project(title: str):
@@ -304,7 +393,7 @@ def project_tab():
         project = None
         return {
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
-            projects_row: gr.update(visible=len(projects) > 0),
+            project_row_load: gr.update(visible=len(projects) > 0),
             project_data_log: gr.update(value=log, visible=True)
         }
 
@@ -315,12 +404,19 @@ def project_tab():
         return {
             button_load_projects: gr.update(visible=len(projects)==0),
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
-            projects_row: gr.update(visible=len(projects) > 0),
+            project_row_create: gr.update(visible=True),
+            project_row_import: gr.update(visible=True),
+            project_row_load: gr.update(visible=len(projects) > 0),
             header: gr.update(value=format_header_html())
         }
 
-    button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, projects_row, header])
-    button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, projects_row, project_data_log])
+    button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, project_row_create, project_row_import, project_row_load, header])
+    button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log])
+
+def remove_frames_from_path(path):
+    if os.path.isdir(path):
+        for f in glob.glob(os.path.join(path, "frame_*.png")):
+            os.remove(f)
 
 def render_tab():
     with gr.Row():
@@ -334,7 +430,9 @@ def render_tab():
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
     def render(*render_args):
-        global interrupt, last_project_settings_path, project
+        global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, project
+        interrupt = False
+
         if not project:
             raise gr.Error("No project active!")
         
@@ -384,23 +482,30 @@ def render_tab():
         with open(project_settings_path, 'w', encoding='utf-8') as f:
             json.dump(save_dict, f, indent=4)
 
-        # delete frames from previous animation
-        image_path = os.path.join(outdir, "frame_*.png")
-        for f in glob.glob(image_path):
-            os.remove(f)
+        # initial yield to switch render button to stop button
+        yield {
+            button: gr.update(visible=False),
+            button_stop: gr.update(visible=True),
+            image_out: gr.update(visible=True, label=""),
+            video_out: gr.update(visible=False),
+            header: gr.update(),
+            error_log: gr.update(visible=False),
+        }
 
-        animator = Animator(
-            api_context=context,
-            animation_prompts=prompts,
-            args=args,
-            out_dir=outdir,
-            negative_prompt=negative_prompt,
-            negative_prompt_weight=negative_prompt_weight,
-            resume=False,
-        )
+        # delete frames from previous animation
+        remove_frames_from_path(outdir)
 
         frame_idx, error = 0, None
         try:
+            animator = Animator(
+                api_context=context,
+                animation_prompts=prompts,
+                args=args,
+                out_dir=outdir,
+                negative_prompt=negative_prompt,
+                negative_prompt_weight=negative_prompt_weight,
+                resume=False,
+            )
             for frame_idx, frame in enumerate(tqdm(animator.render(), initial=animator.start_frame_idx, total=args.max_frames)):
                 if interrupt:
                     break
@@ -415,10 +520,11 @@ def render_tab():
                     video_out: gr.update(visible=False),
                     header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
                     error_log: gr.update(visible=False),
-                    video_update_button: gr.update(visible=False),
                 }
-        except ClassifierException:
+        except ClassifierException as e:
             error = "Animation terminated early due to NSFW classifier."
+            if e.prompt is not None:
+                error += "\nPlease revise your prompt: " + e.prompt
         except OutOfCreditsException as e:
             error = f"Animation terminated early, out of credits.\n{e.details}"
         except Exception as e:
@@ -426,11 +532,11 @@ def render_tab():
 
         if frame_idx:
             last_project_settings_path = project_settings_path
+            last_interp_factor, last_interp_mode = None, None
             output_video = project_settings_path.replace(".json", ".mp4")
-            frames_to_video(outdir, output_video, fps=args.fps, reverse=args.reverse)
+            create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
         else:
             output_video = None
-        interrupt = False
         yield {
             button: gr.update(visible=True),
             button_stop: gr.update(visible=False),
@@ -438,32 +544,19 @@ def render_tab():
             video_out: gr.update(value=output_video, visible=True),
             header: gr.update(value=format_header_html()),
             error_log: gr.update(value=error, visible=bool(error)),
-            video_update_button: gr.update(visible=bool(output_video)),
         }
 
     button.click(
         render,
         inputs=list(controls.values()),
-        outputs=[button, button_stop, image_out, video_out, header, error_log, video_update_button]
+        outputs=[button, button_stop, image_out, video_out, header, error_log]
     )
-
-    # rebuild mp4 from frames with updated settings
-    def update_last_video(*render_args):
-        args = {k: v for k, v in zip(controls.keys(), render_args)}
-        outdir = os.path.dirname(last_project_settings_path)
-        output_video = last_project_settings_path.replace(".json", ".mp4")
-        frames_to_video(outdir, output_video, fps=args['fps'], reverse=args['reverse'])
-        yield {
-            video_out: gr.update(value=output_video, visible=True),
-        }
-    video_update_button.click(update_last_video, inputs=list(controls.values()), outputs=[video_out])
 
     # stop animation in progress 
     def stop():
         global interrupt
         interrupt = True
-        yield { button: gr.update(visible=True), button_stop: gr.update(visible=False) }
-    button_stop.click(stop, inputs=[], outputs=[button, button_stop])
+    button_stop.click(stop)
 
 def ui_for_animation_settings(args: AnimationSettings):
     with gr.Row():
@@ -492,7 +585,7 @@ def ui_for_generation(args: AnimationSettings):
 def ui_for_init_and_mask(args_generation):
     p = args_generation.param
     with gr.Row():
-        controls["init_image"] = gr.Text(label="Init image", value=p.custom_model.default, interactive=True)
+        controls["init_image"] = gr.Text(label="Init image", value=p.init_image.default, interactive=True)
         controls["init_sizing"] = gr.Dropdown(label="Init sizing", choices=p.init_sizing.objects, value=p.init_sizing.default, interactive=True)
     with gr.Row():
         controls["mask_path"] = gr.Text(label="Mask path", value=p.mask_path.default, interactive=True)
@@ -507,7 +600,6 @@ def ui_for_video_output(args: VideoOutputSettings):
         controls["vr_eye_angle"] = gr.Number(label="Eye angle", value=p.vr_eye_angle.default, interactive=True)
         controls["vr_eye_dist"] = gr.Number(label="Eye distance", value=p.vr_eye_dist.default, interactive=True)
         controls["vr_projection"] = gr.Number(label="Spherical projection", value=p.vr_projection.default, interactive=True)
-    video_update_button.render()   
 
 def ui_from_args(args: param.Parameterized, exclude: List[str]=[]):
     for k, v in args.param.objects().items():
@@ -576,7 +668,7 @@ def ui_layout_tabs():
 
 
 def create_ui(api_context: Context, outputs_root_path: str):
-    global context, outputs_path
+    global context, outputs_path, projects
     context, outputs_path = api_context, outputs_root_path
 
     locale.setlocale(locale.LC_ALL, '')
@@ -590,12 +682,16 @@ def create_ui(api_context: Context, outputs_root_path: str):
         with gr.Tab("Render"):
             render_tab()
 
+        with gr.Tab("Post-process"):
+            post_process_tab()
+
         load_project_outputs = [project_data_log]
         load_project_outputs.extend(controls.values())
         project_load_button.click(project_load, inputs=projects_dropdown, outputs=load_project_outputs)
 
-        create_project_outputs = [project_data_log, projects_dropdown, projects_row]
+        create_project_outputs = [project_data_log, projects_dropdown, project_row_load]
         create_project_outputs.extend(controls.values())
         project_create_button.click(project_create, inputs=[project_new_title, project_preset_dropdown], outputs=create_project_outputs)
+        project_import_button.click(project_import, inputs=[project_import_title, project_import_file], outputs=create_project_outputs)
 
     return ui
