@@ -263,8 +263,6 @@ class AssetServiceBackend(StorageBackend):
             )
         )
         results = self._context._run_request(self._context._asset, request)
-        # TODO: In testing so far, results contains ARTIFACT_VIDEO key.. but the value for it is an empty list.
-        # Thus it doesn't seem to be working.
         if generation.ARTIFACT_VIDEO in results:
             return results[generation.ARTIFACT_VIDEO][0]
         raise Exception(f"Failed to load video asset {asset_id} for project {proj.id}")
