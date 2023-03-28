@@ -755,7 +755,7 @@ class Animator:
 
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename) if self.out_dir else filename
-        with open(settings_filepath, "w+", encoding="utf-8") as f:
+        with open(settings_filepath, "w", encoding="utf-8") as f:
             save_dict = args_to_dict(self.args)
             for k in ['angle', 'zoom', 'translation_x', 'translation_y', 'translation_z', 'rotation_x', 'rotation_y', 'rotation_z']:
                 save_dict.move_to_end(k, last=True)
