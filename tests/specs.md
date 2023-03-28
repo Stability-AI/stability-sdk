@@ -34,13 +34,23 @@ Default upscale_engine_name is "esrgan-v1-x2plus"
 
 ## Inputs
 **Required inputs:**
-
+```
 init_image  
+```
 
 **Optional inputs:**
-
+```
 height  
-width
+width 
+```
+
+**These inputs are only used in the diffusion models (they are ignored for esrgan):**
+```
+prompt :     Prompt used in text conditioned models  
+steps :      Number of diffusion steps  
+cfg_scale :  Intensity of the prompt (only when a prompt is used)  
+seed :       Seed for the random number generator  
+```
 
 ## Additional requirements:
 Max input size = 1048576 pixels (ie. the total pixels in a 1024 x 1024 image)  
