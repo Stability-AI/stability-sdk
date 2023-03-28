@@ -2,6 +2,7 @@
 
 # fmt: off
 
+import grpc
 import logging
 import mimetypes
 import os
@@ -301,7 +302,7 @@ class StabilityInference:
             width=width,
         )
 
-        prompts = [image_to_prompt(init_image, init=True)]
+        prompts = [image_to_prompt(init_image)]
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters, engine_id=self.upscale_engine)
 
