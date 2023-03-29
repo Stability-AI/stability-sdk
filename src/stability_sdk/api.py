@@ -346,7 +346,7 @@ class LocalFileBackend(StorageBackend):
     @staticmethod
     def delete_project(context: 'Context', id: str):
         if not id:
-            return
+            raise ValueError("Delete project requires a project id")
         project_dir_path = os.path.join(LocalFileBackend._projects_root, id)
         shutil.rmtree(project_dir_path)
 
@@ -380,7 +380,7 @@ class LocalFileBackend(StorageBackend):
         filename = "project_settings.json"
         output_path = self.get_path_for_asset(proj.id, filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "w") as file:
+        with open(output_path, "w", encoding="utf-8") as file:
             json.dump(data, file)
         return filename
 
