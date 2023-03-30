@@ -634,7 +634,7 @@ def ui_layout_tabs():
         accordion_from_args("Coherence", args_coherence, open=False)
         accordion_for_color(args_color)
         accordion_from_args("Depth", args_depth, exclude=["near_plane", "far_plane"], open=False)
-        accordion_from_args("Realistic 3D", args_render_3d, open=False)
+        accordion_from_args("3D render", args_render_3d, open=False)
         accordion_from_args("Inpainting", args_inpaint, open=False)
     with gr.Tab("Input"):
         ui_for_init_and_mask(args_generation)
