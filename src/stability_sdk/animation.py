@@ -607,7 +607,6 @@ class Animator:
 
             
             # transform prior frames
-            self.inpaint_with_non_inpainting_model = is_diffusion_frame and args.non_inpainting_model_for_diffusion_frames
             stashed_prior_frames = [i.copy() for i in self.prior_frames] if self.mask is not None else []
             self.inpaint_mask = None
             if args.animation_mode == '2D':
@@ -621,13 +620,17 @@ class Animator:
             if args.inpaint_border and self.inpaint_mask is not None \
                     and not (args.non_inpainting_model_for_diffusion_frames and not self.cadence_on):
                 if args.animation_mode == '3D render':
-                    self.inpaint_mask = np.where(self.inpaint_mask > self.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
+                    binary_mask = np.where(self.inpaint_mask > args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
+                    binary_mask = self._postprocess_inpainting_mask(binary_mask, frame_idx)
+                    if not is_diffusion_frame:
+                        self.inpaint_mask = binary_mask
                 for i in range(len(self.prior_frames)):
-                    # The latest prior frame will be popped right after the generation step, so this inpainting call for it would be redundant.
+                    # The earliest prior frame will be popped right after the generation step, so this inpainting call for it would be redundant.
                     if self.cadence_on and is_diffusion_frame and i==0:
                         continue
                     self.prior_frames[i] = self.inpaint_frame(
-                        frame_idx, self.prior_frames[i], self.inpaint_mask,
+                        frame_idx, self.prior_frames[i],
+                        binary_mask if args.animation_mode == '3D render' else self.inpaint_mask,
                         mask_fixup=args.do_mask_fixup,
                         use_inpaint_model=True)
 
@@ -919,7 +922,7 @@ class Animator:
                     args.camera_type,
                     args.image_render_mode,
                     args.mask_render_mode,
-                    do_prefill=self.inpaint_with_non_inpainting_model)
+                    do_prefill=True)
             transformed_prior_frames, mask = self.api.transform_3d(self.prior_frames, depth_calc, transform_op)
             self.prior_frames.extend(transformed_prior_frames)
             return mask[0] if isinstance(mask, list) else mask
@@ -953,8 +956,9 @@ class Animator:
             self, mask, frame_idx, blur_radius=5, min_val=None, mask_multiplier=None):
         if mask_multiplier is not None:
             mask = (mask * mask_multiplier).astype(np.uint8)
-        mask = cv2.erode(mask, np.ones((blur_radius, blur_radius), np.uint8))
-        mask = cv2.GaussianBlur(mask, (blur_radius*2+1, blur_radius*2+1), 0)
+        if not self.args.animation_mode == '3D render':
+            mask = cv2.erode(mask, np.ones((blur_radius, blur_radius), np.uint8))
+            mask = cv2.GaussianBlur(mask, (blur_radius*2+1, blur_radius*2+1), 0)
         mask_min_value = self.frame_args.mask_min_value[frame_idx] if min_val is None else min_val
         return mask.clip(255 * mask_min_value, 255).astype(np.uint8)
     

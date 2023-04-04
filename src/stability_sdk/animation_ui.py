@@ -46,16 +46,16 @@ PRESETS = {
     },
     "3D render rotate": {
         "animation_mode": "3D render", "translation_x":"0:(-2)", "rotation_y":"0:(-0.8)",
-        "diffusion_cadence_curve":"0:(2)", "strength_curve":"0:(0.85)",
-        "noise_scale_curve":"0:(1.0)", "depth_model_weight":0.1,
-        "mask_min_value":"0:(0.45)", "non_inpainting_model_off_cadence":True,
+        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
+        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
+        "mask_min_value":"0:(0.45)", "non_inpainting_model_for_diffusion_frames":True,
     },
     "3D render explore": {
         "animation_mode": "3D render", "translation_z":"0:(10)", "translation_x":"0:(2), 20:(-2), 40:(2)",
         "rotation_y":"0:(0), 10:(1.5), 30:(-2), 50: (3)", "rotation_x":"0:(0.4)",
-        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.9)",
-        "noise_scale_curve":"0:(1.0)", "depth_model_weight":0.3,
-        "mask_min_value":"0:(0.1)", "non_inpainting_model_off_cadence":True,
+        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
+        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
+        "mask_min_value":"0:(0.1)", "non_inpainting_model_for_diffusion_frames":True,
     },
     "Prompt interpolate": {
         "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":48, 
