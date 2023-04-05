@@ -254,6 +254,7 @@ class Context:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        preset: Optional[str] = None,
         return_request: bool = False,
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
@@ -277,6 +278,8 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
+        :param preset: Style preset to use
+        :param return_request: Whether to return the request instead of running it
         :return: dict mapping artifact type to data
         """
         if not prompts and init_image is None:
@@ -298,7 +301,11 @@ class Context:
                                                 start_schedule, init_noise_scale, masked_area_init, 
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
-        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params)
+        extras = Struct()
+        if preset and preset.lower() != 'none':
+            extras.update({ '$IPC': { "preset": preset } })
+
+        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params, extras=extras)
         if return_request:
             return request
 
@@ -337,6 +344,7 @@ class Context:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        preset: Optional[str] = None,
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
         Apply inpainting to an image.
@@ -357,6 +365,7 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
+        :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
         width, height = image.shape[1], image.shape[0]
@@ -372,7 +381,11 @@ class Context:
                                                 start_schedule, init_noise_scale, masked_area_init, 
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
-        request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params)        
+        extras = Struct()
+        if preset and preset.lower() != 'none':
+            extras.update({ '$IPC': { "preset": preset } })
+
+        request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params, extras=extras)        
         results = self._run_request(self._inpaint, request)
 
         # optionally force pixels in unmasked areas not to change

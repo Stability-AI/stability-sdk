@@ -577,6 +577,8 @@ def ui_for_generation(args: AnimationSettings):
         controls["model"] = gr.Dropdown(label="Model", choices=p.model.objects, value=p.model.default, interactive=True)
         controls["custom_model"] = gr.Text(label="Custom model", value=p.custom_model.default, interactive=True)
     with gr.Row():
+        controls["preset"] = gr.Dropdown(label="Style preset", choices=p.preset.objects, value=p.preset.default, interactive=True)
+    with gr.Row():
         controls["sampler"] = gr.Dropdown(label="Sampler", choices=p.sampler.objects, value=p.sampler.default, interactive=True)
         controls["seed"] = gr.Number(label="Seed", value=p.seed.default, interactive=True, precision=0)
         controls["cfg_scale"] = gr.Number(label="Guidance scale", value=p.cfg_scale.default, interactive=True)
