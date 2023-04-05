@@ -76,6 +76,14 @@ class BasicSettings(param.Parameterized):
     init_sizing = param.ObjectSelector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
     mask_path = param.String(default="", doc="Path to image or video mask")
     mask_invert = param.Boolean(default=False, doc="White in mask marks areas to change by default.")
+    preset = param.ObjectSelector(
+        default='None', 
+        objects=[
+            'None', '3d-model', 'analog-film', 'anime', 'cinematic', 'comic-book', 'digital-art', 
+            'enhance', 'fantasy-art', 'isometric', 'line-art', 'low-poly', 'modeling-compound', 
+            'neon-punk', 'origami', 'photographic', 'pixel-art',
+        ]
+    )
 
 class AnimationSettings(param.Parameterized):
     animation_mode = param.ObjectSelector(default='3D warp', objects=['2D', '3D warp', '3D render', 'Video Input'])
@@ -473,6 +481,7 @@ class Animator:
                 masked_area_init=generation.MASKED_AREA_INIT_ZERO,
                 mask_fixup=mask_fixup if mask_fixup is not None else False,
                 guidance_preset=guidance,
+                preset=args.preset,
             )
         else:
             results = self.api.generate(
@@ -488,6 +497,7 @@ class Animator:
                 masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                 mask_fixup=mask_fixup if mask_fixup is not None else True,
                 guidance_preset=guidance,
+                preset=args.preset,
             )
         return results[generation.ARTIFACT_IMAGE][0]
 
@@ -693,6 +703,7 @@ class Animator:
                     masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                     mask_fixup=args.do_mask_fixup,
                     guidance_preset=guidance,
+                    preset=args.preset,
                     return_request=True
                 )
                 image = self.api.transform_and_generate(init_image, init_image_ops, generate_request)
@@ -999,6 +1010,7 @@ class Animator:
             masked_area_init = generation.MASKED_AREA_INIT_ORIGINAL,
             mask_fixup = True,
             guidance_preset = guidance,
+            preset = args.preset,
             return_request = True
         )
 
