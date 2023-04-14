@@ -122,6 +122,7 @@ protobuf definition to compile stubs for your language:
 
 * Typescript client: https://github.com/jakiestfu/stability-ts
 * Guide to building for Ruby: https://github.com/kmcphillips/stability-sdk/blob/main/src/ruby/README.md
+* Ruby client: https://github.com/cou929/stability-sdk-ruby
 
 ## Stability API TOS
 
