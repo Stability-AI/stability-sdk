@@ -1,6 +1,6 @@
 name: run unit tests
 
-on: [push]
+on: [push, workflow_dispatch]
 
 jobs:
   test:
