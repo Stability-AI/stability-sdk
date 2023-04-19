@@ -607,16 +607,18 @@ def ui_from_args(args: param.Parameterized, exclude: List[str]=[]):
     for k, v in args.param.objects().items():
         if k == "name" or k in exclude:
             continue
+        if isinstance(v, param.Boolean):
+            t = gr.Checkbox(label=v.label, value=v.default, interactive=True)
         elif isinstance(v, param.Integer):
             t = gr.Number(label=v.label, value=v.default, interactive=True, precision=0)
-        elif isinstance(v, param.ObjectSelector):
-            t = gr.Dropdown(label=v.label, choices=v.objects, value=v.default, interactive=True)
-        elif isinstance(v, param.Boolean):
-            t = gr.Checkbox(label=v.label, value=v.default, interactive=True)
-        elif isinstance(v, param.String):
-            t = gr.Text(label=v.label, value=v.default, interactive=True)
         elif isinstance(v, param.Number):
             t = gr.Number(label=v.label, value=v.default, interactive=True)
+        elif isinstance(v, param.Selector):
+            t = gr.Dropdown(label=v.label, choices=v.objects, value=v.default, interactive=True)
+        elif isinstance(v, param.String):
+            t = gr.Text(label=v.label, value=v.default, interactive=True)
+        else:
+            raise Exception(f"Unknown parameter type {v} for param {k}")
         controls[k] = t
 
 def ui_layout_tabs():
