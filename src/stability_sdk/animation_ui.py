@@ -46,16 +46,16 @@ PRESETS = {
     },
     "3D render rotate": {
         "animation_mode": "3D render", "translation_x":"0:(-2)", "rotation_y":"0:(-0.8)",
-        "diffusion_cadence_curve":"0:(2)", "strength_curve":"0:(0.85)",
-        "noise_scale_curve":"0:(1.0)", "depth_model_weight":0.1,
-        "mask_min_value":"0:(0.45)", "non_inpainting_model_off_cadence":True,
+        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
+        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
+        "mask_min_value":"0:(0.45)", "non_inpainting_model_for_diffusion_frames":True,
     },
     "3D render explore": {
         "animation_mode": "3D render", "translation_z":"0:(10)", "translation_x":"0:(2), 20:(-2), 40:(2)",
         "rotation_y":"0:(0), 10:(1.5), 30:(-2), 50: (3)", "rotation_x":"0:(0.4)",
-        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.9)",
-        "noise_scale_curve":"0:(1.0)", "depth_model_weight":0.3,
-        "mask_min_value":"0:(0.1)", "non_inpainting_model_off_cadence":True,
+        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
+        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
+        "mask_min_value":"0:(0.1)", "non_inpainting_model_for_diffusion_frames":True,
     },
     "Prompt interpolate": {
         "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":48, 
@@ -577,6 +577,8 @@ def ui_for_generation(args: AnimationSettings):
         controls["model"] = gr.Dropdown(label="Model", choices=p.model.objects, value=p.model.default, interactive=True)
         controls["custom_model"] = gr.Text(label="Custom model", value=p.custom_model.default, interactive=True)
     with gr.Row():
+        controls["preset"] = gr.Dropdown(label="Style preset", choices=p.preset.objects, value=p.preset.default, interactive=True)
+    with gr.Row():
         controls["sampler"] = gr.Dropdown(label="Sampler", choices=p.sampler.objects, value=p.sampler.default, interactive=True)
         controls["seed"] = gr.Number(label="Seed", value=p.seed.default, interactive=True, precision=0)
         controls["cfg_scale"] = gr.Number(label="Guidance scale", value=p.cfg_scale.default, interactive=True)
@@ -605,16 +607,18 @@ def ui_from_args(args: param.Parameterized, exclude: List[str]=[]):
     for k, v in args.param.objects().items():
         if k == "name" or k in exclude:
             continue
+        if isinstance(v, param.Boolean):
+            t = gr.Checkbox(label=v.label, value=v.default, interactive=True)
         elif isinstance(v, param.Integer):
             t = gr.Number(label=v.label, value=v.default, interactive=True, precision=0)
-        elif isinstance(v, param.ObjectSelector):
-            t = gr.Dropdown(label=v.label, choices=v.objects, value=v.default, interactive=True)
-        elif isinstance(v, param.Boolean):
-            t = gr.Checkbox(label=v.label, value=v.default, interactive=True)
-        elif isinstance(v, param.String):
-            t = gr.Text(label=v.label, value=v.default, interactive=True)
         elif isinstance(v, param.Number):
             t = gr.Number(label=v.label, value=v.default, interactive=True)
+        elif isinstance(v, param.Selector):
+            t = gr.Dropdown(label=v.label, choices=v.objects, value=v.default, interactive=True)
+        elif isinstance(v, param.String):
+            t = gr.Text(label=v.label, value=v.default, interactive=True)
+        else:
+            raise Exception(f"Unknown parameter type {v} for param {k}")
         controls[k] = t
 
 def ui_layout_tabs():
@@ -634,7 +638,7 @@ def ui_layout_tabs():
         accordion_from_args("Coherence", args_coherence, open=False)
         accordion_for_color(args_color)
         accordion_from_args("Depth", args_depth, exclude=["near_plane", "far_plane"], open=False)
-        accordion_from_args("Realistic 3D", args_render_3d, open=False)
+        accordion_from_args("3D render", args_render_3d, open=False)
         accordion_from_args("Inpainting", args_inpaint, open=False)
     with gr.Tab("Input"):
         ui_for_init_and_mask(args_generation)

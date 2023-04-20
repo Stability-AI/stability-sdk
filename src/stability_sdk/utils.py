@@ -76,6 +76,11 @@ CAMERA_TYPES = {
     'orthographic': generation.CAMERA_ORTHOGRAPHIC,
 }
 
+RENDER_MODES = {
+    'mesh': generation.RENDER_MESH,
+    'pointcloud': generation.RENDER_POINTCLOUD,
+}
+
     
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
 
@@ -135,6 +140,12 @@ def camera_type_from_string(s: str) -> generation.CameraType:
     if cam_type is None:
         raise ValueError(f"invalid camera type: {s}")
     return cam_type
+
+def render_mode_from_string(s: str) -> generation.RenderMode:
+    render_mode = RENDER_MODES.get(s.lower().strip())
+    if render_mode is None:
+        raise ValueError(f"invalid render mode: {s}")
+    return render_mode
 
 def artifact_type_to_str(artifact_type: generation.ArtifactType):
     """
@@ -365,45 +376,19 @@ def camera_pose_op(
     far_plane:float,
     fov:float,
     camera_type:str='perspective',
-    image_render_method:str='mesh',
-    image_point_radius:Optional[float]=None,
-    image_points_per_pixel:Optional[int]=None,
-    image_max_mesh_edge:Optional[float]=0.04,
-    mask_render_method:str='pointcloud',
-    mask_point_radius:Optional[float]=0.003,
-    mask_points_per_pixel:Optional[int]=4,
-    mask_max_mesh_edge:Optional[float]=None,
+    image_render_mode:str='mesh',
+    mask_render_mode:str='pointcloud',
     do_prefill:bool=True,
 ) -> generation.TransformParameters:
     camera_parameters = generation.CameraParameters(
         camera_type=camera_type_from_string(camera_type),
         near_plane=near_plane, far_plane=far_plane, fov=fov)
-    if image_render_method == "pointcloud":
-        image_render_parameters = generation.RenderParameters(
-            pointcloud_parameters=generation.PointCloudRenderParameters(
-                radius=image_point_radius, points_per_pixel=image_points_per_pixel))
-    elif image_render_method == "mesh":
-        image_render_parameters = generation.RenderParameters(
-            mesh_parameters=generation.MeshRenderParameters(
-                max_mesh_edge=image_max_mesh_edge))
-    else:
-        raise Exception("Rendering method must be one of 'pointcloud' or 'mesh'")
-    if mask_render_method == "pointcloud":
-        mask_render_parameters = generation.RenderParameters(
-            pointcloud_parameters=generation.PointCloudRenderParameters(
-                radius=mask_point_radius, points_per_pixel=mask_points_per_pixel))
-    elif mask_render_method == "mesh":
-        mask_render_parameters = generation.RenderParameters(
-            mesh_parameters=generation.MeshRenderParameters(
-                max_mesh_edge=mask_max_mesh_edge))
-    else:
-        raise Exception("Rendering method must be one of 'pointcloud' or 'mesh'")
     return generation.TransformParameters(
         camera_pose=generation.TransformCameraPose(
             world_to_view_matrix=generation.TransformMatrix(data=sum(transform, [])),
             camera_parameters=camera_parameters,
-            image_render_parameters=image_render_parameters,
-            mask_render_parameters=mask_render_parameters,
+            image_render_mode=render_mode_from_string(image_render_mode),
+            mask_render_mode=render_mode_from_string(mask_render_mode),
             do_prefill=do_prefill
         )
     )

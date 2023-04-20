@@ -99,7 +99,7 @@ class Project():
         status: project.ProjectStatus=project.PROJECT_STATUS_ACTIVE
     ) -> 'Project':
         req = project.CreateProjectRequest(title=title, access=access, status=status)
-        proj: project.Project = context._proj_stub.Create(req, wait_for_ready=True)
+        proj: project.Project = context._proj_stub.Create(req)
         return Project(context, proj)
 
     def delete(self):
@@ -109,7 +109,7 @@ class Project():
     def list_projects(context: 'Context') -> List['Project']:
         list_req = project.ListProjectRequest(owner_id="")
         results = []
-        for proj in context._proj_stub.List(list_req, wait_for_ready=True):
+        for proj in context._proj_stub.List(list_req):
             if proj.id == "00000000-0000-0000-0000-000000000000":                
                 continue # skip the default project with still image history
             results.append(Project(context, proj))
@@ -219,6 +219,7 @@ class Context:
 
         self._debug_no_chains = False
         self._max_retries = 5             # retry request on RPC error
+        self._request_timeout = 30.0      # timeout in seconds for each request
         self._retry_delay = 1.0           # base delay in seconds between retries, each attempt will double
         self._retry_obfuscation = False   # retry request with different seed on classifier obfuscation
         self._retry_schedule_offset = 0.1 # increase schedule start by this amount on each retry after the first
@@ -239,14 +240,14 @@ class Context:
         weights: List[float], 
         width: int = 512, 
         height: int = 512, 
-        steps: int = 50, 
+        steps: Optional[int] = None,
         seed: Union[Sequence[int], int] = 0,
         samples: int = 1,
         cfg_scale: float = 7.0, 
-        sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
+        sampler: generation.DiffusionSampler = None,
         init_image: Optional[np.ndarray] = None,
         init_strength: float = 0.0,
-        init_noise_scale: float = 1.0,
+        init_noise_scale: Optional[float] = None,
         init_depth: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ORIGINAL,
@@ -254,6 +255,7 @@ class Context:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        preset: Optional[str] = None,
         return_request: bool = False,
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
@@ -277,6 +279,8 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
+        :param preset: Style preset to use
+        :param return_request: Whether to return the request instead of running it
         :return: dict mapping artifact type to data
         """
         if not prompts and init_image is None:
@@ -298,7 +302,11 @@ class Context:
                                                 start_schedule, init_noise_scale, masked_area_init, 
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
-        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params)
+        extras = Struct()
+        if preset and preset.lower() != 'none':
+            extras.update({ '$IPC': { "preset": preset } })
+
+        request = generation.Request(engine_id=self._generate.engine_id, prompt=p, image=image_params, extras=extras)
         if return_request:
             return request
 
@@ -325,18 +333,19 @@ class Context:
         mask: np.ndarray,
         prompts: List[str], 
         weights: List[float], 
-        steps: int = 50, 
+        steps: Optional[int] = None, 
         seed: Union[Sequence[int], int] = 0,
         samples: int = 1,
         cfg_scale: float = 7.0, 
-        sampler: generation.DiffusionSampler = generation.SAMPLER_K_LMS,
+        sampler: generation.DiffusionSampler = None,
         init_strength: float = 0.0,
-        init_noise_scale: float = 1.0,
+        init_noise_scale: Optional[float] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
         mask_fixup: bool = False,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        preset: Optional[str] = None,
     ) -> Dict[int, List[Union[np.ndarray, Any]]]:
         """
         Apply inpainting to an image.
@@ -357,6 +366,7 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
+        :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
         width, height = image.shape[1], image.shape[0]
@@ -372,7 +382,11 @@ class Context:
                                                 start_schedule, init_noise_scale, masked_area_init, 
                                                 guidance_preset, guidance_cuts, guidance_strength)
 
-        request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params)        
+        extras = Struct()
+        if preset and preset.lower() != 'none':
+            extras.update({ '$IPC': { "preset": preset } })
+
+        request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params, extras=extras)        
         results = self._run_request(self._inpaint, request)
 
         # optionally force pixels in unmasked areas not to change
@@ -570,7 +584,7 @@ class Context:
         )
 
         if self._debug_no_chains:
-            results = self._process_response(self._transform.stub.Generate(rq_depth, wait_for_ready=True))
+            results = self._run_request(self._transform, rq_depth)
             rq_transform.prompt.append(
                 generation.Prompt(
                     artifact=generation.Artifact(
@@ -604,7 +618,7 @@ class Context:
 
     def _adjust_request_for_retry(self, request: generation.Request, attempt: int):
         logger.warning(f"  adjusting request, will retry {self._max_retries-attempt} more times")
-        request.image.seed[:] = [seed + 1 for seed in request.image.seed]
+        request.image.seed[:] = [random.randrange(0, 4294967295) for _ in request.image.seed]
         if attempt > 0 and request.image.parameters and request.image.parameters[0].HasField("schedule"):
             schedule = request.image.parameters[0].schedule
             if schedule.HasField("start"):
@@ -644,7 +658,7 @@ class Context:
             )
 
         return generation.ImageParameters(
-            transform=generation.TransformType(diffusion=sampler),
+            transform=None if sampler is None else generation.TransformType(diffusion=sampler),
             height=height,
             width=width,
             seed=seed,
@@ -687,9 +701,9 @@ class Context:
             try:
                 if isinstance(request, generation.Request):
                     assert endpoint.engine_id == request.engine_id
-                    response = endpoint.stub.Generate(request, wait_for_ready=True)
+                    response = endpoint.stub.Generate(request, timeout=self._request_timeout)
                 else:
-                    response = endpoint.stub.ChainGenerate(request, wait_for_ready=True)
+                    response = endpoint.stub.ChainGenerate(request, timeout=self._request_timeout)
 
                 results = self._process_response(response)
 
@@ -706,9 +720,6 @@ class Context:
                 
                 for exceed in ce.classifier_result.exceeds:
                     logger.warning(f"Received classifier obfuscation. Exceeded {exceed.name} threshold")
-                    for concept in exceed.concepts:
-                        if concept.HasField("threshold"):
-                            logger.warning(f"  {concept.concept} ({concept.threshold})")
                 
                 if isinstance(request, generation.Request) and request.HasField("image"):
                     self._adjust_request_for_retry(request, attempt)
