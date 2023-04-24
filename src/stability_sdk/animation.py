@@ -146,7 +146,6 @@ class Rendering3dSettings(param.Parameterized):
 class InpaintingSettings(param.Parameterized):
     non_inpainting_model_for_diffusion_frames = param.Boolean(default=False, doc="If True, for each diffusion frame, inpainting will be conducted using regular non-inpainting model to optimize number of generations.")
     inpaint_border = param.Boolean(default=False, doc="Use inpainting on top of border regions for 2D and 3D warp modes. Defaults to False")
-    do_mask_fixup = param.Boolean(default=True, doc="Enforce pixels outside of inpainting region to be equal to original frame")
     mask_min_value = param.String(default="0:(0.1)", doc="Mask postprocessing for non-inpainting model. Mask floor values will be clipped by this value prior to inpainting")
     mask_binarization_thr = param.Number(default=0.1, softbounds=(0,1), doc="Applied when inpainting with inpainting model. Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
     save_inpaint_masks = param.Boolean(default=False)
@@ -447,7 +446,7 @@ class Animator:
         return img
 
     def inpaint_frame(self, frame_idx: int, image: np.ndarray, mask: np.ndarray,
-                      use_inpaint_model: bool=True, mask_fixup: Optional[bool]=None) -> np.ndarray:
+                      use_inpaint_model: bool=True) -> np.ndarray:
         args = self.args
         steps = int(self.frame_args.steps_curve[frame_idx])
         strength = max(0.0, self.frame_args.strength_curve[frame_idx])
@@ -471,7 +470,6 @@ class Animator:
                 sampler=sampler, 
                 init_strength=0.0,
                 masked_area_init=generation.MASKED_AREA_INIT_ZERO,
-                mask_fixup=mask_fixup if mask_fixup is not None else False,
                 guidance_preset=guidance,
                 preset=args.preset,
             )
@@ -487,7 +485,6 @@ class Animator:
                 init_strength=strength if image is not None else 0.0,
                 mask=mask,
                 masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
-                mask_fixup=mask_fixup if mask_fixup is not None else True,
                 guidance_preset=guidance,
                 preset=args.preset,
             )
@@ -632,7 +629,6 @@ class Animator:
                     self.prior_frames[i] = self.inpaint_frame(
                         frame_idx, self.prior_frames[i],
                         binary_mask if args.animation_mode == '3D render' else self.inpaint_mask,
-                        mask_fixup=args.do_mask_fixup,
                         use_inpaint_model=True)
 
             # apply mask to transformed prior frames
@@ -692,7 +688,6 @@ class Animator:
                     init_depth=init_depth,
                     mask = self.inpaint_mask if do_inpainting else self.mask,
                     masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
-                    mask_fixup=args.do_mask_fixup,
                     guidance_preset=guidance,
                     preset=args.preset,
                     return_request=True
@@ -975,7 +970,6 @@ class Animator:
             init_noise_scale = self.frame_args.noise_scale_curve[frame_idx], 
             mask = mask if mask is not None else self.mask,
             masked_area_init = generation.MASKED_AREA_INIT_ORIGINAL,
-            mask_fixup = True,
             guidance_preset = guidance,
             preset = args.preset,
             return_request = True
