@@ -581,7 +581,6 @@ class Animator:
 
     def render(self) -> Generator[Image.Image, None, None]:
         args = self.args
-        seed = args.seed
 
         # experimental span-based outpainting mode
         if args.cadence_spans and args.animation_mode != 'Video Input':
@@ -663,7 +662,7 @@ class Animator:
                     init_depth = results[0]
 
                 # builds set of transform ops to prepare init image for generation
-                init_image_ops = self.prepare_init_ops(init_image, frame_idx, seed)
+                init_image_ops = self.prepare_init_ops(init_image, frame_idx, args.seed)
 
                 # For in-diffusion frames instead of a full run through inpainting model and then generate call,
                 # inpainting can be done in a single call with non-inpainting model
@@ -685,7 +684,7 @@ class Animator:
                     prompts, weights, 
                     args.width, args.height, 
                     steps=adjusted_steps,
-                    seed=seed,
+                    seed=args.seed,
                     cfg_scale=args.cfg_scale,
                     sampler=sampler, 
                     init_image=init_image if init_image_ops is None else None, 
@@ -727,7 +726,7 @@ class Animator:
             yield self.emit_frame(frame_idx, out_frame)
 
             if not args.locked_seed:
-                seed += 1
+                args.seed += 1
 
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename) if self.out_dir else filename
