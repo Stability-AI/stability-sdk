@@ -141,8 +141,7 @@ class DepthSettings(param.Parameterized):
 
 class Rendering3dSettings(param.Parameterized):
     camera_type = param.Selector(default='perspective', objects=['perspective', 'orthographic'])
-    image_render_mode = param.Selector(default='mesh', objects=['pointcloud', 'mesh'])
-    mask_render_mode = param.Selector(default='mesh', objects=['pointcloud', 'mesh'])
+    render_mode = param.Selector(default='mesh', objects=['mesh', 'pointcloud'])
     
 class InpaintingSettings(param.Parameterized):
     non_inpainting_model_for_diffusion_frames = param.Boolean(default=False, doc="If True, for each diffusion frame, inpainting will be conducted using regular non-inpainting model to optimize number of generations.")
@@ -900,8 +899,7 @@ class Animator:
                 transform_op = camera_pose_op(
                     world_view, near, far, fov, 
                     args.camera_type,
-                    args.image_render_mode,
-                    args.mask_render_mode,
+                    render_mode=args.render_mode,
                     do_prefill=True)
             transformed_prior_frames, mask = self.api.transform_3d(self.prior_frames, depth_calc, transform_op)
             self.prior_frames.extend(transformed_prior_frames)
