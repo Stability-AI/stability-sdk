@@ -475,13 +475,13 @@ if __name__ == "__main__":
         "--width", "-W", type=int, default=None, help="width of upscaled image"
     )
     parser_upscale.add_argument(
-        "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor"
+        "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor (ignored in esrgan engines)"
     )
     parser_upscale.add_argument(
-        "--steps", "-s", type=int, default=None, help="[auto] number of steps"
+        "--steps", "-s", type=int, default=None, help="[20] number of steps (ignored in esrgan engines)"
     )
     parser_upscale.add_argument(
-        "--seed", "-S", type=int, default=0, help="random seed to use"
+        "--seed", "-S", type=int, default=0, help="random seed to use (ignored in esrgan engines)"
     )
     parser_upscale.add_argument(
         "--prefix",
