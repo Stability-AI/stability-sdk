@@ -14,6 +14,7 @@ import subprocess
 
 from collections import OrderedDict, deque
 from dataclasses import dataclass, fields
+from keyframed.dsl import curve_from_cn_string
 from PIL import Image
 from types import SimpleNamespace
 from typing import cast, Deque, Generator, List, Optional, Tuple
@@ -26,9 +27,7 @@ from stability_sdk.utils import (
     guidance_from_string,
     image_mix,
     image_to_png_bytes,
-    interp_mode_from_str,
-    key_frame_inbetweens,
-    key_frame_parse,
+    interp_mode_from_string,
     resample_op,
     camera_pose_op,
     sampler_from_string,
@@ -162,10 +161,6 @@ class VideoInputSettings(param.Parameterized):
 class VideoOutputSettings(param.Parameterized):
     fps = param.Integer(default=12, doc="Frame rate to use when generating video output.")
     reverse = param.Boolean(default=False, doc="Whether to reverse the output video or not.")
-    vr_mode = param.Boolean(default=False, doc="Outputs side by side views for each eye using depth warp.")
-    vr_eye_angle = param.Number(default=0.5, softbounds=(0,1), doc="Y-axis rotation of the eyes towards the center.")
-    vr_eye_dist = param.Number(default=5.0, softbounds=(0,1), doc="Interpupillary distance (between the eyes)")
-    vr_projection = param.Number(default=-0.4, softbounds=(-1,1), doc="Spherical projection of the video.")
 
 class AnimationArgs(
     BasicSettings,
@@ -411,9 +406,6 @@ class Animator:
 
         if self.args.save_inpaint_masks and self.inpaint_mask is not None:
             self.save_to_out_dir(frame_idx, self.inpaint_mask, prefix='mask')
-
-        if self.args.vr_mode:
-            out_frame = self.render_stereo_eye_views(frame_idx, out_frame)
 
         self.save_to_out_dir(frame_idx, out_frame)
         return cv2_to_pil(out_frame)
@@ -728,7 +720,7 @@ class Animator:
                 out_frame = self.api.interpolate(
                     [self.prior_frames[0], self.prior_frames[1]],
                     [tween],
-                    interp_mode_from_str(args.cadence_interp)
+                    interp_mode_from_string(args.cadence_interp)
                 )[0]
 
             # save and return final frame
@@ -736,29 +728,6 @@ class Animator:
 
             if not args.locked_seed:
                 seed += 1
-
-    def render_stereo_eye_views(self, frame_idx, frame: np.ndarray) -> np.ndarray:
-        args, frame_args = self.args, self.frame_args
-        fov = frame_args.fov_curve[frame_idx]
-        projection = matrix.projection_fov(math.radians(fov), 1.0, args.near_plane, args.far_plane)
-
-        # VR spherical projection is experimental development feature and may change or be removed
-        extras = { "spherical_proj": args.vr_projection }
-
-        eye_images = []
-        for eye_idx in range(2):
-            theta = args.vr_eye_angle * (math.pi / 180)
-            ray_origin = math.cos(theta) * args.vr_eye_dist / 2 * (-1.0 if eye_idx == 0 else 1.0)
-            ray_rotation = theta if eye_idx == 0 else -theta                               
-            world_view = matrix.multiply(matrix.translation(-(ray_origin) * TRANSLATION_SCALE, 0, 0), 
-                                         matrix.rotation_euler(0, math.radians(ray_rotation), 0))
-            wvp = matrix.multiply(projection, world_view)
-            depth_calc = depthcalc_op(args.depth_model_weight)
-            resample = resample_op(args.border, wvp, projection, depth_warp=1.0, export_mask=False)
-            results, _ = self.api.transform_3d([frame], depth_calc, resample, extras=extras)
-            eye_images.append(results[0])
-        
-        return np.concatenate(eye_images, axis=1)
 
     def save_settings(self, filename: str):
         settings_filepath = os.path.join(self.out_dir, filename) if self.out_dir else filename
@@ -825,7 +794,7 @@ class Animator:
                 args.clip_guidance = 'None'
 
         def curve_to_series(curve: str) -> List[float]:
-            return key_frame_inbetweens(key_frame_parse(curve), args.max_frames)    
+            return curve_from_cn_string(curve)
 
         # expand key frame strings to per frame series
         frame_args_dict = {f.name: curve_to_series(getattr(args, f.name)) for f in fields(FrameArgs)}
@@ -1085,7 +1054,7 @@ class Animator:
             t = (idx) / max(1, end-start-1)
             fwd_fill = image_mix(frame_bwd, frame_fwd, mask_erode_blur(forward_masks[idx], 8, 8))
             bwd_fill = image_mix(frame_fwd, frame_bwd, mask_erode_blur(backward_masks[idx], 8, 8))
-            blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_str(args.cadence_interp))[0]
+            blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_string(args.cadence_interp))[0]
             yield start+idx, blended
 
     def _spans_render(self) -> Generator[Tuple[int, np.ndarray], None, None]:

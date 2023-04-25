@@ -34,9 +34,16 @@ setup(
             'grpcio-testing'
         ],
         'anim': [
+            'keyframed',
             'numpy',
-            'pandas',
             'opencv-python-headless',
+        ],
+        'anim_ui': [
+            'keyframed',
+            'gradio',
+            'numpy',
+            'opencv-python-headless',
+            'tqdm',
         ]
     },
     packages=find_namespace_packages(
