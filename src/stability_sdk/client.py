@@ -324,8 +324,8 @@ class StabilityInference:
         width: int = None,
         prompt: Union[str, generation.Prompt] = None,
         steps: Optional[int] = 20,
-        cfg_scale: int = 7,
-        seed: Union[Sequence[int], int] = 0
+        cfg_scale: float = 7.0,
+        seed: int = 0
     ) -> Generator[generation.Answer, None, None]:
         """
         Upscale an image.
@@ -347,10 +347,7 @@ class StabilityInference:
 
         :return: Tuple of (prompts, image_parameters)
         """
-        if isinstance(seed, int):
-            seed = [seed]
-        else:
-            seed = list(seed)
+        seed = [seed]
 
         step_parameters = dict(
             sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
