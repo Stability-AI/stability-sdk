@@ -39,7 +39,7 @@ from stability_sdk.client import (
 from stability_sdk.utils import (
     SAMPLERS,
     open_images,
-    sampler_from_str,
+    sampler_from_string,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ parser.add_argument(
     "-e",
     type=str,
     help="engine to use for inference",
-    default="stable-diffusion-v1-5",
+    default="stable-diffusion-xl-beta-v2-2-2",
 )
 parser.add_argument(
     "--init_image",
@@ -172,7 +172,7 @@ request =  {
 }
 
 if args.sampler:
-    request["sampler"] = get_sampler_from_str(args.sampler)
+    request["sampler"] = sampler_from_string(args.sampler)
 if args.seed and args.seed > 0:
     request["seed"] = args.seed
 

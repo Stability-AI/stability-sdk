@@ -1,9 +1,7 @@
 import grpc
-import json
 import logging
 import random
 import time
-import warnings
 
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
@@ -13,8 +11,8 @@ try:
     import cv2
     import numpy as np
 except ImportError:
-    warnings.warn(
-        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
+    raise ImportError(
+        "Failed to import animation requirements. To use the animation toolchain, install the dependencies with:\n" 
         "   pip install --upgrade stability_sdk[anim]"
     )
 
@@ -22,8 +20,6 @@ import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2 as dashboard
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2_grpc as dashboard_grpc
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
-import stability_sdk.interfaces.gooseai.project.project_pb2 as project
-import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
 
 from .utils import (
     image_mix,
@@ -36,7 +32,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
 
-def open_channel(host: str, api_key: str = None, max_message_len: int = 10*1024*1024) -> grpc.Channel:
+def open_channel(host: str, api_key: str = None, max_message_len: int = 20*1024*1024) -> grpc.Channel:
     options=[
         ('grpc.max_send_message_length', max_message_len),
         ('grpc.max_receive_message_length', max_message_len),
@@ -74,148 +70,31 @@ class Endpoint:
         self.stub = stub
         self.engine_id = engine_id
 
-class Project():
-    def __init__(self, context: 'Context', project: project.Project):
-        self._context = context
-        self._project = project
-
-    @property
-    def id(self) -> str:
-        return self._project.id
-
-    @property
-    def file_id(self) -> str:
-        return self._project.file.id
-
-    @property
-    def title(self) -> str:
-        return self._project.title
-
-    @staticmethod
-    def create(
-        context: 'Context', 
-        title: str, 
-        access: project.ProjectAccess=project.PROJECT_ACCESS_PRIVATE,
-        status: project.ProjectStatus=project.PROJECT_STATUS_ACTIVE
-    ) -> 'Project':
-        req = project.CreateProjectRequest(title=title, access=access, status=status)
-        proj: project.Project = context._proj_stub.Create(req)
-        return Project(context, proj)
-
-    def delete(self):
-        self._context._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
-
-    @staticmethod
-    def list_projects(context: 'Context') -> List['Project']:
-        list_req = project.ListProjectRequest(owner_id="")
-        results = []
-        for proj in context._proj_stub.List(list_req):
-            if proj.id == "00000000-0000-0000-0000-000000000000":                
-                continue # skip the default project with still image history
-            results.append(Project(context, proj))
-        results.sort(key=lambda x: x.title.lower())
-        return results
-
-    def load_settings(self) -> dict:
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[generation.Prompt(
-                artifact=generation.Artifact(
-                    type=generation.ARTIFACT_TEXT,
-                    mime="application/json",
-                    uuid=self.file_id,
-                )
-            )],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_GET, 
-                project_id=self.id,
-                use=generation.ASSET_USE_PROJECT
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return json.loads(results[generation.ARTIFACT_TEXT][0])
-        raise Exception(f"Failed to load project file for {self.id}")
-
-    def save_settings(self, data: dict) -> str:
-        contents = json.dumps(data)
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[generation.Prompt(
-                artifact=generation.Artifact(
-                    type=generation.ARTIFACT_TEXT,
-                    text=contents,
-                    mime="application/json",
-                    uuid=self.file_id
-                )
-            )],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_PUT, 
-                project_id=self.id, 
-                use=generation.ASSET_USE_PROJECT
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return results[generation.ARTIFACT_TEXT][0]
-        raise Exception(f"Failed to save project file for {self.id}")
-
-    def put_image_asset(
-        self, 
-        image: Union[Image.Image, np.ndarray],
-        use: generation.AssetUse=generation.ASSET_USE_OUTPUT
-    ):
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[image_to_prompt(image)],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_PUT, 
-                project_id=self.id, 
-                use=use
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return results[generation.ARTIFACT_TEXT][0]
-        raise Exception(f"Failed to store image asset for project {self.id}")
-
-    def update(self, title:str=None, file_id:str=None, file_uri:str=None):
-        file = project.ProjectAsset(
-            id=file_id,
-            uri=file_uri,
-            use=project.PROJECT_ASSET_USE_PROJECT,
-        ) if file_id and file_uri else None
-        
-        self._context._proj_stub.Update(project.UpdateProjectRequest(
-            id=self.id, 
-            title=title,
-            file=file
-        ))
-
-        if title:
-            self._project.title = title
-        if file_id:
-            self._project.file.id = file_id
-        if file_uri:
-            self._project.file.uri = file_uri
-
 
 class Context:
-    def __init__(self, host: str="", api_key: str=None, stub: generation_grpc.GenerationServiceStub=None):
+    def __init__(
+            self, 
+            host: str="", 
+            api_key: str=None, 
+            stub: generation_grpc.GenerationServiceStub=None,
+            generate_engine_id: str="stable-diffusion-v1-5",
+            inpaint_engine_id: str="stable-inpainting-512-v2-0",
+            interpolate_engine_id: str="interpolation-server-v1",
+            transform_engine_id: str="transform-server-v1",
+        ):
         if not host and stub is None:
             raise Exception("Must provide either GRPC host or stub to Api")
+
         channel = open_channel(host, api_key) if host else None
         if not stub:
             stub = generation_grpc.GenerationServiceStub(channel)
 
         self._dashboard_stub = dashboard_grpc.DashboardServiceStub(channel) if channel else None
-        self._proj_stub = project_grpc.ProjectServiceStub(channel) if channel else None
 
-        self._asset = Endpoint(stub, 'asset-service')
-        self._generate = Endpoint(stub, 'stable-diffusion-v1-5')
-        self._inpaint = Endpoint(stub, 'stable-inpainting-512-v2-0')
-        self._interpolate = Endpoint(stub, 'interpolation-server-v1')
-        self._transform = Endpoint(stub, 'transform-server-v1')
+        self._generate = Endpoint(stub, generate_engine_id)
+        self._inpaint = Endpoint(stub, inpaint_engine_id)
+        self._interpolate = Endpoint(stub, interpolate_engine_id)
+        self._transform = Endpoint(stub, transform_engine_id)
 
         self._debug_no_chains = False
         self._max_retries = 5             # retry request on RPC error
@@ -550,7 +429,6 @@ class Context:
         masks = results.get(generation.ARTIFACT_MASK, None)
         return images, masks
 
-    # TODO: Add option to do transform using given depth map (e.g. for Blender use cases)
     def transform_3d(
         self, 
         images: Iterable[np.ndarray], 
