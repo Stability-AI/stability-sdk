@@ -10,11 +10,11 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.4.0',
-    author='Wes Brown',
-    author_email='wesbrown18@gmail.com',
-    maintainer='David Marx',
-    maintainer_email='david@stability.ai',
+    version='0.6.1',
+    author='Stability AI',
+    author_email='support@stability.ai',
+    maintainer='Stability AI',
+    maintainer_email='support@stability.ai',
     url='https://beta.dreamstudio.ai/',
     download_url='https://github.com/Stability-AI/stability-sdk/',
     description='Python SDK for interacting with stability.ai APIs',
@@ -22,11 +22,11 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         'Pillow',
-        'grpcio==1.48.1',
-        'grpcio-tools==1.48.1',
+        'grpcio==1.53.0',
+        'grpcio-tools==1.53.0',
         'python-dotenv',
-        'protobuf==3.19.5',        
         'param',
+        'protobuf==4.21.12'
     ],
     extras_require={
         'dev': [
