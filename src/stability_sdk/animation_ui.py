@@ -1,18 +1,25 @@
 import glob
-import gradio as gr
 import json
 import locale
 import os
 import param
+import shutil
 
 from collections import OrderedDict
 from tqdm import tqdm
 from typing import Any, Dict, List, Optional
 
+try:
+    import gradio as gr
+except ImportError:
+    raise ImportError(
+        "Failed to import animation UI requirements. To use the animation UI, install the dependencies with:\n" 
+        "   pip install --upgrade stability_sdk[anim_ui]"
+    )
+
 from .api import (
     ClassifierException, 
     Context,
-    Project,
     OutOfCreditsException,
 )
 from .animation import (
@@ -31,7 +38,7 @@ from .animation import (
     create_video_from_frames,
     interpolate_frames
 )
-from .utils import interp_mode_from_str
+from .utils import interp_mode_from_string
 
 
 DATA_VERSION = "0.1"
@@ -71,6 +78,37 @@ PRESETS = {
         "strength_curve":"0:(0.22)", "clip_guidance":"None", "video_mix_in_curve":"0:(1.0)", "video_flow_warp":True,
     },
 }
+
+class Project():
+    def __init__(self, title, settings={}) -> None:
+        self.folder = title.replace("/", "_").replace("\\", "_").replace(":", "")
+        self.settings = settings
+        self.title = title
+    
+    @classmethod
+    def list_projects(cls) -> List["Project"]:
+        projects = []
+        for path in os.listdir(outputs_path):
+            directory = os.path.join(outputs_path, path)
+            if not os.path.isdir(directory):
+                continue
+
+            json_files = sorted(glob.glob(os.path.join(directory, '*.json')))
+            if not json_files:
+                continue
+
+            filename = os.path.basename(json_files[-1])
+            if not '(' in filename:
+                continue
+
+            project = cls(filename[:filename.rfind('(')-1].strip())
+            try:
+                project.settings = json.load(open(os.path.join(directory, filename), 'r'))
+            except:
+                continue
+            projects.append(project)
+        return projects
+
 
 context = None
 outputs_path = None
@@ -183,7 +221,7 @@ def format_header_html() -> str:
     formatted_number = locale.format_string("%d", balance, grouping=True)
     return f"""
         <div class="flex flex-row items-center" style="display:flex; justify-content: space-between; margin-top: 8px;">
-            <div>StabilityAI Stable Diffusion Animation</div>
+            <div>Stable Animation UI</div>
             <div class="flex cursor-pointer flex-row items-center gap-1" style="display:flex; gap: 0.25rem; justify-content: flex-end;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
                     <circle cx="8" cy="8" r="6"></circle>
@@ -200,10 +238,11 @@ def format_header_html() -> str:
     """
 
 def get_default_project():
-    data = {
+    data = OrderedDict(AnimationArgs().param.values())
+    data.update({
         "version": DATA_VERSION,
         "generator": DATA_GENERATOR
-    }
+    })
     return data
 
 def post_process_tab():
@@ -238,7 +277,7 @@ def post_process_tab():
 
         if interp_mode != 'None':
             interp_dir = os.path.join(outdir, "post")
-            interp_mode = interp_mode_from_str(interp_mode)
+            interp_mode = interp_mode_from_string(interp_mode)
             if last_interp_mode != interp_mode or last_interp_factor != interp_factor:                
                 remove_frames_from_path(interp_dir)
                 num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))
@@ -283,19 +322,18 @@ def project_create(title, preset):
     titles = [p.title for p in projects]
     if title in titles:
         raise gr.Error(f"Project with title '{title}' already exists")
-    project = Project.create(context, title)
-    settings = get_default_project()
+    project = Project(title, get_default_project())
+    projects.append(project)
+    projects = sorted(projects, key=lambda p: p.title)
 
     # grab each setting from the preset and add to settings
     for k, v in PRESETS[preset].items():
-        settings[k] = v
+        project.settings[k] = v
 
-    project.save_settings(settings)
-    projects = Project.list_projects(context)
-    log = f"Created project '{title}' with id {project.id}\n{json.dumps(settings)}"
+    log = f"Created project '{title}'"
 
     args_reset_to_defaults()
-    returns = args_to_controls(settings)
+    returns = args_to_controls(project.settings)
     returns[project_data_log] = gr.update(value=log, visible=True)
     returns[projects_dropdown] = gr.update(choices=[p.title for p in projects], visible=True, value=title)
     returns[project_row_load] = gr.update(visible=len(projects) > 0)
@@ -308,19 +346,19 @@ def project_import(title, file):
     if title in titles:
         raise gr.Error(f"Project with title '{title}' already exists")
     project = Project.create(context, title)
+    projects.append(project)
+    projects = sorted(projects, key=lambda p: p.title)
 
     # read json from file
     try:
-        settings = json.loads(file.decode('utf-8'))
+        project.settings = json.loads(file.decode('utf-8'))
     except Exception as e:
         raise gr.Error(f"Failed to read settings from file: {e}")
 
-    project.save_settings(settings)
-    projects = Project.list_projects(context)
-    log = f"Created project '{title}' with id {project.id}\n{json.dumps(settings)}"
+    log = f"Imported project '{title}'"
 
     args_reset_to_defaults()
-    returns = args_to_controls(settings)
+    returns = args_to_controls(project.settings)
     returns[project_data_log] = gr.update(value=log, visible=True)
     returns[projects_dropdown] = gr.update(choices=[p.title for p in projects], visible=True, value=title)
     returns[project_row_load] = gr.update(visible=len(projects) > 0)
@@ -330,15 +368,9 @@ def project_load(title: str):
     ensure_api_context()
     global project
     project = next(p for p in projects if p.title == title)
-    try:
-        data = project.load_settings()
-    except OutOfCreditsException as e:
-        log = f"Not enough credits to load project '{title}'\n{e.details}"
-        returns = args_to_controls(get_default_project())
-        returns[project_data_log] = gr.update(value=log, visible=True)
-        return returns
+    data = project.settings
 
-    log = f"Loaded project '{title}' with id {project.id}\n{json.dumps(data, indent=4)}"
+    log = f"Loaded project '{title}'"
 
     # filter project file to latest version
     if "animation_mode" in data and data["animation_mode"] == "3D":
@@ -366,19 +398,20 @@ def project_tab():
 
     with gr.Accordion("Create a new project", open=True, visible=False) as project_row_create_:
         project_row_create = project_row_create_
-        with gr.Row():
+        with gr.Column():
             with gr.Row():
                 project_new_title.render()
                 project_preset_dropdown.render()
-            project_create_button.render()
+            with gr.Column():
+                project_create_button.render()
 
     with gr.Accordion("Import a project file", open=False, visible=False) as project_row_import_:
         project_row_import = project_row_import_
-        with gr.Row():
-            with gr.Column():
+        with gr.Column():
+            with gr.Row():
+                project_import_title.render()
                 project_import_file.render()
             with gr.Column():
-                project_import_title.render()
                 project_import_button.render()
 
     project_data_log.render()
@@ -387,10 +420,12 @@ def project_tab():
         ensure_api_context()
         global project, projects
         project = next(p for p in projects if p.title == title)
-        project.delete()
-        log = f"Deleted project '{title}' with id {project.id}"
-        projects = Project.list_projects(context)
+        projects.remove(project)
         project = None
+
+        shutil.rmtree(os.path.join(outputs_path, project.path))
+
+        log = f"Deleted project '{title}'"
         return {
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
             project_row_load: gr.update(visible=len(projects) > 0),
@@ -400,9 +435,9 @@ def project_tab():
     def load_projects():
         ensure_api_context()
         global projects
-        projects = Project.list_projects(context)
+        projects = Project.list_projects()
         return {
-            button_load_projects: gr.update(visible=len(projects)==0),
+            button_load_projects: gr.update(visible=False),
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
             project_row_create: gr.update(visible=True),
             project_row_import: gr.update(visible=True),
@@ -437,14 +472,13 @@ def render_tab():
             raise gr.Error("No project active!")
         
         # create local folder for the project
-        project_folder_name = project.title.replace("/", "_").replace("\\", "_").replace(":", "")
-        outdir = os.path.join(outputs_path, project_folder_name)
+        outdir = os.path.join(outputs_path, project.folder)
         os.makedirs(outdir, exist_ok=True)
 
         # each render gets a unique run index
         run_index = 0
         while True:
-            project_settings_path = os.path.join(outdir, f"{project_folder_name} ({run_index}).json")
+            project_settings_path = os.path.join(outdir, f"{project.folder} ({run_index}).json")
             if not os.path.exists(project_settings_path):
                 break
             run_index += 1
@@ -475,10 +509,7 @@ def render_tab():
         save_dict.update(args.param.values())
         save_dict['animation_prompts'] = animation_prompts
         save_dict['negative_prompt'] = negative_prompt
-        try:
-            project.save_settings(save_dict)
-        except OutOfCreditsException as e:
-            raise gr.Error(e.details)
+        project.settings = save_dict
         with open(project_settings_path, 'w', encoding='utf-8') as f:
             json.dump(save_dict, f, indent=4)
 
@@ -597,11 +628,6 @@ def ui_for_video_output(args: VideoOutputSettings):
     p = args.param
     controls["fps"] = gr.Number(label="FPS", value=p.fps.default, interactive=True, precision=0)
     controls["reverse"] = gr.Checkbox(label="Reverse", value=p.reverse.default, interactive=True)
-    with gr.Row():
-        controls["vr_mode"] = gr.Checkbox(label="VR Mode", value=p.vr_mode.default, interactive=True)
-        controls["vr_eye_angle"] = gr.Number(label="Eye angle", value=p.vr_eye_angle.default, interactive=True)
-        controls["vr_eye_dist"] = gr.Number(label="Eye distance", value=p.vr_eye_dist.default, interactive=True)
-        controls["vr_projection"] = gr.Number(label="Spherical projection", value=p.vr_projection.default, interactive=True)
 
 def ui_from_args(args: param.Parameterized, exclude: List[str]=[]):
     for k, v in args.param.objects().items():

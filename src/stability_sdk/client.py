@@ -16,7 +16,6 @@ from google.protobuf.json_format import MessageToJson
 from PIL import Image
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union
 
-
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
@@ -24,7 +23,7 @@ from .api import open_channel
 from .utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
-    artifact_type_to_str,
+    artifact_type_to_string,
     image_to_prompt,
     open_images,
     sampler_from_string,
@@ -73,17 +72,17 @@ def process_artifacts_from_answers(
                 ext = ".pb"
                 contents = artifact.SerializeToString()
             out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
-            is_allowed_type = filter_types is None or artifact_type_to_str(artifact.type) in filter_types
+            is_allowed_type = filter_types is None or artifact_type_to_string(artifact.type) in filter_types
             if write:
                 if is_allowed_type:
                     with open(out_p, "wb") as f:
                         f.write(bytes(contents))
                         if verbose:
-                            logger.info(f"wrote {artifact_type_to_str(artifact.type)} to {out_p}")
+                            logger.info(f"wrote {artifact_type_to_string(artifact.type)} to {out_p}")
                 else:
                     if verbose:
                         logger.info(
-                            f"skipping {artifact_type_to_str(artifact.type)} due to artifact type filter")
+                            f"skipping {artifact_type_to_string(artifact.type)} due to artifact type filter")
 
             yield (out_p, artifact)
             idx += 1
@@ -336,7 +335,7 @@ class StabilityInference:
             if self.verbose:
                 if len(answer.artifacts) > 0:
                     artifact_ts = [
-                        artifact_type_to_str(artifact.type)
+                        artifact_type_to_string(artifact.type)
                         for artifact in answer.artifacts
                     ]
                     logger.info(
@@ -428,7 +427,11 @@ if __name__ == "__main__":
         help="engine to use for upscale",
         default="esrgan-v1-x2plus",
     )
-    
+
+    parser_animate = subparsers.add_parser('animate')
+    parser_animate.add_argument("--gui", action="store_true", help="serve Gradio UI")
+    parser_animate.add_argument("--share", action="store_true", help="create shareable UI link")
+    parser_animate.add_argument("--output", "-o", type=str, default=".", help="root output folder")    
 
     parser_generate = subparsers.add_parser('generate')
     parser_generate.add_argument(
@@ -565,7 +568,7 @@ if __name__ == "__main__":
         }
 
         if args.sampler:
-            request["sampler"] = get_sampler_from_str(args.sampler)
+            request["sampler"] = sampler_from_string(args.sampler)
 
         if args.steps:
             request["steps"] = args.steps
@@ -578,6 +581,18 @@ if __name__ == "__main__":
             args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
             filter_types=args.artifact_types,
         )
+    elif args.command == "animate":
+        if args.gui:
+            from .animation_ui import create_ui
+            from .api import Context
+            ui = create_ui(Context(STABILITY_HOST, STABILITY_KEY), args.output)
+            ui.queue(concurrency_count=2, max_size=2)
+            ui.launch(show_api=False, debug=True, height=768, share=args.share, show_error=True)
+            sys.exit(0)
+        else:
+            logger.warning("animate must be invoked with --gui")
+            sys.exit(1)
+
     
     if args.show:
         for artifact in open_images(artifacts, verbose=True):

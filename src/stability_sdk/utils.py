@@ -1,29 +1,23 @@
 import io
 import logging
 import os
-import re
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 import warnings
 
+from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 
-logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.INFO)
+from PIL import Image
 
 try:
+    import cv2
     import numpy as np
-    import pandas as pd
-    import cv2 # to do: add this as an installation dependency
 except ImportError:
     warnings.warn(
         "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
         "   pip install --upgrade stability_sdk[anim]"
     )
     
-from PIL import Image
-
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
-from stability_sdk.matrix import Matrix
+from .api import generation
+from .matrix import Matrix
 
 
 logger = logging.getLogger(__name__)
@@ -49,7 +43,7 @@ GUIDANCE_PRESETS: Dict[str, int] = {
     "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
 }
 
-COLOR_SPACES =  {
+COLOR_SPACES = {
     "hsv": generation.COLOR_MATCH_HSV,
     "lab": generation.COLOR_MATCH_LAB,
     "rgb": generation.COLOR_MATCH_RGB,
@@ -94,9 +88,7 @@ def cv2_to_pil(cv2_img: np.ndarray) -> Image.Image:
     return Image.fromarray(cv2_img[:, :, ::-1])
 
 
-# note: we need to decide on a convention between _str and _string
-
-def border_mode_from_str(s: str) -> generation.BorderMode:
+def border_mode_from_string(s: str) -> generation.BorderMode:
     repr = BORDER_MODES.get(s.lower().strip())
     if repr is None:
         raise ValueError(f"invalid border mode: {s}")
@@ -114,7 +106,7 @@ def guidance_from_string(s: str) -> generation.GuidancePreset:
         raise ValueError(f"invalid guidance preset: {s}")
     return repr
 
-def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
+def sampler_from_string(s: str) -> generation.DiffusionSampler:
     """
     Convert a string to a DiffusionSampler enum.
     :param s: The string to convert.
@@ -126,15 +118,12 @@ def get_sampler_from_str(s: str) -> generation.DiffusionSampler:
         raise ValueError(f"invalid sampler: {s}")
     return repr
 
-sampler_from_string = get_sampler_from_str
-
-def interp_mode_from_str(s: str) -> generation.InterpolateMode:
+def interp_mode_from_string(s: str) -> generation.InterpolateMode:
     mode = INTERP_MODES.get(s.lower().strip())
     if mode is None:
         raise ValueError(f"invalid interpolation mode: {s}")
     return mode
 
-# TODO: class/decorator instead
 def camera_type_from_string(s: str) -> generation.CameraType:
     cam_type = CAMERA_TYPES.get(s.lower().strip())
     if cam_type is None:
@@ -147,7 +136,7 @@ def render_mode_from_string(s: str) -> generation.RenderMode:
         raise ValueError(f"invalid render mode: {s}")
     return render_mode
 
-def artifact_type_to_str(artifact_type: generation.ArtifactType):
+def artifact_type_to_string(artifact_type: generation.ArtifactType):
     """
     Convert ArtifactType to a string.
     :param artifact_type: The ArtifactType to convert.
@@ -264,41 +253,6 @@ def tensor_to_prompt(tensor: 'tensors_pb.Tensor') -> generation.Prompt:
     ))
 
 
-##############################################
-
-
-def key_frame_inbetweens(key_frames, max_frames, integer=False, interp_method='Linear'):
-    key_frame_series = pd.Series([np.nan for a in range(max_frames)])
-
-    for i, value in key_frames.items():
-        key_frame_series[i] = value
-    key_frame_series = key_frame_series.astype(float)
-    
-    if interp_method == 'Cubic' and len(key_frames.items()) <= 3:
-      interp_method = 'Quadratic'    
-    if interp_method == 'Quadratic' and len(key_frames.items()) <= 2:
-      interp_method = 'Linear'
-          
-    key_frame_series[0] = key_frame_series[key_frame_series.first_valid_index()]
-    key_frame_series[max_frames-1] = key_frame_series[key_frame_series.last_valid_index()]
-    key_frame_series = key_frame_series.interpolate(method=interp_method.lower(), limit_direction='both')
-    if integer:
-        return key_frame_series.astype(int)
-    return key_frame_series
-
-def key_frame_parse(string, prompt_parser=None):
-    pattern = r'((?P<frame>[0-9]+):[\s]*[\(](?P<param>[\S\s]*?)[\)])'
-    frames = dict()
-    for match_object in re.finditer(pattern, string):
-        frame = int(match_object.groupdict()['frame'])
-        param = match_object.groupdict()['param']
-        if prompt_parser:
-            frames[frame] = prompt_parser(param)
-        else:
-            frames[frame] = param
-    if frames == {} and len(string) != 0:
-        raise RuntimeError('Key Frame string not correctly formatted')
-    return frames
 
 
 #####################################################################
@@ -362,7 +316,7 @@ def resample_op(
 ) -> generation.TransformParameters:
     return generation.TransformParameters(
         resample=generation.TransformResample(
-            border_mode=border_mode_from_str(border_mode),
+            border_mode=border_mode_from_string(border_mode),
             transform=generation.TransformMatrix(data=sum(transform, [])),
             prev_transform=generation.TransformMatrix(data=sum(prev_transform, [])) if prev_transform else None,
             depth_warp=depth_warp,

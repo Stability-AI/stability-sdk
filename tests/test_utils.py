@@ -3,17 +3,16 @@ import pytest
 
 from typing import ByteString
 
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.matrix as matrix
+from stability_sdk.api import generation
 from stability_sdk.utils import (
     BORDER_MODES,
     COLOR_SPACES,
     GUIDANCE_PRESETS,
     SAMPLERS,
-    artifact_type_to_str,
-    border_mode_from_str,
+    artifact_type_to_string,
+    border_mode_from_string,
     color_match_from_string,
-    get_sampler_from_str,
     guidance_from_string,
     sampler_from_string,
     truncate_fit,
@@ -23,9 +22,6 @@ from stability_sdk.utils import (
     image_to_png_bytes,
     image_to_prompt,
     #########
-    key_frame_inbetweens,
-    key_frame_parse,
-    #########
     color_adjust_op,
     depthcalc_op,
     resample_op
@@ -33,20 +29,20 @@ from stability_sdk.utils import (
 
 @pytest.mark.parametrize("border", BORDER_MODES.keys())
 def test_border_mode_from_str_2d_valid(border):
-    border_mode_from_str(s=border)
+    border_mode_from_string(s=border)
     assert True
 
 def test_border_mode_from_str_2d_invalid():
     with pytest.raises(ValueError, match="invalid border mode"):
-        border_mode_from_str(s='not a real border mode')
+        border_mode_from_string(s='not a real border mode')
 
 @pytest.mark.parametrize("artifact_type", generation.ArtifactType.values())
 def test_artifact_type_to_str_valid(artifact_type):
-    type_str = artifact_type_to_str(artifact_type)
+    type_str = artifact_type_to_string(artifact_type)
     assert type_str == generation.ArtifactType.Name(artifact_type)
 
 def test_artifact_type_to_str_invalid():
-    type_str = artifact_type_to_str(-1)
+    type_str = artifact_type_to_string(-1)
     assert type_str == 'ARTIFACT_UNRECOGNIZED'
 
 @pytest.mark.parametrize("sampler_name", SAMPLERS.keys())
