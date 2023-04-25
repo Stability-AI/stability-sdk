@@ -121,9 +121,8 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-v1-5",
+        engine: str = "stable-diffusion-xl-beta-v2-2-2",
         upscale_engine: str = "esrgan-v1-x2plus",
-        enhance_engine: str = None,
         verbose: bool = False,
         wait_for_ready: bool = True,
     ):
@@ -141,7 +140,6 @@ class StabilityInference:
         self.verbose = verbose
         self.engine = engine
         self.upscale_engine = upscale_engine
-        self.enhance_engine = enhance_engine
 
         self.grpc_args = {"wait_for_ready": wait_for_ready}
 
@@ -319,23 +317,6 @@ class StabilityInference:
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters)
     
-    def enhance(
-        self,
-        init_image: Image.Image,
-        weight: float = 1.0
-    ) -> Generator[generation.Answer, None, None]:
-        
-        prompts = [image_to_prompt(init_image, init=True)]
-
-        extras = Struct()
-        extras.update({
-            'weight': weight
-        })
-
-        image_parameters = generation.ImageParameters()
-        
-        return self.emit_request(prompt=prompts, image_parameters=image_parameters, extra_parameters=extras, engine_id=self.enhance_engine)
-
     def upscale(
         self,
         init_image: Image.Image,
@@ -593,7 +574,7 @@ if __name__ == "__main__":
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-v1-5",
+        default="stable-diffusion-xl-beta-v2-2-2",
     )
     parser_generate.add_argument(
         "--init_image",

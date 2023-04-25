@@ -191,7 +191,7 @@ parser_generate.add_argument(
     "-e",
     type=str,
     help="engine to use for inference",
-    default="stable-diffusion-v1-5",
+    default="stable-diffusion-xl-beta-v2-2-2",
 )
 parser_generate.add_argument(
     "--init_image",
