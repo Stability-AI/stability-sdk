@@ -347,7 +347,6 @@ class StabilityInference:
 
         :return: Tuple of (prompts, image_parameters)
         """
-        seed = [seed]
 
         step_parameters = dict(
             sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
@@ -356,7 +355,7 @@ class StabilityInference:
         image_parameters=generation.ImageParameters(
             height=height,
             width=width,
-            seed=seed,
+            seed=[seed],
             steps=steps,
             parameters=[generation.StepParameter(**step_parameters)],
         )
