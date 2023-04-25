@@ -70,123 +70,223 @@ if not STABILITY_KEY:
     )
     sys.exit(1)
     
-    
-    
 # CLI parsing
 parser = ArgumentParser()
-parser.add_argument(
-    "--height", "-H", type=int, default=512, help="[512] height of image"
+subparsers = parser.add_subparsers(dest='command')
+
+parser_upscale = subparsers.add_parser('upscale')
+parser_upscale.add_argument(
+    "--init_image",
+    "-i",
+    type=str,
+    help="Init image",
+    required=True
 )
-parser.add_argument(
-    "--width", "-W", type=int, default=512, help="[512] width of image"
+parser_upscale.add_argument(
+    "--height", "-H", type=int, default=None, help="height of upscaled image"
 )
-parser.add_argument(
-    "--start_schedule",
-    type=float,
-    default=0.5,
-    help="[0.5] start schedule for init image (must be greater than 0, 1 is full strength text prompt, no trace of image)",
+parser_upscale.add_argument(
+    "--width", "-W", type=int, default=None, help="width of upscaled image"
 )
-parser.add_argument(
-    "--end_schedule",
-    type=float,
-    default=0.01,
-    help="[0.01] end schedule for init image",
-)
-parser.add_argument(
+parser_upscale.add_argument(
     "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor"
 )
-parser.add_argument(
-    "--sampler",
-    "-A",
-    type=str,
-    default=None,
-    help="[auto] (" + ", ".join(SAMPLERS.keys()) + ")",
-)
-parser.add_argument(
+parser_upscale.add_argument(
     "--steps", "-s", type=int, default=None, help="[auto] number of steps"
 )
-parser.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
-parser.add_argument(
+parser_upscale.add_argument(
+    "--seed", "-S", type=int, default=0, help="random seed to use"
+)
+parser_upscale.add_argument(
     "--prefix",
     "-p",
     type=str,
-    default="generation_",
+    default="upscale_",
     help="output prefixes for artifacts",
 )
-parser.add_argument(
+parser_upscale.add_argument(
     "--artifact_types",
     "-t",
     action='append',
     type=str,
     help="filter artifacts by type (ARTIFACT_IMAGE, ARTIFACT_TEXT, ARTIFACT_CLASSIFICATIONS, etc)"
 )
-parser.add_argument(
+parser_upscale.add_argument(
     "--no-store", action="store_true", help="do not write out artifacts"
 )
-parser.add_argument(
+parser_upscale.add_argument(
+    "--show", action="store_true", help="open artifacts using PIL"
+)
+parser_upscale.add_argument(
+    "--engine",
+    "-e",
+    type=str,
+    help="engine to use for upscale",
+    default="esrgan-v1-x2plus",
+)
+parser_upscale.add_argument(
+    "prompt", nargs="*"
+)
+
+
+parser_generate = subparsers.add_parser('generate')
+parser_generate.add_argument(
+    "--height", "-H", type=int, default=512, help="[512] height of image"
+)
+parser_generate.add_argument(
+    "--width", "-W", type=int, default=512, help="[512] width of image"
+)
+parser_generate.add_argument(
+    "--start_schedule",
+    type=float,
+    default=0.5,
+    help="[0.5] start schedule for init image (must be greater than 0, 1 is full strength text prompt, no trace of image)",
+)
+parser_generate.add_argument(
+    "--end_schedule",
+    type=float,
+    default=0.01,
+    help="[0.01] end schedule for init image",
+)
+parser_generate.add_argument(
+    "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor"
+)
+parser_generate.add_argument(
+    "--sampler",
+    "-A",
+    type=str,
+    help="[auto-select] (" + ", ".join(SAMPLERS.keys()) + ")",
+)
+parser_generate.add_argument(
+    "--steps", "-s", type=int, default=None, help="[auto] number of steps"
+)
+parser_generate.add_argument(
+    "--seed", "-S", type=int, default=0, help="random seed to use"
+)
+parser_generate.add_argument(
+    "--prefix",
+    "-p",
+    type=str,
+    default="generation_",
+    help="output prefixes for artifacts",
+)
+parser_generate.add_argument(
+    "--artifact_types",
+    "-t",
+    action='append',
+    type=str,
+    help="filter artifacts by type (ARTIFACT_IMAGE, ARTIFACT_TEXT, ARTIFACT_CLASSIFICATIONS, etc)"
+)
+parser_generate.add_argument(
+    "--no-store", action="store_true", help="do not write out artifacts"
+)
+parser_generate.add_argument(
     "--num_samples", "-n", type=int, default=1, help="number of samples to generate"
 )
-parser.add_argument("--show", action="store_true", help="open artifacts using PIL")
-parser.add_argument(
+parser_generate.add_argument(
+    "--show", action="store_true", help="open artifacts using PIL"
+)
+parser_generate.add_argument(
     "--engine",
     "-e",
     type=str,
     help="engine to use for inference",
     default="stable-diffusion-v1-5",
 )
-parser.add_argument(
+parser_generate.add_argument(
     "--init_image",
     "-i",
     type=str,
     help="Init image",
 )
-parser.add_argument(
+parser_generate.add_argument(
     "--mask_image",
     "-m",
     type=str,
     help="Mask image",
 )
-parser.add_argument("prompt", nargs="*")
+parser_generate.add_argument("prompt", nargs="*")
 
-args = parser.parse_args()
-if not args.prompt and not args.init_image:
-    logger.warning("prompt or init image must be provided")
-    parser.print_help()
-    sys.exit(1)
-else:
+# handle backwards compatibility, default command to generate
+input_args = sys.argv[1:]
+command = None
+if len(input_args)>0:
+    command = input_args[0]
+if command not in subparsers.choices.keys() and command != '-h' and command != '--help':
+    logger.warning(f"command {command} not recognized, defaulting to 'generate'")
+    logger.warning(
+    "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
+    "[Deprecation Warning] Please modify your code to call the sdk with the following syntax:"
+    "[Deprecation Warning] python -m stability_sdk <command> <args>"
+    "[Deprecation Warning] Where <command> is one of: upscale, generate"
+    )
+    input_args = ['generate'] + input_args
+    
+args = parser.parse_args(input_args)
+
+if args.command == "upscale":
+    args.init_image = Image.open(args.init_image)
+    if not args.prompt:
+        args.prompt = [""]
     args.prompt = " ".join(args.prompt)
 
-if args.init_image:
-    args.init_image = Image.open(args.init_image)
+    request =  {
+        "height": args.height,
+        "width": args.width,
+        "init_image": args.init_image,
+        "steps": args.steps,
+        "seed": args.seed,
+        "cfg_scale": args.cfg_scale,
+        "prompt": args.prompt,
+        }
+    stability_api = StabilityInference(
+        STABILITY_HOST, STABILITY_KEY, upscale_engine=args.engine, verbose=True
+    )
+    answers = stability_api.upscale(**request)
+    artifacts = process_artifacts_from_answers(
+        args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
+        filter_types=args.artifact_types,
+    )
+elif args.command == "generate":
+    if not args.prompt and not args.init_image:
+        logger.warning("prompt or init image must be provided")
+        parser.print_help()
+        sys.exit(1)
+    else:
+        args.prompt = " ".join(args.prompt)
 
-if args.mask_image:
-    args.mask_image = Image.open(args.mask_image)
+    if args.init_image:
+        args.init_image = Image.open(args.init_image)
 
-request =  {
-    "height": args.height,
-    "width": args.width,
-    "start_schedule": args.start_schedule,
-    "end_schedule": args.end_schedule,
-    "cfg_scale": args.cfg_scale,
-    "samples": args.num_samples,
-    "init_image": args.init_image,
-    "mask_image": args.mask_image,
-}
+    if args.mask_image:
+        args.mask_image = Image.open(args.mask_image)
 
-if args.sampler:
-    request["sampler"] = get_sampler_from_str(args.sampler)
-if args.seed and args.seed > 0:
-    request["seed"] = args.seed
+    request =  {
+        "height": args.height,
+        "width": args.width,
+        "start_schedule": args.start_schedule,
+        "end_schedule": args.end_schedule,
+        "cfg_scale": args.cfg_scale,
+        "samples": args.num_samples,
+        "init_image": args.init_image,
+        "mask_image": args.mask_image,
+    }
 
-stability_api = StabilityInference(
-    STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
-)
+    if args.sampler:
+        request["sampler"] = get_sampler_from_str(args.sampler)
+    if args.seed and args.seed > 0:
+        request["seed"] = args.seed
 
-answers = stability_api.generate(args.prompt, **request)
-artifacts = process_artifacts_from_answers(
-    args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
-    filter_types=args.artifact_types,
-)
+    stability_api = StabilityInference(
+        STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
+    )
+
+    answers = stability_api.generate(args.prompt, **request)
+    artifacts = process_artifacts_from_answers(
+        args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
+        filter_types=args.artifact_types,
+    )
+
 if args.show:
     for artifact in open_images(artifacts, verbose=True):
         pass

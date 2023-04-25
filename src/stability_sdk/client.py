@@ -494,6 +494,15 @@ if __name__ == "__main__":
         "--width", "-W", type=int, default=None, help="width of upscaled image"
     )
     parser_upscale.add_argument(
+        "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor"
+    )
+    parser_upscale.add_argument(
+        "--steps", "-s", type=int, default=None, help="[auto] number of steps"
+    )
+    parser_upscale.add_argument(
+        "--seed", "-S", type=int, default=0, help="random seed to use"
+    )
+    parser_upscale.add_argument(
         "--prefix",
         "-p",
         type=str,
@@ -510,13 +519,18 @@ if __name__ == "__main__":
     parser_upscale.add_argument(
         "--no-store", action="store_true", help="do not write out artifacts"
     )
-    parser_upscale.add_argument("--show", action="store_true", help="open artifacts using PIL")
+    parser_upscale.add_argument(
+        "--show", action="store_true", help="open artifacts using PIL"
+    )
     parser_upscale.add_argument(
         "--engine",
         "-e",
         type=str,
         help="engine to use for upscale",
         default="esrgan-v1-x2plus",
+    )
+    parser_upscale.add_argument(
+        "prompt", nargs="*"
     )
     
 
@@ -551,7 +565,8 @@ if __name__ == "__main__":
     parser_generate.add_argument(
         "--steps", "-s", type=int, default=None, help="[auto] number of steps"
     )
-    parser_generate.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
+    parser_generate.add_argument(
+        "--seed", "-S", type=int, default=0, help="random seed to use")
     parser_generate.add_argument(
         "--prefix",
         "-p",
@@ -614,18 +629,25 @@ if __name__ == "__main__":
     
     if args.command == "upscale":
         args.init_image = Image.open(args.init_image)
+        if not args.prompt:
+            args.prompt = [""]
+        args.prompt = " ".join(args.prompt)
 
         request =  {
-        "height": args.height,
-        "width": args.width,
-        "init_image": args.init_image,
+            "height": args.height,
+            "width": args.width,
+            "init_image": args.init_image,
+            "steps": args.steps,
+            "seed": args.seed,
+            "cfg_scale": args.cfg_scale,
+            "prompt": args.prompt,
             }
         stability_api = StabilityInference(
             STABILITY_HOST, STABILITY_KEY, upscale_engine=args.engine, verbose=True
         )
         answers = stability_api.upscale(**request)
         artifacts = process_artifacts_from_answers(
-            args.prefix, "", answers, write=not args.no_store, verbose=True,
+            args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
             filter_types=args.artifact_types,
         )
     elif args.command == "generate":
