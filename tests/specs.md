@@ -46,16 +46,17 @@ width
 
 **These inputs are only used in the diffusion models (they are ignored for esrgan):**
 ```
-prompt :     Prompt used in text conditioned models  
-steps :      Number of diffusion steps  
-cfg_scale :  Intensity of the prompt (only when a prompt is used)  
-seed :       Seed for the random number generator  
+prompt :     Prompt used in text conditioned models  (default = '')
+steps :      Number of diffusion steps  (default = 20)
+cfg_scale :  Intensity of the prompt (only when a prompt is used)  (default 7.0)
+seed :       Seed for the random number generator  (default = 0 -> random)
 ```
 
 ## Additional requirements:
+Max steps = 50
+
 Max input size = 1048576 pixels (ie. the total pixels in a 1024 x 1024 image)  
 Max output size = 4194304 pixels (ie. the total pixels in a 2048 x 2048 image)
-
 
 The default output size is set by the specific endpoint.  
 For example, upscale_engine == "esrgan-v1-x2plus" will upscale to 2x the input size
