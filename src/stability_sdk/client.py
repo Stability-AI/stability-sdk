@@ -418,24 +418,30 @@ class StabilityInference:
             yield answer
             start = time.time()
 
+def process_cli(logger: logging.Logger = None,
+                warn_client_call_deprecated: bool = True,
+                ):
+    if not logger:
+        logger = logging.getLogger(__name__)
+        logger.setLevel(level=logging.INFO)
 
-if __name__ == "__main__":
-    # Set up logging for output to console.
-    fh = logging.StreamHandler()
-    fh_formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s %(filename)s(%(process)d) - %(message)s"
-    )
-    fh.setFormatter(fh_formatter)
-    logger.addHandler(fh)
-
-    logger.warning(
-        "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
-        "[Deprecation Warning] Please modify your code to call the sdk without invoking the 'client' module instead."
-        "[Deprecation Warning] rather than:"
-        "[Deprecation Warning]    $ python -m stability_sdk.client ...  "
-        "[Deprecation Warning] instead do this:"
-        "[Deprecation Warning]    $ python -m stability_sdk ...  "
-    )
+        # Set up logging for output to console.
+        fh = logging.StreamHandler()
+        fh_formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s %(filename)s(%(process)d) - %(message)s"
+        )
+        fh.setFormatter(fh_formatter)
+        logger.addHandler(fh)
+    
+    if warn_client_call_deprecated:
+        logger.warning(
+            "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
+            "[Deprecation Warning] Please modify your code to call the sdk without invoking the 'client' module instead."
+            "[Deprecation Warning] rather than:"
+            "[Deprecation Warning]    $ python -m stability_sdk.client ...  "
+            "[Deprecation Warning] instead do this:"
+            "[Deprecation Warning]    $ python -m stability_sdk ...  "
+        )
 
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
     STABILITY_KEY = os.getenv("STABILITY_KEY", "")
@@ -674,3 +680,7 @@ if __name__ == "__main__":
     else:
         for artifact in artifacts:
             pass
+
+
+if __name__ == "__main__":
+    process_cli(logger)
