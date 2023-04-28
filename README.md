@@ -92,6 +92,9 @@ usage: client.py upscale
        [--height HEIGHT] [--width WIDTH] [--prefix PREFIX] [--artifact_types ARTIFACT_TYPES]
        [--no-store] [--show] [--engine ENGINE]
 
+positional arguments:
+  prompt (ignored in esrgan engines)
+
 options:
   -h, --help            show this help message and exit
   --init_image INIT_IMAGE, -i INIT_IMAGE
@@ -100,6 +103,11 @@ options:
                         height of upscaled image in pixels
   --width WIDTH, -W WIDTH
                         width of upscaled image in pixels
+  --steps STEPS, -s STEPS
+                        [auto] number of steps (ignored in esrgan engines)
+  --seed SEED, -S SEED  random seed to use (ignored in esrgan engines)
+  --cfg_scale CFG_SCALE, -C CFG_SCALE
+                        [7.0] CFG scale factor (ignored in esrgan engines)
   --prefix PREFIX, -p PREFIX
                         output prefixes for artifacts
   --artifact_types ARTIFACT_TYPES, -t ARTIFACT_TYPES
@@ -108,6 +116,7 @@ options:
   --show                open artifacts using PIL
   --engine ENGINE, -e ENGINE
                         engine to use for upscale
+  
 ```
 
 
