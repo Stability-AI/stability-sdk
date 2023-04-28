@@ -130,7 +130,6 @@ class Context:
         init_depth: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ORIGINAL,
-        mask_fixup: bool = True,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
@@ -154,7 +153,6 @@ class Context:
         :param init_noise_scale: Scale of the initial noise
         :param mask: Mask to use (0 for pixels to change, 255 for pixels to keep)
         :param masked_area_init: How to initialize the masked area
-        :param mask_fixup: Whether to restore the unmasked area after diffusion
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
@@ -191,10 +189,6 @@ class Context:
 
         results = self._run_request(self._generate, request)
 
-        # optionally force pixels in unmasked areas not to change
-        if init_image is not None and mask is not None and mask_fixup:
-            results[generation.ARTIFACT_IMAGE] = [image_mix(image, init_image, mask) for image in results[generation.ARTIFACT_IMAGE]]
-
         return results
 
     def get_user_info(self) -> Tuple[float, str]:
@@ -220,7 +214,6 @@ class Context:
         init_strength: float = 0.0,
         init_noise_scale: Optional[float] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
-        mask_fixup: bool = False,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
@@ -241,7 +234,6 @@ class Context:
         :param init_strength: Strength of the initial image
         :param init_noise_scale: Scale of the initial noise
         :param masked_area_init: How to initialize the masked area
-        :param mask_fixup: Whether to restore the unmasked area after diffusion
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
@@ -267,10 +259,6 @@ class Context:
 
         request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params, extras=extras)        
         results = self._run_request(self._inpaint, request)
-
-        # optionally force pixels in unmasked areas not to change
-        if mask_fixup:
-            results[generation.ARTIFACT_IMAGE] = [image_mix(res_image, image, mask) for res_image in results[generation.ARTIFACT_IMAGE]]
 
         return results
 
