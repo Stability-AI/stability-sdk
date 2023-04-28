@@ -1,4 +1,5 @@
 import grpc
+import io
 import logging
 import random
 import time
@@ -6,15 +7,6 @@ import time
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
-
-try:
-    import cv2
-    import numpy as np
-except ImportError:
-    raise ImportError(
-        "Failed to import animation requirements. To use the animation toolchain, install the dependencies with:\n" 
-        "   pip install --upgrade stability_sdk[anim]"
-    )
 
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2 as dashboard
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2_grpc as dashboard_grpc
@@ -124,18 +116,18 @@ class Context:
         samples: int = 1,
         cfg_scale: float = 7.0, 
         sampler: generation.DiffusionSampler = None,
-        init_image: Optional[np.ndarray] = None,
+        init_image: Optional[Image.Image] = None,
         init_strength: float = 0.0,
         init_noise_scale: Optional[float] = None,
-        init_depth: Optional[np.ndarray] = None,
-        mask: Optional[np.ndarray] = None,
+        init_depth: Optional[Image.Image] = None,
+        mask: Optional[Image.Image] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ORIGINAL,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
         preset: Optional[str] = None,
         return_request: bool = False,
-    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+    ) -> Dict[int, List[Any]]:
         """
         Generate an image from a set of weighted prompts.
 
@@ -202,8 +194,8 @@ class Context:
 
     def inpaint(
         self,
-        image: np.ndarray,
-        mask: np.ndarray,
+        image: Image.Image,
+        mask: Image.Image,
         prompts: List[str], 
         weights: List[float], 
         steps: Optional[int] = None, 
@@ -218,7 +210,7 @@ class Context:
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
         preset: Optional[str] = None,
-    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+    ) -> Dict[int, List[Any]]:
         """
         Apply inpainting to an image.
         
@@ -264,10 +256,10 @@ class Context:
 
     def interpolate(
         self,
-        images: Iterable[np.ndarray], 
+        images: Iterable[Image.Image], 
         ratios: List[float],
         mode: generation.InterpolateMode = generation.INTERPOLATE_LINEAR,
-    ) -> List[np.ndarray]:
+    ) -> List[Image.Image]:
         """
         Interpolate between two images
 
@@ -299,11 +291,11 @@ class Context:
 
     def transform_and_generate(
         self,
-        image: Optional[np.ndarray],
+        image: Optional[Image.Image],
         params: List[generation.TransformParameters],
         generate_request: generation.Request,
         extras: Optional[Dict] = None,
-    ) -> np.ndarray:
+    ) -> Image.Image:
         extras_struct = None
         if extras is not None:
             extras_struct = Struct()
@@ -359,10 +351,10 @@ class Context:
 
     def transform(
         self,
-        images: Iterable[np.ndarray],
+        images: Iterable[Image.Image],
         params: Union[generation.TransformParameters, List[generation.TransformParameters]],
         extras: Optional[Dict] = None
-    ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
+    ) -> Tuple[List[Image.Image], Optional[List[Image.Image]]]:
         """
         Transform images
 
@@ -371,7 +363,7 @@ class Context:
         :return: One image artifact for each image and one transform dependent mask
         """
         assert len(images)
-        assert isinstance(images[0], np.ndarray)
+        assert isinstance(images[0], Image.Image)
 
         extras_struct = None
         if extras is not None:
@@ -419,13 +411,13 @@ class Context:
 
     def transform_3d(
         self, 
-        images: Iterable[np.ndarray], 
+        images: Iterable[Image.Image], 
         depth_calc: generation.TransformParameters,
         transform: generation.TransformParameters,
         extras: Optional[Dict] = None
-    ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
+    ) -> Tuple[List[Image.Image], Optional[List[Image.Image]]]:
         assert len(images)
-        assert isinstance(images[0], np.ndarray)
+        assert isinstance(images[0], Image.Image)
 
         image_prompts = [image_to_prompt(image) for image in images]
         warped_images = []
@@ -534,8 +526,8 @@ class Context:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-    def _process_response(self, response) -> Dict[int, List[np.ndarray]]:
-        results: Dict[int, List[np.ndarray]] = {}
+    def _process_response(self, response) -> Dict[int, List[Any]]:
+        results: Dict[int, List[Any]] = {}
         for resp in response:
             for artifact in resp.artifacts:
                 # check for classifier rejecting a text prompt
@@ -548,9 +540,8 @@ class Context:
                 if artifact.type == generation.ARTIFACT_CLASSIFICATIONS:
                     results[artifact.type].append(artifact.classifier)
                 elif artifact.type in (generation.ARTIFACT_DEPTH, generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
-                    nparr = np.frombuffer(artifact.binary, np.uint8)
-                    im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    results[artifact.type].append(im)
+                    image = Image.open(io.BytesIO(artifact.binary))
+                    results[artifact.type].append(image)
                 elif artifact.type == generation.ARTIFACT_TENSOR:
                     results[artifact.type].append(artifact.tensor)
                 elif artifact.type == generation.ARTIFACT_TEXT:
@@ -562,7 +553,7 @@ class Context:
         self, 
         endpoint: Endpoint, 
         request: Union[generation.ChainRequest, generation.Request]
-    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+    ) -> Dict[int, List[Any]]:
         for attempt in range(self._max_retries+1):
             try:
                 if isinstance(request, generation.Request):

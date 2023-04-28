@@ -1,21 +1,10 @@
 import io
 import logging
 import os
-import warnings
-
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 
 from PIL import Image
+from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 
-try:
-    import cv2
-    import numpy as np
-except ImportError:
-    warnings.warn(
-        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
-        "   pip install --upgrade stability_sdk[anim]"
-    )
-    
 from .api import generation
 from .matrix import Matrix
 
@@ -77,15 +66,6 @@ RENDER_MODES = {
 
     
 MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
-
-
-def pil_to_cv2(pil_img: Image.Image) -> np.ndarray:
-    """Convert a PIL Image to a cv2 BGR ndarray"""
-    return np.array(pil_img)[:, :, ::-1]
-
-def cv2_to_pil(cv2_img: np.ndarray) -> Image.Image:
-    """Convert a cv2 BGR ndarray to a PIL Image"""
-    return Image.fromarray(cv2_img[:, :, ::-1])
 
 
 def border_mode_from_string(s: str) -> generation.BorderMode:
@@ -193,57 +173,39 @@ def open_images(
         yield (path, artifact)
 
 
-def image_mix(img_a: np.ndarray, img_b: np.ndarray, ratio: Union[float, np.ndarray]) -> np.ndarray:
+def image_mix(img_a: Image.Image, img_b: Image.Image, ratio: float) -> Image.Image:
     """
     Performs a linear interpolation between two images
     :param img_a: The first image.
     :param img_b: The second image.
-    :param ratio: A float (or ndarray of per-pixel floats) for in-between ratio
+    :param ratio: A float for in-between ratio
     :return: The mixed image
     """
-    if img_a.shape != img_b.shape:
-        raise ValueError(f"img_a shape {img_a.shape} does not match img_b shape {img_b.shape}")
+    if img_a.size != img_b.size:
+        raise ValueError(f"img_a size {img_a.size} does not match img_b size {img_b.size}")
 
-    if isinstance(ratio, np.ndarray):
-        if ratio.shape[:2] != img_a.shape[:2]:
-            raise ValueError(f"tween dimensions {ratio.shape[:2]} do not match image dimensions {img_a.shape[:2]}")
-        if ratio.dtype == np.uint8:
-            ratio = ratio.astype(np.float32) / 255.0
-        if len(ratio.shape) == 2:
-            ratio = np.repeat(ratio[:,:,None], 3, axis=2)
-        
-    return (img_a.astype(np.float32)*(1.0-ratio) + img_b.astype(np.float32)*ratio).astype(img_a.dtype)
+    return Image.blend(img_a, img_b, ratio)
 
-def image_to_jpg_bytes(image: Union[Image.Image, np.ndarray], quality: int=90) -> bytes:
-    if isinstance(image, Image.Image):
-        buf = io.BytesIO()
-        image.save(buf, format="JPEG", quality=quality)
-        buf.seek(0)
-        return buf.getvalue()
-    elif isinstance(image, np.ndarray):        
-        return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
-    else:
-        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
+def image_to_jpg_bytes(image: Image.Image, quality: int=90) -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=quality)
+    buf.seek(0)
+    return buf.getvalue()
 
-def image_to_png_bytes(image: Union[Image.Image, np.ndarray]) -> bytes:
-    if isinstance(image, Image.Image):
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        buf.seek(0)
-        return buf.getvalue()
-    elif isinstance(image, np.ndarray):
-        return cv2.imencode('.png', image)[1].tobytes()
-    else:
-        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
+def image_to_png_bytes(image: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.getvalue()
 
 def image_to_prompt(
-    image: Union[Image.Image, np.ndarray],
+    image: Image.Image,
     type: generation.ArtifactType=generation.ARTIFACT_IMAGE
 ) -> generation.Prompt:
-    png = image_to_png_bytes(image)    
+    png_data = image_to_png_bytes(image)    
     return generation.Prompt(
         parameters=generation.PromptParameters(init=True),
-        artifact=generation.Artifact(type=type, binary=png)
+        artifact=generation.Artifact(type=type, binary=png_data)
     )
 
 def tensor_to_prompt(tensor: 'tensors_pb.Tensor') -> generation.Prompt:
@@ -270,7 +232,7 @@ def color_adjust_op(
     hue:float=0.0,
     saturation:float=1.0,
     lightness:float=0.0,
-    match_image:Optional[np.ndarray]=None,
+    match_image:Optional[Image.Image]=None,
     match_mode:str='LAB',
     noise_amount:float=0.0,
     noise_seed:int=0
