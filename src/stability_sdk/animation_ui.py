@@ -93,7 +93,8 @@ class Project():
             if not os.path.isdir(directory):
                 continue
 
-            json_files = sorted(glob.glob(os.path.join(directory, '*.json')))
+            json_files = glob.glob(os.path.join(directory, '*.json'))
+            json_files = sorted(json_files, key=lambda x: os.stat(x).st_mtime)
             if not json_files:
                 continue
 
@@ -217,7 +218,10 @@ def ensure_api_context():
         raise gr.Error("Not connected to Stability API")
 
 def format_header_html() -> str:
-    balance, profile_picture = context.get_user_info()
+    try:
+        balance, profile_picture = context.get_user_info()
+    except:
+        return ""
     formatted_number = locale.format_string("%d", balance, grouping=True)
     return f"""
         <div class="flex flex-row items-center" style="display:flex; justify-content: space-between; margin-top: 8px;">

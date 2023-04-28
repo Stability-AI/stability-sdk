@@ -92,7 +92,7 @@ class AnimationSettings(param.Parameterized):
     noise_scale_curve = param.String(default="0:(0.99)")
     strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
     steps_curve = param.String(default="0:(30)", doc="Diffusion steps")
-    steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
+    steps_strength_adj = param.Boolean(default=False, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
     interpolate_prompts = param.Boolean(default=False, doc="Smoothly interpolate prompts between keyframes. Defaults to False")
     locked_seed = param.Boolean(default=False)
 
@@ -782,6 +782,11 @@ class Animator:
         # change request for random seed into explicit value so it is saved to settings
         if args.seed <= 0:
             args.seed = random.randint(0, 2**32 - 1)
+
+        # validate border settings
+        if args.border == 'wrap' and args.animation_mode != '2D':
+            args.border = 'reflect'
+            logger.warning(f"Border 'wrap' is only supported in 2D mode, switching to '{args.border}'.")
 
         # validate clip guidance setting against selected model and sampler
         if args.clip_guidance.lower() != 'none':
