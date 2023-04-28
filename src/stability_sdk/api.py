@@ -493,6 +493,12 @@ class Context:
         warp_mask = results.get(generation.ARTIFACT_MASK, None)
 
         return warped_images, warp_mask
+    
+    def _adjust_request_engine(self, request: generation.Request):
+        if request.engine_id == self._transform.engine_id:
+            assert request.HasField("transform")
+            if request.transform.HasField("color_adjust") or request.transform.HasField("resample"):
+                request.engine_id = self._transform.engine_id + "-cpu"
 
     def _adjust_request_for_retry(self, request: generation.Request, attempt: int):
         logger.warning(f"  adjusting request, will retry {self._max_retries-attempt} more times")
@@ -574,11 +580,16 @@ class Context:
         self, 
         endpoint: Endpoint, 
         request: Union[generation.ChainRequest, generation.Request]
-    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+    ) -> Dict[int, List[Union[np.ndarray, Any]]]:        
+        if isinstance(request, generation.Request):
+            self._adjust_request_engine(request)
+        elif isinstance(request, generation.ChainRequest):
+            for stage in request.stage:
+                self._adjust_request_engine(stage.request)
+
         for attempt in range(self._max_retries+1):
             try:
                 if isinstance(request, generation.Request):
-                    assert endpoint.engine_id == request.engine_id
                     response = endpoint.stub.Generate(request, timeout=self._request_timeout)
                 else:
                     response = endpoint.stub.ChainGenerate(request, timeout=self._request_timeout)
