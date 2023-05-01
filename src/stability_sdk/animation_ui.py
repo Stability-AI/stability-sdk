@@ -4,6 +4,7 @@ import locale
 import os
 import param
 import shutil
+import traceback
 
 from collections import OrderedDict
 from PIL import Image
@@ -283,7 +284,7 @@ def post_process_tab():
             error_log: gr.update(visible=False),
         }
 
-        error_message = None
+        error = None
         try:
             outdir = os.path.dirname(last_project_settings_path)
             suffix = ""
@@ -340,8 +341,8 @@ def post_process_tab():
             output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
             create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
         except Exception as e:
-            error_message = str(e)
-            print(error_message)
+            traceback.print_exc()
+            error = f"Post-processing terminated early due to exception: {e}"
 
         yield {
             header: gr.update(value=format_header_html()),
@@ -349,7 +350,7 @@ def post_process_tab():
             video_out: gr.update(value=output_video, visible=True),
             process_button: gr.update(visible=True),
             stop_button: gr.update(visible=False),
-            error_log: gr.update(value=error_message, visible=bool(error_message))
+            error_log: gr.update(value=error, visible=bool(error))
         }
 
     process_button.click(
@@ -607,6 +608,7 @@ def render_tab():
         except OutOfCreditsException as e:
             error = f"Animation terminated early, out of credits.\n{e.details}"
         except Exception as e:
+            traceback.print_exc()
             error = f"Animation terminated early due to exception: {e}"
 
         if frame_idx:
