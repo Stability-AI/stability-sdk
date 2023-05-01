@@ -6,6 +6,7 @@ import param
 import shutil
 
 from collections import OrderedDict
+from PIL import Image
 from tqdm import tqdm
 from typing import Any, Dict, List, Optional
 
@@ -144,9 +145,10 @@ negative_prompt_weight = -1.0
 controls: Dict[str, gr.components.Component] = {}
 header = gr.HTML("", show_progress=False)
 interrupt = False
-last_project_settings_path = None
 last_interp_factor = None
 last_interp_mode = None
+last_project_settings_path = None
+last_upscale = None
 projects: List[Project] = []
 project: Optional[Project] = None
 
@@ -257,14 +259,17 @@ def post_process_tab():
             with gr.Row():
                 frame_interp_mode = gr.Dropdown(label="Frame interpolation mode", choices=['None', 'film', 'rife'], value='None', interactive=True)       
                 frame_interp_factor = gr.Dropdown(label="Frame interpolation factor", choices=[2, 4, 8], value=2, interactive=True)
+            with gr.Row():
+                upscale = gr.Checkbox(label="Upscale 2X", value=False, interactive=True)
         with gr.Column():
             image_out = gr.Image(label="image", visible=True)
             video_out = gr.Video(label="video", visible=False)
             process_button = gr.Button("Process")
             stop_button = gr.Button("Stop", visible=False)
+            error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int):
-        global interrupt, last_interp_factor, last_interp_mode
+    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool):
+        global interrupt, last_interp_factor, last_interp_mode, last_upscale
         interrupt = False
         if last_project_settings_path is None:
             raise gr.Error("Must render an animation first")
@@ -275,43 +280,82 @@ def post_process_tab():
             video_out: gr.update(visible=False),
             process_button: gr.update(visible=False),
             stop_button: gr.update(visible=True),
+            error_log: gr.update(visible=False),
         }
 
-        outdir = os.path.dirname(last_project_settings_path)
+        error_message = None
+        try:
+            outdir = os.path.dirname(last_project_settings_path)
+            suffix = ""
 
-        if interp_mode != 'None':
-            interp_dir = os.path.join(outdir, "post")
-            interp_mode = interp_mode_from_string(interp_mode)
-            if last_interp_mode != interp_mode or last_interp_factor != interp_factor:                
-                remove_frames_from_path(interp_dir)
-                num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))
-                for frame_idx, frame in enumerate(tqdm(interpolate_frames(context, outdir, interp_dir, interp_mode, interp_factor), total=num_frames)):
-                    yield {
-                        header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
-                        image_out: gr.update(value=frame, label=f"frame {frame_idx}/{num_frames}", visible=True),
-                        video_out: gr.update(visible=False),
-                        process_button: gr.update(visible=False),
-                        stop_button: gr.update(visible=True),
-                    }
-                    if interrupt:
-                        break
-                last_interp_mode, last_interp_factor = interp_mode, interp_factor
-            outdir = interp_dir
+            can_skip_upscale = last_upscale == upscale
+            can_skip_interp = can_skip_upscale and last_interp_factor == interp_factor and last_interp_mode == interp_mode
 
-        output_video = last_project_settings_path.replace(".json", ".mp4")
-        create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
+            if upscale:
+                suffix += "_x2"
+                upscale_dir = os.path.join(outdir, "upscale") 
+                os.makedirs(upscale_dir, exist_ok=True)
+                frame_paths = glob.glob(os.path.join(outdir, "frame_*.png"))
+                num_frames = len(frame_paths)
+                if not can_skip_upscale:
+                    remove_frames_from_path(upscale_dir)
+                    for frame_idx in tqdm(range(num_frames)):
+                        frame = Image.open(frame_paths[frame_idx])
+                        frame = context.upscale(frame)
+                        frame.save(os.path.join(upscale_dir, os.path.basename(frame_paths[frame_idx])))
+                        yield {
+                            header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
+                            image_out: gr.update(value=frame, label=f"upscale {frame_idx}/{num_frames}", visible=True),
+                            video_out: gr.update(visible=False),
+                            process_button: gr.update(visible=False),
+                            stop_button: gr.update(visible=True),
+                            error_log: gr.update(visible=False),
+                        }
+                        if interrupt:
+                            break
+                    last_upscale = upscale
+                outdir = upscale_dir
+
+            if interp_mode != 'None':
+                suffix += f"_{interp_mode}{interp_factor}"
+                interp_dir = os.path.join(outdir, "interpolate")
+                interp_mode = interp_mode_from_string(interp_mode)
+                if not can_skip_interp:
+                    remove_frames_from_path(interp_dir)
+                    num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))
+                    for frame_idx, frame in enumerate(tqdm(interpolate_frames(context, outdir, interp_dir, interp_mode, interp_factor), total=num_frames)):
+                        yield {
+                            header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
+                            image_out: gr.update(value=frame, label=f"interpolate {frame_idx}/{num_frames}", visible=True),
+                            video_out: gr.update(visible=False),
+                            process_button: gr.update(visible=False),
+                            stop_button: gr.update(visible=True),
+                            error_log: gr.update(visible=False),
+                        }
+                        if interrupt:
+                            break
+                    last_interp_mode, last_interp_factor = interp_mode, interp_factor
+                outdir = interp_dir
+
+            output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
+        except Exception as e:
+            error_message = str(e)
+            print(error_message)
+
         yield {
             header: gr.update(value=format_header_html()),
             image_out: gr.update(visible=False),
             video_out: gr.update(value=output_video, visible=True),
             process_button: gr.update(visible=True),
             stop_button: gr.update(visible=False),
+            error_log: gr.update(value=error_message, visible=bool(error_message))
         }
 
     process_button.click(
         postprocess_video, 
-        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor], 
-        outputs=[header, image_out, video_out, process_button, stop_button]
+        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale], 
+        outputs=[header, image_out, video_out, process_button, stop_button, error_log]
     )    
 
     def stop_button_click():
@@ -469,7 +513,7 @@ def render_tab():
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
     def render(*render_args):
-        global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, project
+        global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, last_upscale, project
         interrupt = False
 
         if not project:
@@ -567,7 +611,7 @@ def render_tab():
 
         if frame_idx:
             last_project_settings_path = project_settings_path
-            last_interp_factor, last_interp_mode = None, None
+            last_interp_factor, last_interp_mode, last_upscale = None, None, None
             output_video = project_settings_path.replace(".json", ".mp4")
             create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
         else:

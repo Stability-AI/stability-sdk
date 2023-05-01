@@ -69,10 +69,11 @@ class Context:
             host: str="", 
             api_key: str=None, 
             stub: generation_grpc.GenerationServiceStub=None,
-            generate_engine_id: str="stable-diffusion-v1-5",
+            generate_engine_id: str="stable-diffusion-xl-beta-v2-2-2",
             inpaint_engine_id: str="stable-inpainting-512-v2-0",
             interpolate_engine_id: str="interpolation-server-v1",
             transform_engine_id: str="transform-server-v1",
+            upscale_engine_id: str="esrgan-v1-x2plus",
         ):
         if not host and stub is None:
             raise Exception("Must provide either GRPC host or stub to Api")
@@ -87,6 +88,7 @@ class Context:
         self._inpaint = Endpoint(stub, inpaint_engine_id)
         self._interpolate = Endpoint(stub, interpolate_engine_id)
         self._transform = Endpoint(stub, transform_engine_id)
+        self._upscale = Endpoint(stub, upscale_engine_id)
 
         self._debug_no_chains = False
         self._max_retries = 5             # retry request on RPC error
@@ -472,6 +474,61 @@ class Context:
         warp_mask = results.get(generation.ARTIFACT_MASK, None)
 
         return warped_images, warp_mask
+    
+    def upscale(
+        self,
+        init_image: Image.Image,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        prompt: Union[str, generation.Prompt] = None,
+        steps: Optional[int] = 20,
+        cfg_scale: Optional[float] = 7.0,
+        seed: int = 0
+    ) -> Image.Image:
+        """
+        Upscale an image.
+
+        :param init_image: Image to upscale.
+
+        Optional parameters for upscale method:
+
+        :param width: Width of the output images.
+        :param height: Height of the output images.
+        :param prompt: Prompt used in text conditioned models
+        :param steps: Number of diffusion steps
+        :param cfg_scale: Intensity of the prompt, when a prompt is used
+        :param seed: Seed for the random number generator.
+
+        Some variables are not used for specific engines, but are included for consistency.
+
+        Variables ignored in ESRGAN engines: prompt, steps, cfg_scale, seed
+
+        :return: Tuple of (prompts, image_parameters)
+        """
+
+        prompts = [image_to_prompt(init_image)]
+        if prompt:
+            if isinstance(prompt, str):
+                prompt = generation.Prompt(text=prompt)
+            elif not isinstance(prompt, generation.Prompt):
+                raise ValueError("prompt must be a string or Prompt object")
+            prompts.append(prompt)
+
+        request = generation.Request(
+            engine_id=self._upscale.engine_id,
+            prompt=prompts, 
+            image=generation.ImageParameters(
+                width=width,
+                height=height,
+                seed=[seed],
+                steps=steps,
+                parameters=[generation.StepParameter(
+                    sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
+                )],
+            )
+        )
+        results = self._run_request(self._upscale, request)
+        return results[generation.ARTIFACT_IMAGE][0]
 
     def _adjust_request_for_retry(self, request: generation.Request, attempt: int):
         logger.warning(f"  adjusting request, will retry {self._max_retries-attempt} more times")

@@ -36,7 +36,7 @@ class MockStub:
 
     def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
         if request.HasField("image"):
-            image = _rand_image(request.image.width, request.image.height)
+            image = _rand_image(request.image.width or 512, request.image.height or 512)
             yield generation.Answer(artifacts=[_artifact_from_image(image)])
 
         elif request.HasField("interpolate"):
@@ -102,8 +102,8 @@ def test_api_generate():
 def test_api_inpaint():
     api = Context(stub=MockStub())
     width, height = 512, 768
-    image = Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
-    mask = Image.fromarray(np.random.randint(0, 255, (height, width), dtype=np.uint8))
+    image = _rand_image(width, height)
+    mask = _rand_image(width, height).convert("L")
     results = api.inpaint(image, mask, prompts=["foo bar"], weights=[1.0])
     assert generation.ARTIFACT_IMAGE in results
     assert len(results[generation.ARTIFACT_IMAGE]) == 1
@@ -135,8 +135,7 @@ def test_api_transform_and_generate():
 
 def test_api_transform_camera_pose():
     api = Context(stub=MockStub())
-    width, height = 512, 768
-    image = Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
+    image = _rand_image()
     xform = matrix.identity
     pose = utils.camera_pose_op(
         xform, 0.1, 100.0, 75.0,
@@ -151,7 +150,7 @@ def test_api_transform_camera_pose():
 
 def test_api_transform_color_adjust():
     api = Context(stub=MockStub())
-    image = Image.fromarray(np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8))
+    image = _rand_image()
     images, masks = api.transform([image], utils.color_adjust_op())
     assert len(images) == 1 and not masks
     assert isinstance(images[0], Image.Image)
@@ -160,10 +159,15 @@ def test_api_transform_color_adjust():
 
 def test_api_transform_resample_3d():
     api = Context(stub=MockStub())
-    image = Image.fromarray(np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8))
+    image = _rand_image()
     xform = matrix.identity
     resample = utils.resample_op('replicate', xform, xform, export_mask=True)
     images, masks = api.transform_3d([image], utils.depthcalc_op(blend_weight=0.5), resample)
     assert len(images) == 1 and len(masks) == 1
     assert isinstance(images[0], Image.Image)
     assert isinstance(masks[0], Image.Image)
+
+def test_api_upscale():
+    api = Context(stub=MockStub())
+    result = api.upscale(_rand_image())
+    assert isinstance(result, Image.Image)
