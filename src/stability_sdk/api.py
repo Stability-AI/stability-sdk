@@ -232,14 +232,13 @@ class Context:
         :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
-        width, height = image.shape[1], image.shape[0]
-
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if image is not None:
             p.append(image_to_prompt(image))
             if mask is not None:
                 p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
 
+        width, height = image.size
         start_schedule = 1.0-init_strength
         image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
                                                 start_schedule, init_noise_scale, masked_area_init, 

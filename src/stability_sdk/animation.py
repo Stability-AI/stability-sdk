@@ -500,7 +500,7 @@ class Animator:
         if not fpath:
             return
 
-        img = self.image_resize(cv2.imread(fpath), self.args.init_sizing)
+        img = self.image_resize(Image.open(fpath), self.args.init_sizing)
             
         self.prior_frames.extend([img, img])
         self.prior_diffused.extend([img, img])
@@ -531,7 +531,7 @@ class Animator:
             success, image = self.video_reader.read()
             if not success:
                 raise Exception(f"Failed to read first frame from {self.args.video_init_path}")
-            self.video_prev_frame = self.image_resize(image, 'cover')
+            self.video_prev_frame = self.image_resize(cv2_to_pil(image), 'cover')
             self.prior_frames.extend([self.video_prev_frame, self.video_prev_frame])
             self.prior_diffused.extend([self.video_prev_frame, self.video_prev_frame])
 
@@ -544,7 +544,7 @@ class Animator:
             if not success:
                 return
 
-        self.set_mask(mask)
+        self.set_mask(cv2_to_pil(mask))
 
     def prepare_init_ops(self, init_image: Optional[Image.Image], frame_idx: int, noise_seed:int) -> List[generation.TransformParameters]:
         if init_image is None:

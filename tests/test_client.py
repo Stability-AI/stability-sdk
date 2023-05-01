@@ -1,20 +1,13 @@
-import cv2
+import io
 import numpy as np
-import pytest
 from PIL import Image
+from typing import Generator
 
 from stability_sdk import client
-from stability_sdk.api import Context
-from stability_sdk.utils import image_to_png_bytes
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+from stability_sdk.api import Context, generation
+from stability_sdk import utils
 
-import grpc
 
-# feel like we should be using this, not sure how/where
-import grpc_testing
-
-from typing import Generator
 
 class MockStub:
     def __init__(self):
@@ -26,8 +19,8 @@ class MockStub:
     def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
         if request.HasField("image"):
             width, height = request.image.width, request.image.height
-            image = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
-            binary = image_to_png_bytes(image)            
+            image = Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
+            binary = utils.image_to_png_bytes(image)            
             artifact = generation.Artifact(
                 id=0,
                 type=generation.ARTIFACT_IMAGE, 
@@ -40,14 +33,13 @@ class MockStub:
             assert len(request.prompt) == 2
             assert request.prompt[0].artifact.type == generation.ARTIFACT_IMAGE
             assert request.prompt[1].artifact.type == generation.ARTIFACT_IMAGE
-            image_a = cv2.imdecode(np.frombuffer(request.prompt[0].artifact.binary, np.uint8), cv2.IMREAD_COLOR)
-            image_b = cv2.imdecode(np.frombuffer(request.prompt[1].artifact.binary, np.uint8), cv2.IMREAD_COLOR)
-            assert image_a.shape == image_b.shape
-            width, height = image_a.shape[1], image_a.shape[0]
+            image_a = Image.open(io.BytesIO(request.prompt[0].artifact.binary))
+            image_b = Image.open(io.BytesIO(request.prompt[1].artifact.binary))
+            assert image_a.size == image_b.size
+            width, height = image_a.size
 
             for idx, _ in enumerate(request.interpolate.ratios):
-                image = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
-                binary = image_to_png_bytes(image)                
+                binary = utils.image_to_png_bytes(image_a)
                 artifact = generation.Artifact(
                     id=idx,
                     type=generation.ARTIFACT_IMAGE, 
@@ -57,6 +49,20 @@ class MockStub:
                     size=len(binary)
                 )
                 yield generation.Answer(artifacts=[artifact])
+        elif request.HasField("transform"):
+            assert len(request.prompt) >= 1
+            assert request.prompt[0].artifact.type == generation.ARTIFACT_IMAGE
+            for idx, prompt in enumerate(request.prompt):
+                if prompt.artifact.type == generation.ARTIFACT_IMAGE:
+                    artifact = generation.Artifact(
+                        id=idx,
+                        type=generation.ARTIFACT_IMAGE, 
+                        mime="image/png",
+                        binary=prompt.artifact.binary,
+                        index=idx,
+                        size=len(prompt.artifact.binary)
+                    )
+                    yield generation.Answer(artifacts=[artifact])
 
 
 def test_api_generate():
@@ -67,43 +73,45 @@ def test_api_generate():
     assert generation.ARTIFACT_IMAGE in results
     assert len(results[generation.ARTIFACT_IMAGE]) == 1
     image = results[generation.ARTIFACT_IMAGE][0]
-    assert isinstance(image, np.ndarray)
-    assert image.shape == (height, width, 3)
+    assert isinstance(image, Image.Image)
+    assert image.size == (width, height)
 
 def test_api_inpaint():
     api = Context(stub=MockStub())
     width, height = 512, 768
-    image = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
-    mask = np.random.randint(0, 255, (height, width), dtype=np.uint8)
+    image = Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
+    mask = Image.fromarray(np.random.randint(0, 255, (height, width), dtype=np.uint8))
     results = api.inpaint(image, mask, prompts=["foo bar"], weights=[1.0])
     assert generation.ARTIFACT_IMAGE in results
     assert len(results[generation.ARTIFACT_IMAGE]) == 1
     image = results[generation.ARTIFACT_IMAGE][0]
-    assert isinstance(image, np.ndarray)
-    assert image.shape == (height, width, 3)
+    assert isinstance(image, Image.Image)
+    assert image.size == (width, height)
 
 def test_api_interpolate():
     api = Context(stub=MockStub())
     width, height = 512, 768
-    image_a = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
-    image_b = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
+    image_a = Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
+    image_b = Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
     results = api.interpolate([image_a, image_b], [0.3, 0.5, 0.6])
     assert len(results) == 3
 
 def test_api_transform():
-    # TODO: implement transform tests after API finalized
-    pass
-
-def test_client_import():
-    from stability_sdk import client
-    assert True
+    api = Context(stub=MockStub())
+    width, height = 512, 768
+    image = Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
+    images, masks = api.transform([image], utils.color_adjust_op())
+    assert len(images) == 1 and not masks
+    assert isinstance(images[0], Image.Image)
+    images, masks = api.transform([image, image], utils.color_adjust_op())
+    assert len(images) == 2 and not masks
 
 def test_StabilityInference_init():
-    class_instance = client.StabilityInference(key='thisIsNotARealKey')
+    _ = client.StabilityInference(key='thisIsNotARealKey')
     assert True
 
 def test_StabilityInference_init_nokey_insecure_host():
-    class_instance = client.StabilityInference(host='foo.bar.baz')
+    _ = client.StabilityInference(host='foo.bar.baz')
     assert True
 
 def test_image_to_prompt_init():
