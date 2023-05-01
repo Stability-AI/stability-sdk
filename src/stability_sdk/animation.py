@@ -449,8 +449,6 @@ class Animator:
                       use_inpaint_model: bool=True) -> np.ndarray:
         args = self.args
         steps = int(self.frame_args.steps_curve[frame_idx])
-        strength = max(0.0, self.frame_args.strength_curve[frame_idx])
-        adjusted_steps = int(max(5, steps*(1.0-strength))) if args.steps_strength_adj else int(steps)
         sampler = sampler_from_string(args.sampler.lower())
         guidance = guidance_from_string(args.clip_guidance)
 
@@ -464,7 +462,7 @@ class Animator:
             results = self.api.inpaint(
                 image, mask,
                 prompts, weights, 
-                steps=adjusted_steps,
+                steps=steps,
                 seed=args.seed,
                 cfg_scale=args.cfg_scale,
                 sampler=sampler, 
@@ -474,6 +472,11 @@ class Animator:
                 preset=args.preset,
             )
         else:
+            strength = mask.min() / 255.0
+            if strength == 1.0:
+                return image
+            adjusted_steps = max(5, int(steps * (1.0 - strength))) if args.steps_strength_adj else steps
+            noise_scale = self.frame_args.noise_scale_curve[frame_idx]
             results = self.api.generate(
                 prompts, weights, 
                 args.width, args.height, 
@@ -482,7 +485,8 @@ class Animator:
                 cfg_scale=args.cfg_scale,
                 sampler=sampler, 
                 init_image=image, 
-                init_strength=strength if image is not None else 0.0,
+                init_strength=strength,
+                init_noise_scale=noise_scale,
                 mask=mask,
                 masked_area_init=generation.MASKED_AREA_INIT_ORIGINAL,
                 guidance_preset=guidance,
@@ -618,17 +622,23 @@ class Animator:
             if args.inpaint_border and self.inpaint_mask is not None \
                     and not (args.non_inpainting_model_for_diffusion_frames and not self.cadence_on):
                 if args.animation_mode == '3D render':
-                    binary_mask = np.where(self.inpaint_mask > args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
-                    binary_mask = self._postprocess_inpainting_mask(binary_mask, frame_idx)
-                    if not is_diffusion_frame:
+                    binary_mask = self._postprocess_inpainting_mask(
+                        self.inpaint_mask, frame_idx, binarize=True, min_val=0.0)
+                    if not (is_diffusion_frame and args.non_inpainting_model_for_diffusion_frames):
+                        self.inpaint_mask = binary_mask  # Grayscale mask will be needed for a non-inpainting model right after.
+                else:
+                    binary_mask = self._postprocess_inpainting_mask(
+                        self.inpaint_mask, frame_idx, binarize=True, blur_radius=8)
+                    if not (is_diffusion_frame and args.non_inpainting_model_for_diffusion_frames):
                         self.inpaint_mask = binary_mask
+                    # binary_mask = self.inpaint_mask
                 for i in range(len(self.prior_frames)):
                     # The earliest prior frame will be popped right after the generation step, so this inpainting call for it would be redundant.
                     if self.cadence_on and is_diffusion_frame and i==0:
                         continue
                     self.prior_frames[i] = self.inpaint_frame(
                         frame_idx, self.prior_frames[i],
-                        binary_mask if args.animation_mode == '3D render' else self.inpaint_mask,
+                        binary_mask,
                         use_inpaint_model=True)
 
             # apply mask to transformed prior frames
@@ -667,7 +677,10 @@ class Animator:
                 start_diffusion_from = min(strength, self.frame_args.mask_min_value[frame_idx] if do_inpainting else 1.0)
                 if do_inpainting:
                     self.inpaint_mask = self._postprocess_inpainting_mask(
-                        self.inpaint_mask, frame_idx, mask_multiplier=strength if args.animation_mode == '3D render' else None)
+                        self.inpaint_mask, frame_idx, 
+                        mask_pow=0.3 if args.animation_mode == '3D render' else None,
+                        blur_radius=0,
+                        mask_multiplier=strength)
 
                 # generate the next frame
                 sampler = sampler_from_string(args.sampler.lower())
@@ -926,12 +939,29 @@ class Animator:
         return None
 
     def _postprocess_inpainting_mask(
-            self, mask, frame_idx, blur_radius=5, min_val=None, mask_multiplier=None):
+            self,
+            mask: np.ndarray,
+            frame_idx: int,
+            mask_pow: Optional[float] = None,
+            mask_multiplier: Optional[float] = None,
+            binarize: bool = False,
+            blur_radius: Optional[int] = None,
+            min_val: Optional[float] = None
+        ) -> np.ndarray:
+        # Being applied in 3D render mode. Changing magnitude of values of the mask. Camera pose transform operation returns
+        # a mask which pixel values encode how much signal from the previous frame is present there. But a mapping from 
+        # the signal presence values to the optimal per-pixel init strength is unknown, and roughly guessed as a per-pixel power fuction.
+        # Leaving pow=1 results in close objects changing to a greater extent than a natural emergence of fine details when approaching an object.
+        if mask_pow is not None:
+            mask = (np.power(mask / 255., mask_pow) * 255).astype(np.uint8)
         if mask_multiplier is not None:
             mask = (mask * mask_multiplier).astype(np.uint8)
-        if not self.args.animation_mode == '3D render':
-            mask = cv2.erode(mask, np.ones((blur_radius, blur_radius), np.uint8))
-            mask = cv2.GaussianBlur(mask, (blur_radius*2+1, blur_radius*2+1), 0)
+        if binarize:
+            np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
+        if blur_radius is not None:
+            kernel_size = blur_radius*2+1
+            mask = cv2.erode(mask, np.ones((kernel_size, kernel_size), np.uint8))
+            mask = cv2.GaussianBlur(mask, (kernel_size, kernel_size), 0)
         mask_min_value = self.frame_args.mask_min_value[frame_idx] if min_val is None else min_val
         return mask.clip(255 * mask_min_value, 255).astype(np.uint8)
     
