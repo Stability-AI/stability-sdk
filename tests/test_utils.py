@@ -1,6 +1,6 @@
-import numpy as np
 import pytest
 
+from PIL import Image
 from typing import ByteString
 
 import stability_sdk.matrix as matrix
@@ -98,67 +98,43 @@ def test_truncate_fit1():
  
 ####################3
 
-def test_image_mix(np_image):
-    outv = image_mix(
-        img_a=np_image,
-        img_b=np_image,
-        ratio=0.5
-    )
-    assert isinstance(outv, type(np_image))
-    assert outv.shape == np_image.shape
+def test_image_mix(pil_image):
+    result = image_mix(img_a=pil_image, img_b=pil_image, ratio=0.5)
+    assert isinstance(result, Image.Image)
+    assert result.size == pil_image.size
 
-def test_image_mix_per_channel(np_image):
-    per_channel_ratios = np.full(np_image.shape, 0.5)
-    outv = image_mix(
-        img_a=np_image,
-        img_b=np_image,
-        ratio=per_channel_ratios
-    )
-    assert isinstance(outv, type(np_image))
-    assert outv.shape == np_image.shape
+def test_image_to_jpg_bytes(pil_image):
+    result = image_to_jpg_bytes(pil_image)
+    assert isinstance(result, ByteString)
 
-def test_image_mix_per_pixel(np_image):
-    per_pixel_ratios = np.full(np_image.shape[:2], 0.5)
-    outv = image_mix(
-        img_a=np_image,
-        img_b=np_image,
-        ratio=per_pixel_ratios
-    )
-    assert isinstance(outv, type(np_image))
-    assert outv.shape == np_image.shape
+def test_image_to_png_bytes(pil_image):
+    result = image_to_png_bytes(image=pil_image)
+    assert isinstance(result, ByteString)
 
-def test_image_to_jpg_bytes(np_image):
-    outv=image_to_jpg_bytes(image=np_image)
-    assert isinstance(outv, ByteString)
+def test_image_to_prompt(pil_image):
+    result = image_to_prompt(pil_image)
+    assert isinstance(result, generation.Prompt)
+    assert result.artifact.type == generation.ARTIFACT_IMAGE
 
-def test_image_to_png_bytes(np_image):
-    outv=image_to_png_bytes(image=np_image)
-    assert isinstance(outv, ByteString)
-
-def test_image_to_prompt(np_image):
-    outv = image_to_prompt(np_image)
-    assert isinstance(outv, generation.Prompt)
-    assert outv.artifact.type == generation.ARTIFACT_IMAGE
-
-def test_image_to_prompt_mask(np_image):
-    outv = image_to_prompt(np_image, type=generation.ARTIFACT_MASK)
-    assert isinstance(outv, generation.Prompt)
-    assert outv.artifact.type == generation.ARTIFACT_MASK
+def test_image_to_prompt_mask(pil_image):
+    result = image_to_prompt(pil_image, type=generation.ARTIFACT_MASK)
+    assert isinstance(result, generation.Prompt)
+    assert result.artifact.type == generation.ARTIFACT_MASK
 
 ########################################
 
 @pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
-def test_colormatch_op_valid(np_image, color_mode):
+def test_colormatch_op_valid(pil_image, color_mode):
     op = color_adjust_op(
-        match_image=np_image,
+        match_image=pil_image,
         match_mode=color_mode
     )
     assert isinstance(op, generation.TransformParameters)
 
-def test_colormatch_op_invalid(np_image):
+def test_colormatch_op_invalid(pil_image):
     with pytest.raises(ValueError, match="invalid color space"):
         _ = color_adjust_op(
-            match_image=np_image,
+            match_image=pil_image,
             match_mode="not a real color mode",
         )
 

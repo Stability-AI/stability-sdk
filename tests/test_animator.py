@@ -5,7 +5,7 @@ from pathlib import Path
 from stability_sdk.animation import Animator, AnimationArgs
 from stability_sdk.api import Context
 
-from .test_client import MockStub
+from .test_api import MockStub
 
 animation_prompts={0:"foo bar"}
 
