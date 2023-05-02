@@ -32,7 +32,7 @@ CAMERA_TYPES = {
     'orthographic': generation.CAMERA_ORTHOGRAPHIC,
 }
 
-COLOR_SPACES = {
+COLOR_MATCH_MODES = {
     "hsv": generation.COLOR_MATCH_HSV,
     "lab": generation.COLOR_MATCH_LAB,
     "rgb": generation.COLOR_MATCH_RGB,
@@ -45,7 +45,7 @@ GUIDANCE_PRESETS: Dict[str, int] = {
     "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
 }
 
-INTERP_MODES = {
+INTERPOLATE_MODES = {
     'film': generation.INTERPOLATE_FILM,
     'mix': generation.INTERPOLATE_LINEAR,
     'rife': generation.INTERPOLATE_RIFE,
@@ -86,13 +86,13 @@ def camera_type_from_string(s: str) -> generation.CameraType:
     return _from_string(s, CAMERA_TYPES, "camera type", generation.CameraType)
 
 def color_match_from_string(s: str) -> generation.ColorMatchMode:
-    return _from_string(s, COLOR_SPACES, "color space", generation.ColorMatchMode)
+    return _from_string(s, COLOR_MATCH_MODES, "color match", generation.ColorMatchMode)
 
 def guidance_from_string(s: str) -> generation.GuidancePreset:
     return _from_string(s, GUIDANCE_PRESETS, "guidance preset", generation.GuidancePreset)
 
 def interpolate_mode_from_string(s: str) -> generation.InterpolateMode:
-    return _from_string(s, INTERP_MODES, "interpolation mode", generation.InterpolateMode)
+    return _from_string(s, INTERPOLATE_MODES, "interpolate mode", generation.InterpolateMode)
 
 def render_mode_from_string(s: str) -> generation.RenderMode:
     return _from_string(s, RENDER_MODES, "render mode", generation.RenderMode)

@@ -7,7 +7,7 @@ import stability_sdk.matrix as matrix
 from stability_sdk.api import generation
 from stability_sdk.utils import (
     BORDER_MODES,
-    COLOR_SPACES,
+    COLOR_MATCH_MODES,
     GUIDANCE_PRESETS,
     SAMPLERS,
     artifact_type_to_string,
@@ -61,14 +61,14 @@ def test_guidance_from_string_invalid():
     with pytest.raises(ValueError, match="invalid guidance preset"):
         guidance_from_string(s='not a real preset')
 
-@pytest.mark.parametrize("color_space_name", COLOR_SPACES.keys())
-def test_color_match_from_string_valid(color_space_name):
-    color_match_from_string(s=color_space_name)
+@pytest.mark.parametrize("color_match_mode", COLOR_MATCH_MODES.keys())
+def test_color_match_from_string_valid(color_match_mode):
+    color_match_from_string(s=color_match_mode)
     assert True
 
 def test_color_match_from_string_invalid():
-    with pytest.raises(ValueError, match="invalid color space"):
-        color_match_from_string(s='not a real colorspace')
+    with pytest.raises(ValueError, match="invalid color match"):
+        color_match_from_string(s='not a real color match mode')
 
 
 ####################################
@@ -121,7 +121,7 @@ def test_image_to_prompt_mask(pil_image):
 
 ########################################
 
-@pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
+@pytest.mark.parametrize("color_mode", COLOR_MATCH_MODES.keys())
 def test_colormatch_op_valid(pil_image, color_mode):
     op = color_adjust_transform(
         match_image=pil_image,
@@ -130,10 +130,10 @@ def test_colormatch_op_valid(pil_image, color_mode):
     assert isinstance(op, generation.TransformParameters)
 
 def test_colormatch_op_invalid(pil_image):
-    with pytest.raises(ValueError, match="invalid color space"):
+    with pytest.raises(ValueError, match="invalid color match"):
         _ = color_adjust_transform(
             match_image=pil_image,
-            match_mode="not a real color mode",
+            match_mode="not a real color match mode",
         )
 
 @pytest.mark.parametrize("border_mode", BORDER_MODES.keys())
