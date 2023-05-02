@@ -97,8 +97,8 @@ class Context:
         self._retry_obfuscation = False   # retry request with different seed on classifier obfuscation
         self._retry_schedule_offset = 0.1 # increase schedule start by this amount on each retry after the first
 
-        self._user_organization_id = None
-        self._user_profile_picture = None
+        self._user_organization_id: Optional[str] = None
+        self._user_profile_picture: str = ''
 
     def generate(
         self,
@@ -250,7 +250,7 @@ class Context:
 
     def interpolate(
         self,
-        images: Iterable[Image.Image], 
+        images: Sequence[Image.Image], 
         ratios: List[float],
         mode: generation.InterpolateMode = generation.INTERPOLATE_LINEAR,
     ) -> List[Image.Image]:
@@ -345,7 +345,7 @@ class Context:
 
     def transform(
         self,
-        images: Iterable[Image.Image],
+        images: Sequence[Image.Image],
         params: Union[generation.TransformParameters, List[generation.TransformParameters]],
         extras: Optional[Dict] = None
     ) -> Tuple[List[Image.Image], Optional[List[Image.Image]]]:
@@ -405,7 +405,7 @@ class Context:
 
     def transform_3d(
         self, 
-        images: Iterable[Image.Image], 
+        images: Sequence[Image.Image], 
         depth_calc: generation.TransformParameters,
         transform: generation.TransformParameters,
         extras: Optional[Dict] = None

@@ -129,7 +129,7 @@ def test_api_transform_and_generate():
     generate_request = api.generate(["a cute cat"], [1], width=width, height=height, 
                                     init_strength=0.65, return_request=True)
     assert isinstance(generate_request, generation.Request)
-    image = api.transform_and_generate(init_image, [utils.color_adjust_op()], generate_request)
+    image = api.transform_and_generate(init_image, [utils.color_adjust_transform()], generate_request)
     assert isinstance(image, Image.Image)
     assert image.size == (width, height)
 
@@ -137,13 +137,13 @@ def test_api_transform_camera_pose():
     api = Context(stub=MockStub())
     image = _rand_image()
     xform = matrix.identity
-    pose = utils.camera_pose_op(
+    pose = utils.camera_pose_transform(
         xform, 0.1, 100.0, 75.0,
         camera_type='perspective',
         render_mode='mesh',
         do_prefill=True
     )
-    images, masks = api.transform_3d([image], utils.depthcalc_op(blend_weight=1.0), pose)
+    images, masks = api.transform_3d([image], utils.depth_calc_transform(blend_weight=1.0), pose)
     assert len(images) == 1 and len(masks) == 1
     assert isinstance(images[0], Image.Image)
     assert isinstance(masks[0], Image.Image)
@@ -151,18 +151,18 @@ def test_api_transform_camera_pose():
 def test_api_transform_color_adjust():
     api = Context(stub=MockStub())
     image = _rand_image()
-    images, masks = api.transform([image], utils.color_adjust_op())
+    images, masks = api.transform([image], utils.color_adjust_transform())
     assert len(images) == 1 and not masks
     assert isinstance(images[0], Image.Image)
-    images, masks = api.transform([image, image], utils.color_adjust_op())
+    images, masks = api.transform([image, image], utils.color_adjust_transform())
     assert len(images) == 2 and not masks
 
 def test_api_transform_resample_3d():
     api = Context(stub=MockStub())
     image = _rand_image()
     xform = matrix.identity
-    resample = utils.resample_op('replicate', xform, xform, export_mask=True)
-    images, masks = api.transform_3d([image], utils.depthcalc_op(blend_weight=0.5), resample)
+    resample = utils.resample_transform('replicate', xform, xform, export_mask=True)
+    images, masks = api.transform_3d([image], utils.depth_calc_transform(blend_weight=0.5), resample)
     assert len(images) == 1 and len(masks) == 1
     assert isinstance(images[0], Image.Image)
     assert isinstance(masks[0], Image.Image)

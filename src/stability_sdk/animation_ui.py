@@ -40,7 +40,7 @@ from .animation import (
     create_video_from_frames,
     interpolate_frames
 )
-from .utils import interp_mode_from_string
+from .utils import interpolate_mode_from_string
 
 
 DATA_VERSION = "0.1"
@@ -320,7 +320,7 @@ def post_process_tab():
             if interp_mode != 'None':
                 suffix += f"_{interp_mode}{interp_factor}"
                 interp_dir = os.path.join(outdir, "interpolate")
-                interp_mode = interp_mode_from_string(interp_mode)
+                interp_mode = interpolate_mode_from_string(interp_mode)
                 if not can_skip_interp:
                     remove_frames_from_path(interp_dir)
                     num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))

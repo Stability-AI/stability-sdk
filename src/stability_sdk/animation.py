@@ -21,14 +21,14 @@ from typing import cast, Deque, Generator, List, Optional, Tuple, Union
 
 from stability_sdk.api import Context, generation
 from stability_sdk.utils import (
-    color_adjust_op,
-    depthcalc_op,
+    camera_pose_transform,
+    color_adjust_transform,
+    depth_calc_transform,
     guidance_from_string,
     image_mix,
     image_to_png_bytes,
-    interp_mode_from_string,
-    resample_op,
-    camera_pose_op,
+    interpolate_mode_from_string,
+    resample_transform,
     sampler_from_string,
 )
 import stability_sdk.matrix as matrix
@@ -415,7 +415,7 @@ class Animator:
     def generate_depth_image(self, image: Image.Image) -> Image.Image:
         results, _ = self.api.transform(
             [image], 
-            depthcalc_op(blend_weight=self.args.depth_model_weight)
+            depth_calc_transform(blend_weight=self.args.depth_model_weight)
         )
         return results[0]
 
@@ -565,7 +565,7 @@ class Animator:
         init_ops: List[generation.TransformParameters] = []
 
         if do_color_match or do_bchsl or do_noise:
-            init_ops.append(color_adjust_op(
+            init_ops.append(color_adjust_transform(
                 brightness=brightness,
                 contrast=contrast,
                 hue=hue,
@@ -657,7 +657,7 @@ class Animator:
                 init_depth = None
                 if init_image is not None and model_requires_depth(args.model):
                     depth_source = self.video_prev_frame if self.video_prev_frame is not None else init_image
-                    params = depthcalc_op(blend_weight=1.0, blur_radius=0, reverse=True)
+                    params = depth_calc_transform(blend_weight=1.0, blur_radius=0, reverse=True)
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
 
@@ -718,7 +718,7 @@ class Animator:
                 out_frame = self.api.interpolate(
                     [self.prior_frames[0], self.prior_frames[1]],
                     [tween],
-                    interp_mode_from_string(args.cadence_interp)
+                    interpolate_mode_from_string(args.cadence_interp)
                 )[0]
 
             # save and return final frame
@@ -855,11 +855,11 @@ class Animator:
 
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
-                params = resample_op(args.border, to_3x3(self.prior_xforms[i]), export_mask=args.inpaint_border)
+                params = resample_transform(args.border, to_3x3(self.prior_xforms[i]), export_mask=args.inpaint_border)
                 xformed, mask = self.api.transform([self.prior_diffused[i]], params)
                 self.prior_frames[i] = xformed[0]
         else:
-            params = resample_op(args.border, to_3x3(xform), export_mask=args.inpaint_border)
+            params = resample_transform(args.border, to_3x3(xform), export_mask=args.inpaint_border)
             transformed_prior_frames, mask = self.api.transform(self.prior_frames, params)
             self.prior_frames.extend(transformed_prior_frames)
 
@@ -875,7 +875,7 @@ class Animator:
         depth_blur = int(frame_args.depth_blur_curve[frame_idx])
         depth_warp = frame_args.depth_warp_curve[frame_idx]
         
-        depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
+        depth_calc = depth_calc_transform(args.depth_model_weight, depth_blur)
 
         # create xform for the current frame
         world_view = self.build_frame_xform(frame_idx)
@@ -892,15 +892,15 @@ class Animator:
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
                 wvp = matrix.multiply(projection, self.prior_xforms[i])
-                resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
+                resample = resample_transform(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
                 xformed, mask = self.api.transform_3d([self.prior_diffused[i]], depth_calc, resample)
                 self.prior_frames[i] = xformed[0]
         else:
             if args.animation_mode == '3D warp':
                 wvp = matrix.multiply(projection, world_view)
-                transform_op = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
+                transform_op = resample_transform(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
             else:
-                transform_op = camera_pose_op(
+                transform_op = camera_pose_transform(
                     world_view, near, far, fov, 
                     args.camera_type,
                     render_mode=args.render_mode,
@@ -1007,15 +1007,15 @@ class Animator:
             args, frame_args = self.args, self.frame_args
             if args.animation_mode == '2D':
                 xform = to_3x3(xform)
-                frames, masks = self.api.transform([frame], resample_op(args.border, xform, export_mask=True))
+                frames, masks = self.api.transform([frame], resample_transform(args.border, xform, export_mask=True))
             else:
                 fov = frame_args.fov_curve[frame_idx]
                 depth_blur = int(frame_args.depth_blur_curve[frame_idx])
                 depth_warp = frame_args.depth_warp_curve[frame_idx]
                 projection = matrix.projection_fov(math.radians(fov), 1.0, args.near_plane, args.far_plane)                
                 wvp = matrix.multiply(projection, xform)
-                depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
-                resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=True)
+                depth_calc = depth_calc_transform(args.depth_model_weight, depth_blur)
+                resample = resample_transform(args.border, wvp, projection, depth_warp=depth_warp, export_mask=True)
                 frames, masks = self.api.transform_3d([frame], depth_calc, resample)
             masks = cast(List[Image.Image], masks)
             return frames[0], masks[0]
@@ -1063,7 +1063,11 @@ class Animator:
             t = (idx) / max(1, end-start-1)
             fwd_fill = image_mix(frame_bwd, frame_fwd, mask_erode_blur(forward_masks[idx], 8, 8))
             bwd_fill = image_mix(frame_fwd, frame_bwd, mask_erode_blur(backward_masks[idx], 8, 8))
-            blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_string(args.cadence_interp))[0]
+            blended = self.api.interpolate(
+                [fwd_fill, bwd_fill], 
+                [t], 
+                interpolate_mode_from_string(args.cadence_interp)
+            )[0]
             yield start+idx, blended
 
     def _spans_render(self) -> Generator[Tuple[int, Image.Image], None, None]:

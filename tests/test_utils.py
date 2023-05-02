@@ -12,19 +12,17 @@ from stability_sdk.utils import (
     SAMPLERS,
     artifact_type_to_string,
     border_mode_from_string,
+    color_adjust_transform,
     color_match_from_string,
+    depth_calc_transform,
     guidance_from_string,
-    sampler_from_string,
-    truncate_fit,
-    ########
     image_mix,
     image_to_jpg_bytes,
     image_to_png_bytes,
     image_to_prompt,
-    #########
-    color_adjust_op,
-    depthcalc_op,
-    resample_op
+    resample_transform,
+    sampler_from_string,
+    truncate_fit,
 )
 
 @pytest.mark.parametrize("border", BORDER_MODES.keys())
@@ -125,7 +123,7 @@ def test_image_to_prompt_mask(pil_image):
 
 @pytest.mark.parametrize("color_mode", COLOR_SPACES.keys())
 def test_colormatch_op_valid(pil_image, color_mode):
-    op = color_adjust_op(
+    op = color_adjust_transform(
         match_image=pil_image,
         match_mode=color_mode
     )
@@ -133,14 +131,14 @@ def test_colormatch_op_valid(pil_image, color_mode):
 
 def test_colormatch_op_invalid(pil_image):
     with pytest.raises(ValueError, match="invalid color space"):
-        _ = color_adjust_op(
+        _ = color_adjust_transform(
             match_image=pil_image,
             match_mode="not a real color mode",
         )
 
 @pytest.mark.parametrize("border_mode", BORDER_MODES.keys())
 def test_resample_op_valid(border_mode):
-    op = resample_op(
+    op = resample_transform(
         border_mode=border_mode, 
         transform=matrix.identity, 
         prev_transform=matrix.identity, 
@@ -152,7 +150,7 @@ def test_resample_op_valid(border_mode):
 @pytest.mark.parametrize("border_mode", ['not a border mode'])
 def test_resample_op_invalid(border_mode):
     with pytest.raises(ValueError, match="invalid border mode"):
-        _ = resample_op(
+        _ = resample_transform(
             border_mode=border_mode, 
             transform=matrix.identity, 
             prev_transform=matrix.identity, 
