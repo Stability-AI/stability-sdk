@@ -147,7 +147,7 @@ class Rendering3dSettings(param.Parameterized):
 class InpaintingSettings(param.Parameterized):
     use_inpainting_model = param.Boolean(default=False, doc="If True, inpainting will be performed using dedicated inpainting model. If False, inpainting will be performed with the regular model that is selected")
     inpaint_border = param.Boolean(default=False, doc="Use inpainting on top of border regions for 2D and 3D warp modes. Defaults to False")
-    mask_min_value = param.String(default="0:(0.1)", doc="Mask postprocessing for non-inpainting model. Mask floor values will be clipped by this value prior to inpainting")
+    mask_min_value = param.String(default="0:(0.25)", doc="Mask postprocessing for non-inpainting model. Mask floor values will be clipped by this value prior to inpainting")
     mask_binarization_thr = param.Number(default=0.1, softbounds=(0,1), doc="Applied when inpainting with inpainting model. Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
     save_inpaint_masks = param.Boolean(default=False)
 
@@ -465,7 +465,7 @@ class Animator:
 
         if args.use_inpainting_model:
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, blur_radius=8)
+                mask, frame_idx, binarize=True)
             results = self.api.inpaint(
                 image, binary_mask,
                 prompts, weights, 
@@ -680,6 +680,7 @@ class Animator:
                         self.inpaint_mask, frame_idx, 
                         mask_pow=args.mask_power if args.animation_mode == '3D render' else None,
                         mask_multiplier=strength,
+                        blur_radius=None,
                         min_val=mask_min_value)
 
                 # generate the next frame
@@ -944,7 +945,7 @@ class Animator:
             mask_pow: Optional[float] = None,
             mask_multiplier: Optional[float] = None,
             binarize: bool = False,
-            blur_radius: Optional[int] = None,
+            blur_radius: Optional[int] = 8,
             min_val: Optional[float] = None
         ) -> np.ndarray:
         # Being applied in 3D render mode. Camera pose transform operation returns a mask which pixel values encode
