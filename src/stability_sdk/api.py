@@ -100,13 +100,6 @@ class Context:
         self._user_organization_id = None
         self._user_profile_picture = None
 
-        logger.warning(
-            "\n"
-            "The functionality available through this API Context class is in beta and subject to changes in both functionality and pricing.\n"
-            "Please be aware that these changes may affect your implementation and usage of this class.\n"
-            "\n"
-        )
-
     def generate(
         self,
         prompts: List[str], 
