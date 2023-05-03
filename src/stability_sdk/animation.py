@@ -52,7 +52,7 @@ class BasicSettings(param.Parameterized):
     width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     sampler = param.Selector(
-        default='K_dpmpp_2s_ancestral', 
+        default='K_dpmpp_2m', 
         objects=[
             "DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", 
             "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"
