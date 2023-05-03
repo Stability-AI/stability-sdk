@@ -6,7 +6,7 @@ import time
 
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2 as dashboard
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2_grpc as dashboard_grpc
