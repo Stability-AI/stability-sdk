@@ -2,6 +2,7 @@
 
 # fmt: off
 
+import getpass
 import grpc
 import logging
 import mimetypes
@@ -419,17 +420,12 @@ def process_cli(logger: logging.Logger = None,
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
     STABILITY_KEY = os.getenv("STABILITY_KEY", "")
 
-    if not STABILITY_HOST:
-        logger.warning("STABILITY_HOST environment variable needs to be set.")
-        sys.exit(1)
-
     if not STABILITY_KEY:
-        logger.warning(
-            "STABILITY_KEY environment variable needs to be set. You may"
-            " need to login to the Stability website to obtain the"
-            " API key."
+        print(
+            "Please enter your API key from dreamstudio.ai or set the "
+            "STABILITY_KEY environment variable to skip this prompt."
         )
-        sys.exit(1)
+        STABILITY_KEY = getpass.getpass("Enter your Stability API key: ")
 
     # CLI parsing
     parser = ArgumentParser()
