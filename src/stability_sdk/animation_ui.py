@@ -52,26 +52,34 @@ PRESETS = {
         "strength_curve":"0:(0.7)", "translation_z":"0:(1.0)",
     },
     "3D render rotate": {
-        "animation_mode": "3D render", "translation_x":"0:(-2)", "rotation_y":"0:(-0.8)",
-        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
-        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
-        "mask_min_value":"0:(0.45)", "non_inpainting_model_for_diffusion_frames":True,
+        "animation_mode": "3D render", "depth_model_weight":1.0,
+        "translation_x":"0:(-3.5)", "rotation_y":"0:(1.7)", "translation_z":"0:(-0.5)",
+        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.96)", "noise_scale_curve":"0:(1.01)",
+        "mask_min_value":"0:(0.35)", "use_inpainting_model":False, "preset": "anime",
+        "animation_prompts": "{\n0:\"beautiful portrait of a ninja in a sunflower field\"\n}"
     },
     "3D render explore": {
         "animation_mode": "3D render", "translation_z":"0:(10)", "translation_x":"0:(2), 20:(-2), 40:(2)",
         "rotation_y":"0:(0), 10:(1.5), 30:(-2), 50: (3)", "rotation_x":"0:(0.4)",
         "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
-        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
-        "mask_min_value":"0:(0.1)", "non_inpainting_model_for_diffusion_frames":True,
+        "noise_scale_curve":"0:(1.01)", "depth_model_weight":1.0,
+        "mask_min_value":"0:(0.1)", "use_inpainting_model":False, "preset":"3d-model",
+        "animation_prompts": "{\n0:\"Phantasmagoric carnival, carnival attractions shifting and changing, bizarre surreal circus\"\n}"
     },
     "Prompt interpolate": {
         "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":48, 
         "strength_curve":"0:(0)", "diffusion_cadence_curve":"0:(4)", "cadence_interp":"film",
         "clip_guidance":"None", "animation_prompts": "{\n0:\"a photo of a cute cat\",\n24:\"a photo of a cute dog\"\n}"
     },
+    "Translate and inpaint": {
+        "animation_mode":"2D", "inpaint_border":True, "use_inpainting_model":False, "translation_x":"0:(-20)", 
+        "diffusion_cadence_curve":"0:(3)", "strength_curve":"0:(0.85)", "noise_scale_curve":"0:(1.01)", "border":"reflect",
+        "animation_prompts": "{\n0:\"Mystical pumpkin field landscapes on starry Halloween night, pop surrealism art\"\n}"
+    },
     "Outpaint": {
         "animation_mode":"2D", "diffusion_cadence_curve":"0:(24)", "cadence_spans":True, "strength_curve":"0:(0.75)",
-        "inpaint_border":True, "zoom":"0:(0.95)", "animation_prompts": "{\n0:\"an ancient and magical portal, in a fantasy corridor\"\n}"
+        "inpaint_border":True, "use_inpainting_model":True, "zoom":"0:(0.95)",
+        "animation_prompts": "{\n0:\"an ancient and magical portal, in a fantasy corridor\"\n}"
     },
     "Video Stylize": {
         "animation_mode":"Video Input", "model":"stable-diffusion-depth-v2-0", "locked_seed":True, 

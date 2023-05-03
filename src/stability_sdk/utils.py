@@ -330,8 +330,7 @@ def camera_pose_op(
     far_plane:float,
     fov:float,
     camera_type:str='perspective',
-    image_render_mode:str='mesh',
-    mask_render_mode:str='pointcloud',
+    render_mode:str='mesh',
     do_prefill:bool=True,
 ) -> generation.TransformParameters:
     camera_parameters = generation.CameraParameters(
@@ -341,8 +340,7 @@ def camera_pose_op(
         camera_pose=generation.TransformCameraPose(
             world_to_view_matrix=generation.TransformMatrix(data=sum(transform, [])),
             camera_parameters=camera_parameters,
-            image_render_mode=render_mode_from_string(image_render_mode),
-            mask_render_mode=render_mode_from_string(mask_render_mode),
+            render_mode=render_mode_from_string(render_mode),
             do_prefill=do_prefill
         )
     )
