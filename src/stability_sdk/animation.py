@@ -148,7 +148,7 @@ class InpaintingSettings(param.Parameterized):
     use_inpainting_model = param.Boolean(default=False, doc="If True, inpainting will be performed using dedicated inpainting model. If False, inpainting will be performed with the regular model that is selected")
     inpaint_border = param.Boolean(default=False, doc="Use inpainting on top of border regions for 2D and 3D warp modes. Defaults to False")
     mask_min_value = param.String(default="0:(0.25)", doc="Mask postprocessing for non-inpainting model. Mask floor values will be clipped by this value prior to inpainting")
-    mask_binarization_thr = param.Number(default=0.1, softbounds=(0,1), doc="Applied when inpainting with inpainting model. Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
+    mask_binarization_thr = param.Number(default=0.15, softbounds=(0,1), doc="Applied when inpainting with inpainting model. Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
     save_inpaint_masks = param.Boolean(default=False)
 
 class VideoInputSettings(param.Parameterized):
@@ -450,7 +450,8 @@ class Animator:
         frame_idx: int,
         image: np.ndarray,
         mask: np.ndarray,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        mask_blur_radius: Optional[int] = 8
     ) -> np.ndarray:
         args = self.args
         steps = int(self.frame_args.steps_curve[frame_idx])
@@ -465,7 +466,7 @@ class Animator:
 
         if args.use_inpainting_model:
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True)
+                mask, frame_idx, binarize=True, blur_radius=mask_blur_radius)
             results = self.api.inpaint(
                 image, binary_mask,
                 prompts, weights, 
@@ -481,7 +482,7 @@ class Animator:
         else:
             mask_min_value = self.frame_args.mask_min_value[frame_idx]
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, min_val=mask_min_value)
+                mask, frame_idx, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
             adjusted_steps = max(5, int(steps * (1.0 - mask_min_value))) if args.steps_strength_adj else steps
             noise_scale = self.frame_args.noise_scale_curve[frame_idx]
             results = self.api.generate(
@@ -945,7 +946,7 @@ class Animator:
             mask_pow: Optional[float] = None,
             mask_multiplier: Optional[float] = None,
             binarize: bool = False,
-            blur_radius: Optional[int] = 8,
+            blur_radius: Optional[int] = None,
             min_val: Optional[float] = None
         ) -> np.ndarray:
         # Being applied in 3D render mode. Camera pose transform operation returns a mask which pixel values encode
@@ -1047,7 +1048,9 @@ class Animator:
 
         # inpaint the final frame
         if not np.all(forward_masks[-1]):
-            forward_frames[-1] = self.inpaint_frame(end-1, forward_frames[-1], forward_masks[-1])
+            forward_frames[-1] = self.inpaint_frame(
+                end-1, forward_frames[-1], forward_masks[-1], mask_blur_radius=0,
+                seed=None if args.use_inpainting_model else seed)
 
         # run diffusion on top of the final result to allow content to evolve over time
         strength = max(0.0, self.frame_args.strength_curve[end-1])
@@ -1070,7 +1073,7 @@ class Animator:
         # inpaint the backwards frame
         if not np.all(backward_masks[0]):
             backward_frames[0] = self.inpaint_frame(
-                start, backward_frames[0], backward_masks[0],
+                start, backward_frames[0], backward_masks[0], mask_blur_radius=0,
                 seed=None if args.use_inpainting_model else seed)
 
         # yield the final frames blending from forward to backward
