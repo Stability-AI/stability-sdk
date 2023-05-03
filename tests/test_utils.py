@@ -101,6 +101,11 @@ def test_image_mix(pil_image):
     assert isinstance(result, Image.Image)
     assert result.size == pil_image.size
 
+def test_image_mix_mask(pil_image):
+    result = image_mix(img_a=pil_image, img_b=pil_image, ratio=pil_image.convert('L'))
+    assert isinstance(result, Image.Image)
+    assert result.size == pil_image.size
+
 def test_image_to_jpg_bytes(pil_image):
     result = image_to_jpg_bytes(pil_image)
     assert isinstance(result, ByteString)

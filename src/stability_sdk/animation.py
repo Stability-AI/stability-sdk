@@ -283,14 +283,14 @@ def interpolate_frames(
     shutil.copy(frame_files[-1], os.path.join(out_path, f"frame_{(len(frame_files)-1) * interp_factor:05d}.png"))        
 
 def mask_erode_blur(mask: Image.Image, mask_erode: int, mask_blur: int) -> Image.Image:
+    mask = np.array(mask)
     if mask_erode > 0:
-        ks = mask_erode * 2 + 1
-        kernel = ImageFilter.Kernel((ks, ks), [1] * (ks * ks), scale=ks * ks)
-        mask = mask.filter(ImageFilter.MinFilter(mask_erode)).filter(kernel)
+        ks = mask_erode*2 + 1
+        mask = cv2.erode(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks)), iterations=1)
     if mask_blur > 0:
-        ks = mask_blur * 2 + 1
-        mask = mask.filter(ImageFilter.GaussianBlur(mask_blur))
-    return mask
+        ks = mask_blur*2 + 1
+        mask = cv2.GaussianBlur(mask, (ks, ks), 0)
+    return Image.fromarray(mask)
 
 def make_xform_2d(
     w: float, h: float,
@@ -782,6 +782,9 @@ class Animator:
         # change request for random seed into explicit value so it is saved to settings
         if args.seed <= 0:
             args.seed = random.randint(0, 2**32 - 1)
+
+        # select image generation model
+        self.api._generate.engine_id = args.custom_model if args.model == "custom" else args.model
 
         # validate border settings
         if args.border == 'wrap' and args.animation_mode != '2D':

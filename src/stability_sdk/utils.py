@@ -207,16 +207,21 @@ def artifact_type_to_string(artifact_type: generation.ArtifactType):
         )
         return "ARTIFACT_UNRECOGNIZED"
 
-def image_mix(img_a: Image.Image, img_b: Image.Image, ratio: float) -> Image.Image:
+def image_mix(img_a: Image.Image, img_b: Image.Image, ratio: Union[float, Image.Image]) -> Image.Image:
     """
     Performs a linear interpolation between two images
     :param img_a: The first image.
     :param img_b: The second image.
-    :param ratio: A float for in-between ratio
+    :param ratio: Mix ratio or mask image.
     :return: The mixed image
     """
     if img_a.size != img_b.size:
         raise ValueError(f"img_a size {img_a.size} does not match img_b size {img_b.size}")
+    
+    if isinstance(ratio, Image.Image):
+        if ratio.size != img_a.size:
+            raise ValueError(f"mix ratio size {ratio.size} does not match img_a size {img_a.size}")
+        return Image.composite(img_a, img_b, ratio)
 
     return Image.blend(img_a, img_b, ratio)
 
