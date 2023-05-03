@@ -526,7 +526,8 @@ class Context:
     def _adjust_request_engine(self, request: generation.Request):
         if request.engine_id == self._transform.engine_id:
             assert request.HasField("transform")
-            if request.transform.HasField("color_adjust") or request.transform.HasField("resample"):
+            if request.transform.HasField("color_adjust") or \
+                (request.transform.HasField("resample") and len(request.transform.resample.transform.data) == 9):
                 request.engine_id = self._transform.engine_id + "-cpu"
 
     def _adjust_request_for_retry(self, request: generation.Request, attempt: int):
