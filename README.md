@@ -33,6 +33,14 @@ It will generate and put PNGs in your current directory.
 To upscale:
 `python3 -m stability_sdk upscale -i "/path/to/image.png"`
 
+## Animation UI
+
+Install with 
+`pip install stability-sdk[anim_ui]`
+
+Then run with 
+`python3 -m stability_sdk animate --gui`
+
 ## SDK Usage
 
 Be sure to check out [Platform](https://platform.stability.ai) for comprehensive documentation on how to interact with our API.
@@ -131,6 +139,7 @@ protobuf definition to compile stubs for your language:
 
 * Typescript client: https://github.com/jakiestfu/stability-ts
 * Guide to building for Ruby: https://github.com/kmcphillips/stability-sdk/blob/main/src/ruby/README.md
+* C# client: https://github.com/Katarzyna-Kadziolka/StabilityClient.Net
 
 ## Stability API TOS
 

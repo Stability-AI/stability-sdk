@@ -15,21 +15,20 @@ import subprocess
 from collections import OrderedDict, deque
 from dataclasses import dataclass, fields
 from keyframed.dsl import curve_from_cn_string
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 from types import SimpleNamespace
-from typing import cast, Deque, Generator, List, Optional, Tuple
+from typing import cast, Deque, Generator, List, Optional, Tuple, Union
 
 from stability_sdk.api import Context, generation
 from stability_sdk.utils import (
-    color_adjust_op,
-    cv2_to_pil,
-    depthcalc_op,
+    camera_pose_transform,
+    color_adjust_transform,
+    depth_calc_transform,
     guidance_from_string,
     image_mix,
     image_to_png_bytes,
-    interp_mode_from_string,
-    resample_op,
-    camera_pose_op,
+    interpolate_mode_from_string,
+    resample_transform,
     sampler_from_string,
 )
 import stability_sdk.matrix as matrix
@@ -53,7 +52,7 @@ class BasicSettings(param.Parameterized):
     width = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     height = param.Integer(default=512, doc="Output image dimensions. Will be resized to a multiple of 64.")
     sampler = param.Selector(
-        default='K_dpmpp_2s_ancestral', 
+        default='K_dpmpp_2m', 
         objects=[
             "DDIM", "PLMS", "K_euler", "K_euler_ancestral", "K_heun", "K_dpm_2", 
             "K_dpm_2_ancestral", "K_lms", "K_dpmpp_2m", "K_dpmpp_2s_ancestral"
@@ -93,7 +92,7 @@ class AnimationSettings(param.Parameterized):
     noise_scale_curve = param.String(default="0:(0.99)")
     strength_curve = param.String(default="0:(0.65)", doc="Image Strength (of init image relative to the prompt). 0 for ignore init image and attend only to prompt, 1 would return the init image unmodified")
     steps_curve = param.String(default="0:(30)", doc="Diffusion steps")
-    steps_strength_adj = param.Boolean(default=True, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
+    steps_strength_adj = param.Boolean(default=False, doc="Adjusts number of diffusion steps based on current previous frame strength value.")    
     interpolate_prompts = param.Boolean(default=False, doc="Smoothly interpolate prompts between keyframes. Defaults to False")
     locked_seed = param.Boolean(default=False)
 
@@ -250,6 +249,10 @@ def create_video_from_frames(frames_path: str, mp4_path: str, fps: int=24, rever
     if process.returncode != 0:
         raise RuntimeError(stderr)
 
+def cv2_to_pil(cv2_img: np.ndarray) -> Image.Image:
+    """Convert a cv2 BGR ndarray to a PIL Image"""
+    return Image.fromarray(cv2_img[:, :, ::-1])
+
 def interpolate_frames(
     context: Context, 
     frames_path: str, 
@@ -269,25 +272,26 @@ def interpolate_frames(
     ratios = np.linspace(0, 1, interp_factor+1)[1:-1].tolist()
     for i in range(len(frame_files) - 1):
         shutil.copy(frame_files[i], os.path.join(out_path, f"frame_{i * interp_factor:05d}.png"))
-        frame1 = cv2.imread(frame_files[i])
-        frame2 = cv2.imread(frame_files[i + 1])
-        yield cv2_to_pil(frame1)
+        frame1 = Image.open(frame_files[i])
+        frame2 = Image.open(frame_files[i + 1])
+        yield frame1
         tweens = context.interpolate([frame1, frame2], ratios, interp_mode)
         for ti, tween in enumerate(tweens):
-            cv2.imwrite(os.path.join(out_path, f"frame_{i * interp_factor + ti + 1:05d}.png"), tween)
-            yield cv2_to_pil(tween)
+            tween.save(os.path.join(out_path, f"frame_{i * interp_factor + ti + 1:05d}.png"))
+            yield tween
 
     # copy final frame
     shutil.copy(frame_files[-1], os.path.join(out_path, f"frame_{(len(frame_files)-1) * interp_factor:05d}.png"))        
 
-def mask_erode_blur(mask: np.ndarray, mask_erode: int, mask_blur: int) -> np.ndarray:
+def mask_erode_blur(mask: Image.Image, mask_erode: int, mask_blur: int) -> Image.Image:
+    mask = np.array(mask)
     if mask_erode > 0:
         ks = mask_erode*2 + 1
         mask = cv2.erode(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks)), iterations=1)
     if mask_blur > 0:
         ks = mask_blur*2 + 1
         mask = cv2.GaussianBlur(mask, (ks, ks), 0)
-    return mask
+    return Image.fromarray(mask)
 
 def make_xform_2d(
     w: float, h: float,
@@ -340,22 +344,22 @@ class Animator:
         self.api = api_context
         self.animation_prompts = animation_prompts
         self.args = args or AnimationArgs()
-        self.color_match_image: Optional[np.ndarray] = None
+        self.color_match_image: Optional[Image.Image] = None
         self.diffusion_cadence_ofs: int = 0
         self.frame_args: FrameArgs
-        self.inpaint_mask: Optional[np.ndarray] = None
+        self.inpaint_mask: Optional[Image.Image] = None
         self.key_frame_values: List[int] = []
         self.out_dir: Optional[str] = out_dir
-        self.mask: Optional[np.ndarray] = None
+        self.mask: Optional[Image.Image] = None
         self.mask_reader = None
         self.cadence_on: bool = False
-        self.prior_frames: Deque[np.ndarray] = deque([], 1)    # forward warped prior frames. stores one image with cadence off, two images otherwise
-        self.prior_diffused: Deque[np.ndarray] = deque([], 1)  # results of diffusion. stores one image with cadence off, two images otherwise
+        self.prior_frames: Deque[Image.Image] = deque([], 1)    # forward warped prior frames. stores one image with cadence off, two images otherwise
+        self.prior_diffused: Deque[Image.Image] = deque([], 1)  # results of diffusion. stores one image with cadence off, two images otherwise
         self.prior_xforms: Deque[matrix.Matrix] = deque([], 1)   # accumulated transforms since last diffusion. stores one with cadence off, two otherwise
         self.negative_prompt: str = negative_prompt
         self.negative_prompt_weight: float = negative_prompt_weight
         self.start_frame_idx: int = 0
-        self.video_prev_frame: Optional[np.ndarray] = None
+        self.video_prev_frame: Optional[Image.Image] = None
         self.video_reader: Optional[cv2.VideoCapture] = None
 
         # configure Api to retry on classifier obfuscations
@@ -397,7 +401,7 @@ class Animator:
         else:
             return matrix.identity
 
-    def emit_frame(self, frame_idx: int, out_frame: np.ndarray) -> Image.Image:
+    def emit_frame(self, frame_idx: int, out_frame: Image.Image) -> Image.Image:
         if self.args.save_depth_maps:
             depth_image = self.generate_depth_image(out_frame)
             self.save_to_out_dir(frame_idx, depth_image, prefix='depth')
@@ -406,12 +410,12 @@ class Animator:
             self.save_to_out_dir(frame_idx, self.inpaint_mask, prefix='mask')
 
         self.save_to_out_dir(frame_idx, out_frame)
-        return cv2_to_pil(out_frame)
+        return out_frame
 
-    def generate_depth_image(self, image: np.ndarray) -> np.ndarray:
+    def generate_depth_image(self, image: Image.Image) -> Image.Image:
         results, _ = self.api.transform(
             [image], 
-            depthcalc_op(blend_weight=self.args.depth_model_weight)
+            depth_calc_transform(blend_weight=self.args.depth_model_weight)
         )
         return results[0]
 
@@ -430,17 +434,17 @@ class Animator:
     def get_frame_filename(self, frame_idx, prefix="frame") -> Optional[str]:
         return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png") if self.out_dir else None
 
-    def image_resize(self, img: np.ndarray, mode: str='stretch') -> np.ndarray:
-        height, width, _ = img.shape
+    def image_resize(self, img: Image.Image, mode: str = 'stretch') -> Image.Image:
+        width, height = img.size
         if mode == 'cover':
             scale = max(self.args.width / width, self.args.height / height)
-            img = cv2.resize(img, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_LANCZOS4)
-            x = (img.shape[1] - self.args.width) // 2
-            y = (img.shape[0] - self.args.height) // 2
-            img = img[y:y+self.args.height, x:x+self.args.width]
+            img = img.resize((int(width * scale), int(height * scale)), resample=Image.LANCZOS)
+            x = (img.width - self.args.width) // 2
+            y = (img.height - self.args.height) // 2
+            img = img.crop((x, y, x + self.args.width, y + self.args.height))
         elif mode == 'stretch':
-            img = cv2.resize(img, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
-        else: # 'resize-canvas'
+            img = img.resize((self.args.width, self.args.height), resample=Image.LANCZOS)
+        else:  # 'resize-canvas'
             width, height = map(lambda x: x - x % 64, (width, height))
             self.args.width, self.args.height = width, height
         return img
@@ -448,11 +452,11 @@ class Animator:
     def inpaint_frame(
         self,
         frame_idx: int,
-        image: np.ndarray,
-        mask: np.ndarray,
+        image: Image.Image,
+        mask: Image.Image,
         seed: Optional[int] = None,
         mask_blur_radius: Optional[int] = 8
-    ) -> np.ndarray:
+    ) -> Image.Image:
         args = self.args
         steps = int(self.frame_args.steps_curve[frame_idx])
         sampler = sampler_from_string(args.sampler.lower())
@@ -508,7 +512,7 @@ class Animator:
         if not fpath:
             return
 
-        img = self.image_resize(cv2.imread(fpath), self.args.init_sizing)
+        img = self.image_resize(Image.open(fpath), self.args.init_sizing)
             
         self.prior_frames.extend([img, img])
         self.prior_diffused.extend([img, img])
@@ -518,7 +522,7 @@ class Animator:
             return
 
         # try to load mask as an image
-        mask = cv2.imread(self.args.mask_path)
+        mask = Image.open(self.args.mask_path)
         if mask is not None:
             self.set_mask(mask)
 
@@ -539,7 +543,7 @@ class Animator:
             success, image = self.video_reader.read()
             if not success:
                 raise Exception(f"Failed to read first frame from {self.args.video_init_path}")
-            self.video_prev_frame = self.image_resize(image, 'cover')
+            self.video_prev_frame = self.image_resize(cv2_to_pil(image), 'cover')
             self.prior_frames.extend([self.video_prev_frame, self.video_prev_frame])
             self.prior_diffused.extend([self.video_prev_frame, self.video_prev_frame])
 
@@ -552,9 +556,9 @@ class Animator:
             if not success:
                 return
 
-        self.set_mask(mask)
+        self.set_mask(cv2_to_pil(mask))
 
-    def prepare_init_ops(self, init_image: Optional[np.ndarray], frame_idx: int, noise_seed:int) -> List[generation.TransformParameters]:
+    def prepare_init_ops(self, init_image: Optional[Image.Image], frame_idx: int, noise_seed:int) -> List[generation.TransformParameters]:
         if init_image is None:
             return []
 
@@ -573,7 +577,7 @@ class Animator:
         init_ops: List[generation.TransformParameters] = []
 
         if do_color_match or do_bchsl or do_noise:
-            init_ops.append(color_adjust_op(
+            init_ops.append(color_adjust_transform(
                 brightness=brightness,
                 contrast=contrast,
                 hue=hue,
@@ -662,7 +666,7 @@ class Animator:
                 init_depth = None
                 if init_image is not None and model_requires_depth(args.model):
                     depth_source = self.video_prev_frame if self.video_prev_frame is not None else init_image
-                    params = depthcalc_op(blend_weight=1.0, blur_radius=0, reverse=True)
+                    params = depth_calc_transform(blend_weight=1.0, blur_radius=0, reverse=True)
                     results, _ = self.api.transform([depth_source], params)
                     init_depth = results[0]
 
@@ -727,7 +731,7 @@ class Animator:
                 out_frame = self.api.interpolate(
                     [self.prior_frames[0], self.prior_frames[1]],
                     [tween],
-                    interp_mode_from_string(args.cadence_interp)
+                    interpolate_mode_from_string(args.cadence_interp)
                 )[0]
 
             # save and return final frame
@@ -747,19 +751,18 @@ class Animator:
             save_dict['negative_prompt_weight'] = self.negative_prompt_weight
             json.dump(save_dict, f, ensure_ascii=False, indent=4)
 
-    def save_to_out_dir(self, frame_idx: int, image: np.ndarray, prefix: str = "frame"):
+    def save_to_out_dir(self, frame_idx: int, image: Image.Image, prefix: str = "frame"):
         if self.out_dir is not None:
-            cv2.imwrite(self.get_frame_filename(frame_idx, prefix=prefix), image)
+            image.save(self.get_frame_filename(frame_idx, prefix=prefix))
 
-    def set_mask(self, mask: np.ndarray):
-        self.mask = cv2.resize(mask, (self.args.width, self.args.height), interpolation=cv2.INTER_LANCZOS4)
-        self.mask = cv2.cvtColor(self.mask, cv2.COLOR_BGR2GRAY)
+    def set_mask(self, mask: Image.Image):
+        self.mask = mask.convert('L').resize((self.args.width, self.args.height), resample=Image.LANCZOS)
 
         # this is intentionally flipped because we want white in the mask to represent
         # areas that should change which is opposite from the backend which treats
         # the mask as per pixel offset in the schedule starting value
         if not self.args.mask_invert:
-            self.mask = 255 - self.mask
+            self.mask = ImageOps.invert(self.mask)
 
     def set_cadence_mode(self, enabled: bool):
         def set_queue_size(prior_queue: deque, prev_length: int, new_length: int) -> deque:
@@ -792,6 +795,14 @@ class Animator:
         # change request for random seed into explicit value so it is saved to settings
         if args.seed <= 0:
             args.seed = random.randint(0, 2**32 - 1)
+
+        # select image generation model
+        self.api._generate.engine_id = args.custom_model if args.model == "custom" else args.model
+
+        # validate border settings
+        if args.border == 'wrap' and args.animation_mode != '2D':
+            args.border = 'reflect'
+            logger.warning(f"Border 'wrap' is only supported in 2D mode, switching to '{args.border}'.")
 
         # validate clip guidance setting against selected model and sampler
         if args.clip_guidance.lower() != 'none':
@@ -832,16 +843,16 @@ class Animator:
             self.start_frame_idx = len(frames)
             self.diffusion_cadence_ofs = self.start_frame_idx
             if self.start_frame_idx > 2:
-                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-2))
-                next = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
+                prev = Image.open(self.get_frame_filename(self.start_frame_idx-2))
+                next = Image.open(self.get_frame_filename(self.start_frame_idx-1))
                 self.prior_frames.extend([prev, next])
                 self.prior_diffused.extend([prev, next])
             elif self.start_frame_idx > 1 and not self.cadence_on:
-                prev = cv2.imread(self.get_frame_filename(self.start_frame_idx-1))
+                prev = Image.open(self.get_frame_filename(self.start_frame_idx-1))
                 self.prior_frames.append(prev)
                 self.prior_diffused.append(prev)
 
-    def transform_2d(self, frame_idx) -> Optional[np.ndarray]:
+    def transform_2d(self, frame_idx) -> Optional[Image.Image]:
         if not len(self.prior_frames):
             return None
 
@@ -860,17 +871,17 @@ class Animator:
 
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
-                params = resample_op(args.border, to_3x3(self.prior_xforms[i]), export_mask=args.inpaint_border)
+                params = resample_transform(args.border, to_3x3(self.prior_xforms[i]), export_mask=args.inpaint_border)
                 xformed, mask = self.api.transform([self.prior_diffused[i]], params)
                 self.prior_frames[i] = xformed[0]
         else:
-            params = resample_op(args.border, to_3x3(xform), export_mask=args.inpaint_border)
+            params = resample_transform(args.border, to_3x3(xform), export_mask=args.inpaint_border)
             transformed_prior_frames, mask = self.api.transform(self.prior_frames, params)
             self.prior_frames.extend(transformed_prior_frames)
 
         return mask[0] if isinstance(mask, list) else mask
 
-    def transform_3d(self, frame_idx) -> Optional[np.ndarray]:
+    def transform_3d(self, frame_idx) -> Optional[Image.Image]:
         if not len(self.prior_frames):
             return None
 
@@ -880,7 +891,7 @@ class Animator:
         depth_blur = int(frame_args.depth_blur_curve[frame_idx])
         depth_warp = frame_args.depth_warp_curve[frame_idx]
         
-        depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
+        depth_calc = depth_calc_transform(args.depth_model_weight, depth_blur)
 
         # create xform for the current frame
         world_view = self.build_frame_xform(frame_idx)
@@ -897,15 +908,15 @@ class Animator:
             # warp prior diffused frames by accumulated xforms
             for i in range(len(self.prior_diffused)):
                 wvp = matrix.multiply(projection, self.prior_xforms[i])
-                resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
+                resample = resample_transform(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
                 xformed, mask = self.api.transform_3d([self.prior_diffused[i]], depth_calc, resample)
                 self.prior_frames[i] = xformed[0]
         else:
             if args.animation_mode == '3D warp':
                 wvp = matrix.multiply(projection, world_view)
-                transform_op = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
+                transform_op = resample_transform(args.border, wvp, projection, depth_warp=depth_warp, export_mask=args.inpaint_border)
             else:
-                transform_op = camera_pose_op(
+                transform_op = camera_pose_transform(
                     world_view, near, far, fov, 
                     args.camera_type,
                     render_mode=args.render_mode,
@@ -914,7 +925,7 @@ class Animator:
             self.prior_frames.extend(transformed_prior_frames)
             return mask[0] if isinstance(mask, list) else mask
 
-    def transform_video(self, frame_idx) -> Optional[np.ndarray]:
+    def transform_video(self, frame_idx) -> Optional[Image.Image]:
         assert self.video_reader is not None
         if not len(self.prior_frames):
             return None
@@ -922,6 +933,7 @@ class Animator:
         args = self.args
         for _ in range(args.extract_nth_frame):
             success, video_next_frame = self.video_reader.read()
+            video_next_frame = cv2_to_pil(video_next_frame)
         if success:
             video_next_frame = self.image_resize(video_next_frame, 'cover')
             mask = None
@@ -940,19 +952,21 @@ class Animator:
         return None
 
     def _postprocess_inpainting_mask(
-            self,
-            mask: np.ndarray,
-            frame_idx: int,
-            mask_pow: Optional[float] = None,
-            mask_multiplier: Optional[float] = None,
-            binarize: bool = False,
-            blur_radius: Optional[int] = None,
-            min_val: Optional[float] = None
-        ) -> np.ndarray:
+        self,
+        mask: Union[Image.Image, np.ndarray],
+        frame_idx: int,
+        mask_pow: Optional[float] = None,
+        mask_multiplier: Optional[float] = None,
+        binarize: bool = False,
+        blur_radius: Optional[int] = None,
+        min_val: Optional[float] = None
+    ) -> Image.Image:
         # Being applied in 3D render mode. Camera pose transform operation returns a mask which pixel values encode
         # how much signal from the previous frame is present there. But a mapping from the signal presence values
         # to the optimal per-pixel init strength is unknown, and roughly guessed as a per-pixel power fuction.
         # Leaving mask_pow=1 results in near objects changing to a greater extent than a natural emergence of fine details when approaching an object.
+        if isinstance(mask, Image.Image):
+            mask = np.array(mask)
         if mask_pow is not None:
             mask = (np.power(mask / 255., mask_pow) * 255).astype(np.uint8)
         if mask_multiplier is not None:
@@ -965,16 +979,16 @@ class Animator:
             mask = cv2.GaussianBlur(mask, (kernel_size, kernel_size), 0)
         if min_val is not None:
             mask = mask.clip(255 * min_val, 255).astype(np.uint8)
-        return mask
+        return Image.fromarray(mask)
     
     def _span_render_frame(
         self, 
         frame_idx: int, 
         seed: int, 
-        init: Optional[np.ndarray], 
-        mask: Optional[np.ndarray]=None, 
+        init: Optional[Image.Image], 
+        mask: Optional[Image.Image]=None, 
         strength: Optional[float]=None
-    ) -> np.ndarray:
+    ) -> Image.Image:
         args = self.args
         steps = int(self.frame_args.steps_curve[frame_idx])
         strength = strength if strength is not None else max(0.0, self.frame_args.strength_curve[frame_idx])
@@ -1014,24 +1028,24 @@ class Animator:
 
         return result_image
 
-    def _span_render(self, start: int, end: int, seed: int, prev_frame: Optional[np.ndarray]) -> Generator[Tuple[int, np.ndarray], None, None]:
+    def _span_render(self, start: int, end: int, seed: int, prev_frame: Optional[Image.Image]) -> Generator[Tuple[int, Image.Image], None, None]:
         args = self.args
 
-        def apply_xform(frame: np.ndarray, xform: matrix.Matrix, frame_idx: int) -> Tuple[np.ndarray, np.ndarray]:
+        def apply_xform(frame: Image.Image, xform: matrix.Matrix, frame_idx: int) -> Tuple[Image.Image, Image.Image]:
             args, frame_args = self.args, self.frame_args
             if args.animation_mode == '2D':
                 xform = to_3x3(xform)
-                frames, masks = self.api.transform([frame], resample_op(args.border, xform, export_mask=True))
+                frames, masks = self.api.transform([frame], resample_transform(args.border, xform, export_mask=True))
             else:
                 fov = frame_args.fov_curve[frame_idx]
                 depth_blur = int(frame_args.depth_blur_curve[frame_idx])
                 depth_warp = frame_args.depth_warp_curve[frame_idx]
                 projection = matrix.projection_fov(math.radians(fov), 1.0, args.near_plane, args.far_plane)                
                 wvp = matrix.multiply(projection, xform)
-                depth_calc = depthcalc_op(args.depth_model_weight, depth_blur)
-                resample = resample_op(args.border, wvp, projection, depth_warp=depth_warp, export_mask=True)
+                depth_calc = depth_calc_transform(args.depth_model_weight, depth_blur)
+                resample = resample_transform(args.border, wvp, projection, depth_warp=depth_warp, export_mask=True)
                 frames, masks = self.api.transform_3d([frame], depth_calc, resample)
-            masks = cast(List[np.ndarray], masks)
+            masks = cast(List[Image.Image], masks)
             return frames[0], masks[0]
 
         if prev_frame is None:
@@ -1081,13 +1095,17 @@ class Animator:
             t = (idx) / max(1, end-start-1)
             fwd_fill = image_mix(frame_bwd, frame_fwd, mask_erode_blur(forward_masks[idx], 8, 8))
             bwd_fill = image_mix(frame_fwd, frame_bwd, mask_erode_blur(backward_masks[idx], 8, 8))
-            blended = self.api.interpolate([fwd_fill, bwd_fill], [t], interp_mode_from_string(args.cadence_interp))[0]
+            blended = self.api.interpolate(
+                [fwd_fill, bwd_fill], 
+                [t], 
+                interpolate_mode_from_string(args.cadence_interp)
+            )[0]
             yield start+idx, blended
 
-    def _spans_render(self) -> Generator[Tuple[int, np.ndarray], None, None]:
+    def _spans_render(self) -> Generator[Tuple[int, Image.Image], None, None]:
         frame_idx = self.start_frame_idx
         seed = self.args.seed
-        prev_frame: Optional[np.ndarray] = None
+        prev_frame: Optional[Image.Image] = None
         while frame_idx < self.args.max_frames:
             # determine how many frames the span will process together
             diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_curve[frame_idx]))

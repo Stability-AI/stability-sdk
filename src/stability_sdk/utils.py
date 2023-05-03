@@ -1,27 +1,62 @@
 import io
 import logging
 import os
-import warnings
-
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 
 from PIL import Image
+from typing import Dict, Generator, Optional, Sequence, Tuple, Type, TypeVar, Union
 
-try:
-    import cv2
-    import numpy as np
-except ImportError:
-    warnings.warn(
-        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
-        "   pip install --upgrade stability_sdk[anim]"
-    )
-    
 from .api import generation
 from .matrix import Matrix
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
+
+MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
+
+
+#==============================================================================
+# Mappings from strings to protobuf enums
+#==============================================================================
+
+BORDER_MODES = {
+    'replicate': generation.BORDER_REPLICATE,
+    'reflect': generation.BORDER_REFLECT,
+    'wrap': generation.BORDER_WRAP,
+    'zero': generation.BORDER_ZERO,
+    'prefill': generation.BORDER_PREFILL,
+}
+
+CAMERA_TYPES = {
+    'perspective': generation.CAMERA_PERSPECTIVE,
+    'orthographic': generation.CAMERA_ORTHOGRAPHIC,
+}
+
+COLOR_MATCH_MODES = {
+    "hsv": generation.COLOR_MATCH_HSV,
+    "lab": generation.COLOR_MATCH_LAB,
+    "rgb": generation.COLOR_MATCH_RGB,
+}
+
+GUIDANCE_PRESETS: Dict[str, int] = {
+    "none": generation.GUIDANCE_PRESET_NONE,
+    "simple": generation.GUIDANCE_PRESET_SIMPLE,
+    "fastblue": generation.GUIDANCE_PRESET_FAST_BLUE,
+    "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
+}
+
+INTERPOLATE_MODES = {
+    'film': generation.INTERPOLATE_FILM,
+    'mix': generation.INTERPOLATE_LINEAR,
+    'rife': generation.INTERPOLATE_RIFE,
+    'vae-lerp': generation.INTERPOLATE_VAE_LINEAR,
+    'vae-slerp': generation.INTERPOLATE_VAE_SLERP,
+}
+
+RENDER_MODES = {
+    'mesh': generation.RENDER_MESH,
+    'pointcloud': generation.RENDER_POINTCLOUD,
+}
 
 SAMPLERS: Dict[str, int] = {
     "ddim": generation.SAMPLER_DDIM,
@@ -36,105 +71,125 @@ SAMPLERS: Dict[str, int] = {
     "k_dpmpp_2s_ancestral": generation.SAMPLER_K_DPMPP_2S_ANCESTRAL
 }
 
-GUIDANCE_PRESETS: Dict[str, int] = {
-    "none": generation.GUIDANCE_PRESET_NONE,
-    "simple": generation.GUIDANCE_PRESET_SIMPLE,
-    "fastblue": generation.GUIDANCE_PRESET_FAST_BLUE,
-    "fastgreen": generation.GUIDANCE_PRESET_FAST_GREEN,
-}
+T = TypeVar('T')
 
-COLOR_SPACES = {
-    "hsv": generation.COLOR_MATCH_HSV,
-    "lab": generation.COLOR_MATCH_LAB,
-    "rgb": generation.COLOR_MATCH_RGB,
-}
-
-BORDER_MODES = {
-    'replicate': generation.BORDER_REPLICATE,
-    'reflect': generation.BORDER_REFLECT,
-    'wrap': generation.BORDER_WRAP,
-    'zero': generation.BORDER_ZERO,
-    'prefill': generation.BORDER_PREFILL,
-}
-
-INTERP_MODES = {
-    'film': generation.INTERPOLATE_FILM,
-    'mix': generation.INTERPOLATE_LINEAR,
-    'rife': generation.INTERPOLATE_RIFE,
-    'vae-lerp': generation.INTERPOLATE_VAE_LINEAR,
-    'vae-slerp': generation.INTERPOLATE_VAE_SLERP,
-}
-
-CAMERA_TYPES = {
-    'perspective': generation.CAMERA_PERSPECTIVE,
-    'orthographic': generation.CAMERA_ORTHOGRAPHIC,
-}
-
-RENDER_MODES = {
-    'mesh': generation.RENDER_MESH,
-    'pointcloud': generation.RENDER_POINTCLOUD,
-}
-
-    
-MAX_FILENAME_SZ = int(os.getenv("MAX_FILENAME_SZ", 200))
-
-
-def pil_to_cv2(pil_img: Image.Image) -> np.ndarray:
-    """Convert a PIL Image to a cv2 BGR ndarray"""
-    return np.array(pil_img)[:, :, ::-1]
-
-def cv2_to_pil(cv2_img: np.ndarray) -> Image.Image:
-    """Convert a cv2 BGR ndarray to a PIL Image"""
-    return Image.fromarray(cv2_img[:, :, ::-1])
-
+def _from_string(s: str, mapping: Dict[str, T], name: str, enum_cls: Type[T]) -> T:
+    enum_value = mapping.get(s.lower().strip())
+    if enum_value is None:
+        raise ValueError(f"invalid {name}: {s}")
+    return enum_value
 
 def border_mode_from_string(s: str) -> generation.BorderMode:
-    repr = BORDER_MODES.get(s.lower().strip())
-    if repr is None:
-        raise ValueError(f"invalid border mode: {s}")
-    return repr
-
-def color_match_from_string(s: str) -> generation.ColorMatchMode:
-    repr = COLOR_SPACES.get(s.lower().strip())
-    if repr is None:
-        raise ValueError(f"invalid color space: {s}")
-    return repr
-
-def guidance_from_string(s: str) -> generation.GuidancePreset:
-    repr = GUIDANCE_PRESETS.get(s.lower().strip())
-    if repr is None:
-        raise ValueError(f"invalid guidance preset: {s}")
-    return repr
-
-def sampler_from_string(s: str) -> generation.DiffusionSampler:
-    """
-    Convert a string to a DiffusionSampler enum.
-    :param s: The string to convert.
-    :return: The DiffusionSampler enum.
-    """
-    algorithm_key = s.lower().strip()
-    repr = SAMPLERS.get(algorithm_key)
-    if repr is None:
-        raise ValueError(f"invalid sampler: {s}")
-    return repr
-
-def interp_mode_from_string(s: str) -> generation.InterpolateMode:
-    mode = INTERP_MODES.get(s.lower().strip())
-    if mode is None:
-        raise ValueError(f"invalid interpolation mode: {s}")
-    return mode
+    return _from_string(s, BORDER_MODES, "border mode", generation.BorderMode)
 
 def camera_type_from_string(s: str) -> generation.CameraType:
-    cam_type = CAMERA_TYPES.get(s.lower().strip())
-    if cam_type is None:
-        raise ValueError(f"invalid camera type: {s}")
-    return cam_type
+    return _from_string(s, CAMERA_TYPES, "camera type", generation.CameraType)
+
+def color_match_from_string(s: str) -> generation.ColorMatchMode:
+    return _from_string(s, COLOR_MATCH_MODES, "color match", generation.ColorMatchMode)
+
+def guidance_from_string(s: str) -> generation.GuidancePreset:
+    return _from_string(s, GUIDANCE_PRESETS, "guidance preset", generation.GuidancePreset)
+
+def interpolate_mode_from_string(s: str) -> generation.InterpolateMode:
+    return _from_string(s, INTERPOLATE_MODES, "interpolate mode", generation.InterpolateMode)
 
 def render_mode_from_string(s: str) -> generation.RenderMode:
-    render_mode = RENDER_MODES.get(s.lower().strip())
-    if render_mode is None:
-        raise ValueError(f"invalid render mode: {s}")
-    return render_mode
+    return _from_string(s, RENDER_MODES, "render mode", generation.RenderMode)
+
+def sampler_from_string(s: str) -> generation.DiffusionSampler:
+    return _from_string(s, SAMPLERS, "sampler", generation.DiffusionSampler)
+
+
+#==============================================================================
+# Transform helper functions
+#==============================================================================
+
+def camera_pose_transform(
+    transform: Matrix,
+    near_plane: float,
+    far_plane: float,
+    fov: float,
+    camera_type: str='perspective',
+    render_mode: str='mesh',
+    do_prefill: bool=True,
+) -> generation.TransformParameters:
+    camera_parameters = generation.CameraParameters(
+        camera_type=camera_type_from_string(camera_type),
+        near_plane=near_plane, far_plane=far_plane, fov=fov)
+    return generation.TransformParameters(
+        camera_pose=generation.TransformCameraPose(
+            world_to_view_matrix=generation.TransformMatrix(data=sum(transform, [])),
+            camera_parameters=camera_parameters,
+            render_mode=render_mode_from_string(render_mode),
+            do_prefill=do_prefill
+        )
+    )
+
+def color_adjust_transform(
+    brightness: float=1.0,
+    contrast: float=1.0,
+    hue: float=0.0,
+    saturation: float=1.0,
+    lightness: float=0.0,
+    match_image: Optional[Image.Image]=None,
+    match_mode: str='LAB',
+    noise_amount: float=0.0,
+    noise_seed: int=0
+) -> generation.TransformParameters:
+    if match_mode == 'None':
+        match_mode = 'RGB'
+        match_image = None
+    return generation.TransformParameters(
+        color_adjust=generation.TransformColorAdjust(
+            brightness=brightness,
+            contrast=contrast,
+            hue=hue,
+            saturation=saturation,
+            lightness=lightness,
+            match_image=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE,
+                binary=image_to_jpg_bytes(match_image),
+            ) if match_image is not None else None,
+            match_mode=color_match_from_string(match_mode),
+            noise_amount=noise_amount,
+            noise_seed=noise_seed,
+        ))
+
+def depth_calc_transform(
+    blend_weight: float,
+    blur_radius: int=0,
+    reverse: bool=False,
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        depth_calc=generation.TransformDepthCalc(
+            blend_weight=blend_weight,
+            blur_radius=blur_radius,
+            reverse=reverse
+        )
+    )
+
+def resample_transform(
+    border_mode: str,
+    transform: Matrix,
+    prev_transform: Optional[Matrix]=None,
+    depth_warp: float=1.0,
+    export_mask: bool=False
+) -> generation.TransformParameters:
+    return generation.TransformParameters(
+        resample=generation.TransformResample(
+            border_mode=border_mode_from_string(border_mode),
+            transform=generation.TransformMatrix(data=sum(transform, [])),
+            prev_transform=generation.TransformMatrix(data=sum(prev_transform, [])) if prev_transform else None,
+            depth_warp=depth_warp,
+            export_mask=export_mask
+        )
+    )
+
+
+#==============================================================================
+# General utility functions
+#==============================================================================
 
 def artifact_type_to_string(artifact_type: generation.ArtifactType):
     """
@@ -152,24 +207,60 @@ def artifact_type_to_string(artifact_type: generation.ArtifactType):
         )
         return "ARTIFACT_UNRECOGNIZED"
 
-def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
+def image_mix(img_a: Image.Image, img_b: Image.Image, ratio: Union[float, Image.Image]) -> Image.Image:
     """
-    Constructs an output filename from a collection of required fields.
+    Performs a linear interpolation between two images
+    :param img_a: The first image.
+    :param img_b: The second image.
+    :param ratio: Mix ratio or mask image.
+    :return: The mixed image
+    """
+    if img_a.size != img_b.size:
+        raise ValueError(f"img_a size {img_a.size} does not match img_b size {img_b.size}")
     
-    Given an over-budget threshold of `max`, trims the prompt string to satisfy the budget.
-    NB: As implemented, 'max' is the smallest filename length that will trigger truncation.
-    It is presumed that the sum of the lengths of the other filename fields is smaller than `max`.
-    If they exceed `max`, this function will just always construct a filename with no prompt component.
+    if isinstance(ratio, Image.Image):
+        if ratio.size != img_a.size:
+            raise ValueError(f"mix ratio size {ratio.size} does not match img_a size {img_a.size}")
+        return Image.composite(img_a, img_b, ratio)
+
+    return Image.blend(img_a, img_b, ratio)
+
+def image_to_jpg_bytes(image: Image.Image, quality: int=90) -> bytes:
     """
-    post = f"_{ts}_{idx}"
-    prompt_budget = max
-    prompt_budget -= len(prefix)
-    prompt_budget -= len(post)
-    prompt_budget -= len(ext) + 1
-    return f"{prefix}{prompt[:prompt_budget]}{post}{ext}"
+    Compresses an image to a JPEG byte array.
+    :param image: The image to convert.
+    :param quality: The JPEG quality to use.
+    :return: The JPEG byte array.
+    """
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=quality)
+    buf.seek(0)
+    return buf.getvalue()
 
+def image_to_png_bytes(image: Image.Image) -> bytes:
+    """
+    Compresses an image to a PNG byte array.
+    :param image: The image to convert.
+    :return: The PNG byte array.
+    """
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.getvalue()
 
-#########################
+def image_to_prompt(
+    image: Image.Image,
+    type: generation.ArtifactType=generation.ARTIFACT_IMAGE
+) -> generation.Prompt:
+    """
+    Create Prompt message type from an image.
+    :param image: The image.
+    :param type: The ArtifactType to use (ARTIFACT_IMAGE, ARTIFACT_MASK, or ARTIFACT_DEPTH).
+    """
+    return generation.Prompt(artifact=generation.Artifact(
+        type=type, 
+        binary=image_to_png_bytes(image)
+    ))
 
 def open_images(
     images: Union[
@@ -192,155 +283,28 @@ def open_images(
             img.show()
         yield (path, artifact)
 
-
-def image_mix(img_a: np.ndarray, img_b: np.ndarray, ratio: Union[float, np.ndarray]) -> np.ndarray:
-    """
-    Performs a linear interpolation between two images
-    :param img_a: The first image.
-    :param img_b: The second image.
-    :param ratio: A float (or ndarray of per-pixel floats) for in-between ratio
-    :return: The mixed image
-    """
-    if img_a.shape != img_b.shape:
-        raise ValueError(f"img_a shape {img_a.shape} does not match img_b shape {img_b.shape}")
-
-    if isinstance(ratio, np.ndarray):
-        if ratio.shape[:2] != img_a.shape[:2]:
-            raise ValueError(f"tween dimensions {ratio.shape[:2]} do not match image dimensions {img_a.shape[:2]}")
-        if ratio.dtype == np.uint8:
-            ratio = ratio.astype(np.float32) / 255.0
-        if len(ratio.shape) == 2:
-            ratio = np.repeat(ratio[:,:,None], 3, axis=2)
-        
-    return (img_a.astype(np.float32)*(1.0-ratio) + img_b.astype(np.float32)*ratio).astype(img_a.dtype)
-
-def image_to_jpg_bytes(image: Union[Image.Image, np.ndarray], quality: int=90) -> bytes:
-    if isinstance(image, Image.Image):
-        buf = io.BytesIO()
-        image.save(buf, format="JPEG", quality=quality)
-        buf.seek(0)
-        return buf.getvalue()
-    elif isinstance(image, np.ndarray):        
-        return cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])[1].tobytes()
-    else:
-        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
-
-def image_to_png_bytes(image: Union[Image.Image, np.ndarray]) -> bytes:
-    if isinstance(image, Image.Image):
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        buf.seek(0)
-        return buf.getvalue()
-    elif isinstance(image, np.ndarray):
-        return cv2.imencode('.png', image)[1].tobytes()
-    else:
-        raise TypeError(f"Expected image to be a PIL.Image.Image or numpy.ndarray, got {type(image)}")
-
-def image_to_prompt(
-    image: Union[Image.Image, np.ndarray],
-    type: generation.ArtifactType=generation.ARTIFACT_IMAGE
-) -> generation.Prompt:
-    png = image_to_png_bytes(image)    
-    return generation.Prompt(
-        parameters=generation.PromptParameters(init=True),
-        artifact=generation.Artifact(type=type, binary=png)
-    )
-
 def tensor_to_prompt(tensor: 'tensors_pb.Tensor') -> generation.Prompt:
+    """
+    Create Prompt message type from a tensor.
+    :param tensor: The tensor.    
+    """
     return generation.Prompt(artifact=generation.Artifact(
         type=generation.ARTIFACT_TENSOR, 
         tensor=tensor
     ))
 
-
-
-
-#####################################################################
-
-
-
-#################################
-# transform ops helpers
-#  - move to their own submodule
-#  - add doc strings giving details on parameters
-
-def color_adjust_op(
-    brightness:float=1.0,
-    contrast:float=1.0,
-    hue:float=0.0,
-    saturation:float=1.0,
-    lightness:float=0.0,
-    match_image:Optional[np.ndarray]=None,
-    match_mode:str='LAB',
-    noise_amount:float=0.0,
-    noise_seed:int=0
-) -> generation.TransformParameters:
-    if match_mode == 'None':
-        match_mode = 'RGB'
-        match_image = None
-    return generation.TransformParameters(
-        color_adjust=generation.TransformColorAdjust(
-            brightness=brightness,
-            contrast=contrast,
-            hue=hue,
-            saturation=saturation,
-            lightness=lightness,
-            match_image=generation.Artifact(
-                type=generation.ARTIFACT_IMAGE,
-                binary=image_to_jpg_bytes(match_image),
-            ) if match_image is not None else None,
-            match_mode=color_match_from_string(match_mode),
-            noise_amount=noise_amount,
-            noise_seed=noise_seed,
-        ))
-
-def depthcalc_op(
-    blend_weight:float,
-    blur_radius:int=0,
-    reverse:bool=False,
-) -> generation.TransformParameters:
-    return generation.TransformParameters(
-        depth_calc=generation.TransformDepthCalc(
-            blend_weight=blend_weight,
-            blur_radius=blur_radius,
-            reverse=reverse
-        )
-    )
-
-def resample_op(
-    border_mode:str,
-    transform:Matrix,
-    prev_transform:Optional[Matrix]=None,
-    depth_warp:float=1.0,
-    export_mask:bool=False
-) -> generation.TransformParameters:
-    return generation.TransformParameters(
-        resample=generation.TransformResample(
-            border_mode=border_mode_from_string(border_mode),
-            transform=generation.TransformMatrix(data=sum(transform, [])),
-            prev_transform=generation.TransformMatrix(data=sum(prev_transform, [])) if prev_transform else None,
-            depth_warp=depth_warp,
-            export_mask=export_mask
-        )
-    )
-
-def camera_pose_op(
-    transform:Matrix,
-    near_plane:float,
-    far_plane:float,
-    fov:float,
-    camera_type:str='perspective',
-    render_mode:str='mesh',
-    do_prefill:bool=True,
-) -> generation.TransformParameters:
-    camera_parameters = generation.CameraParameters(
-        camera_type=camera_type_from_string(camera_type),
-        near_plane=near_plane, far_plane=far_plane, fov=fov)
-    return generation.TransformParameters(
-        camera_pose=generation.TransformCameraPose(
-            world_to_view_matrix=generation.TransformMatrix(data=sum(transform, [])),
-            camera_parameters=camera_parameters,
-            render_mode=render_mode_from_string(render_mode),
-            do_prefill=do_prefill
-        )
-    )
+def truncate_fit(prefix: str, prompt: str, ext: str, ts: int, idx: int, max: int) -> str:
+    """
+    Constructs an output filename from a collection of required fields.
+    
+    Given an over-budget threshold of `max`, trims the prompt string to satisfy the budget.
+    NB: As implemented, 'max' is the smallest filename length that will trigger truncation.
+    It is presumed that the sum of the lengths of the other filename fields is smaller than `max`.
+    If they exceed `max`, this function will just always construct a filename with no prompt component.
+    """
+    post = f"_{ts}_{idx}"
+    prompt_budget = max
+    prompt_budget -= len(prefix)
+    prompt_budget -= len(post)
+    prompt_budget -= len(ext) + 1
+    return f"{prefix}{prompt[:prompt_budget]}{post}{ext}"
