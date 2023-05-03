@@ -4,8 +4,10 @@ import locale
 import os
 import param
 import shutil
+import traceback
 
 from collections import OrderedDict
+from PIL import Image
 from tqdm import tqdm
 from typing import Any, Dict, List, Optional
 
@@ -38,7 +40,7 @@ from .animation import (
     create_video_from_frames,
     interpolate_frames
 )
-from .utils import interp_mode_from_string
+from .utils import interpolate_mode_from_string
 
 
 DATA_VERSION = "0.1"
@@ -52,26 +54,34 @@ PRESETS = {
         "strength_curve":"0:(0.7)", "translation_z":"0:(1.0)",
     },
     "3D render rotate": {
-        "animation_mode": "3D render", "translation_x":"0:(-2)", "rotation_y":"0:(-0.8)",
-        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
-        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
-        "mask_min_value":"0:(0.45)", "non_inpainting_model_for_diffusion_frames":True,
+        "animation_mode": "3D render", "depth_model_weight":1.0,
+        "translation_x":"0:(-3.5)", "rotation_y":"0:(1.7)", "translation_z":"0:(-0.5)",
+        "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.96)", "noise_scale_curve":"0:(1.01)",
+        "mask_min_value":"0:(0.35)", "use_inpainting_model":False, "preset": "anime",
+        "animation_prompts": "{\n0:\"beautiful portrait of a ninja in a sunflower field\"\n}"
     },
     "3D render explore": {
         "animation_mode": "3D render", "translation_z":"0:(10)", "translation_x":"0:(2), 20:(-2), 40:(2)",
         "rotation_y":"0:(0), 10:(1.5), 30:(-2), 50: (3)", "rotation_x":"0:(0.4)",
         "diffusion_cadence_curve":"0:(1)", "strength_curve":"0:(0.98)",
-        "noise_scale_curve":"0:(1.01)", "depth_model_weight":0.3,
-        "mask_min_value":"0:(0.1)", "non_inpainting_model_for_diffusion_frames":True,
+        "noise_scale_curve":"0:(1.01)", "depth_model_weight":1.0,
+        "mask_min_value":"0:(0.1)", "use_inpainting_model":False, "preset":"3d-model",
+        "animation_prompts": "{\n0:\"Phantasmagoric carnival, carnival attractions shifting and changing, bizarre surreal circus\"\n}"
     },
     "Prompt interpolate": {
         "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":48, 
         "strength_curve":"0:(0)", "diffusion_cadence_curve":"0:(4)", "cadence_interp":"film",
         "clip_guidance":"None", "animation_prompts": "{\n0:\"a photo of a cute cat\",\n24:\"a photo of a cute dog\"\n}"
     },
+    "Translate and inpaint": {
+        "animation_mode":"2D", "inpaint_border":True, "use_inpainting_model":False, "translation_x":"0:(-20)", 
+        "diffusion_cadence_curve":"0:(3)", "strength_curve":"0:(0.85)", "noise_scale_curve":"0:(1.01)", "border":"reflect",
+        "animation_prompts": "{\n0:\"Mystical pumpkin field landscapes on starry Halloween night, pop surrealism art\"\n}"
+    },
     "Outpaint": {
         "animation_mode":"2D", "diffusion_cadence_curve":"0:(24)", "cadence_spans":True, "strength_curve":"0:(0.75)",
-        "inpaint_border":True, "zoom":"0:(0.95)", "animation_prompts": "{\n0:\"an ancient and magical portal, in a fantasy corridor\"\n}"
+        "inpaint_border":True, "use_inpainting_model":True, "zoom":"0:(0.95)",
+        "animation_prompts": "{\n0:\"an ancient and magical portal, in a fantasy corridor\"\n}"
     },
     "Video Stylize": {
         "animation_mode":"Video Input", "model":"stable-diffusion-depth-v2-0", "locked_seed":True, 
@@ -93,7 +103,8 @@ class Project():
             if not os.path.isdir(directory):
                 continue
 
-            json_files = sorted(glob.glob(os.path.join(directory, '*.json')))
+            json_files = glob.glob(os.path.join(directory, '*.json'))
+            json_files = sorted(json_files, key=lambda x: os.stat(x).st_mtime)
             if not json_files:
                 continue
 
@@ -143,9 +154,10 @@ negative_prompt_weight = -1.0
 controls: Dict[str, gr.components.Component] = {}
 header = gr.HTML("", show_progress=False)
 interrupt = False
-last_project_settings_path = None
 last_interp_factor = None
 last_interp_mode = None
+last_project_settings_path = None
+last_upscale = None
 projects: List[Project] = []
 project: Optional[Project] = None
 
@@ -217,7 +229,10 @@ def ensure_api_context():
         raise gr.Error("Not connected to Stability API")
 
 def format_header_html() -> str:
-    balance, profile_picture = context.get_user_info()
+    try:
+        balance, profile_picture = context.get_user_info()
+    except:
+        return ""
     formatted_number = locale.format_string("%d", balance, grouping=True)
     return f"""
         <div class="flex flex-row items-center" style="display:flex; justify-content: space-between; margin-top: 8px;">
@@ -253,14 +268,17 @@ def post_process_tab():
             with gr.Row():
                 frame_interp_mode = gr.Dropdown(label="Frame interpolation mode", choices=['None', 'film', 'rife'], value='None', interactive=True)       
                 frame_interp_factor = gr.Dropdown(label="Frame interpolation factor", choices=[2, 4, 8], value=2, interactive=True)
+            with gr.Row():
+                upscale = gr.Checkbox(label="Upscale 2X", value=False, interactive=True)
         with gr.Column():
             image_out = gr.Image(label="image", visible=True)
             video_out = gr.Video(label="video", visible=False)
             process_button = gr.Button("Process")
             stop_button = gr.Button("Stop", visible=False)
+            error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int):
-        global interrupt, last_interp_factor, last_interp_mode
+    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool):
+        global interrupt, last_interp_factor, last_interp_mode, last_upscale
         interrupt = False
         if last_project_settings_path is None:
             raise gr.Error("Must render an animation first")
@@ -271,43 +289,82 @@ def post_process_tab():
             video_out: gr.update(visible=False),
             process_button: gr.update(visible=False),
             stop_button: gr.update(visible=True),
+            error_log: gr.update(visible=False),
         }
 
-        outdir = os.path.dirname(last_project_settings_path)
+        error = None
+        try:
+            outdir = os.path.dirname(last_project_settings_path)
+            suffix = ""
 
-        if interp_mode != 'None':
-            interp_dir = os.path.join(outdir, "post")
-            interp_mode = interp_mode_from_string(interp_mode)
-            if last_interp_mode != interp_mode or last_interp_factor != interp_factor:                
-                remove_frames_from_path(interp_dir)
-                num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))
-                for frame_idx, frame in enumerate(tqdm(interpolate_frames(context, outdir, interp_dir, interp_mode, interp_factor), total=num_frames)):
-                    yield {
-                        header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
-                        image_out: gr.update(value=frame, label=f"frame {frame_idx}/{num_frames}", visible=True),
-                        video_out: gr.update(visible=False),
-                        process_button: gr.update(visible=False),
-                        stop_button: gr.update(visible=True),
-                    }
-                    if interrupt:
-                        break
-                last_interp_mode, last_interp_factor = interp_mode, interp_factor
-            outdir = interp_dir
+            can_skip_upscale = last_upscale == upscale
+            can_skip_interp = can_skip_upscale and last_interp_factor == interp_factor and last_interp_mode == interp_mode
 
-        output_video = last_project_settings_path.replace(".json", ".mp4")
-        create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
+            if upscale:
+                suffix += "_x2"
+                upscale_dir = os.path.join(outdir, "upscale") 
+                os.makedirs(upscale_dir, exist_ok=True)
+                frame_paths = glob.glob(os.path.join(outdir, "frame_*.png"))
+                num_frames = len(frame_paths)
+                if not can_skip_upscale:
+                    remove_frames_from_path(upscale_dir)
+                    for frame_idx in tqdm(range(num_frames)):
+                        frame = Image.open(frame_paths[frame_idx])
+                        frame = context.upscale(frame)
+                        frame.save(os.path.join(upscale_dir, os.path.basename(frame_paths[frame_idx])))
+                        yield {
+                            header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
+                            image_out: gr.update(value=frame, label=f"upscale {frame_idx}/{num_frames}", visible=True),
+                            video_out: gr.update(visible=False),
+                            process_button: gr.update(visible=False),
+                            stop_button: gr.update(visible=True),
+                            error_log: gr.update(visible=False),
+                        }
+                        if interrupt:
+                            break
+                    last_upscale = upscale
+                outdir = upscale_dir
+
+            if interp_mode != 'None':
+                suffix += f"_{interp_mode}{interp_factor}"
+                interp_dir = os.path.join(outdir, "interpolate")
+                interp_mode = interpolate_mode_from_string(interp_mode)
+                if not can_skip_interp:
+                    remove_frames_from_path(interp_dir)
+                    num_frames = interp_factor * len(glob.glob(os.path.join(outdir, "frame_*.png")))
+                    for frame_idx, frame in enumerate(tqdm(interpolate_frames(context, outdir, interp_dir, interp_mode, interp_factor), total=num_frames)):
+                        yield {
+                            header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
+                            image_out: gr.update(value=frame, label=f"interpolate {frame_idx}/{num_frames}", visible=True),
+                            video_out: gr.update(visible=False),
+                            process_button: gr.update(visible=False),
+                            stop_button: gr.update(visible=True),
+                            error_log: gr.update(visible=False),
+                        }
+                        if interrupt:
+                            break
+                    last_interp_mode, last_interp_factor = interp_mode, interp_factor
+                outdir = interp_dir
+
+            output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
+        except Exception as e:
+            traceback.print_exc()
+            error = f"Post-processing terminated early due to exception: {e}"
+
         yield {
             header: gr.update(value=format_header_html()),
             image_out: gr.update(visible=False),
             video_out: gr.update(value=output_video, visible=True),
             process_button: gr.update(visible=True),
             stop_button: gr.update(visible=False),
+            error_log: gr.update(value=error, visible=bool(error))
         }
 
     process_button.click(
         postprocess_video, 
-        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor], 
-        outputs=[header, image_out, video_out, process_button, stop_button]
+        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale], 
+        outputs=[header, image_out, video_out, process_button, stop_button, error_log]
     )    
 
     def stop_button_click():
@@ -465,7 +522,7 @@ def render_tab():
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
     def render(*render_args):
-        global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, project
+        global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, last_upscale, project
         interrupt = False
 
         if not project:
@@ -559,11 +616,12 @@ def render_tab():
         except OutOfCreditsException as e:
             error = f"Animation terminated early, out of credits.\n{e.details}"
         except Exception as e:
+            traceback.print_exc()
             error = f"Animation terminated early due to exception: {e}"
 
         if frame_idx:
             last_project_settings_path = project_settings_path
-            last_interp_factor, last_interp_mode = None, None
+            last_interp_factor, last_interp_mode, last_upscale = None, None, None
             output_video = project_settings_path.replace(".json", ".mp4")
             create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
         else:
