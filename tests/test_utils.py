@@ -93,8 +93,11 @@ def test_truncate_fit1():
         idx=0, 
         max=22)
     assert outv == 'foo_ba_12345678_0.baz'
- 
-####################3
+
+
+#==============================================================================
+# Image functions
+#==============================================================================
 
 def test_image_mix(pil_image):
     result = image_mix(img_a=pil_image, img_b=pil_image, ratio=0.5)
@@ -124,17 +127,20 @@ def test_image_to_prompt_mask(pil_image):
     assert isinstance(result, generation.Prompt)
     assert result.artifact.type == generation.ARTIFACT_MASK
 
-########################################
+
+#==============================================================================
+# Transform functions
+#==============================================================================
 
 @pytest.mark.parametrize("color_mode", COLOR_MATCH_MODES.keys())
-def test_colormatch_op_valid(pil_image, color_mode):
+def test_colormatch_valid(pil_image, color_mode):
     op = color_adjust_transform(
         match_image=pil_image,
         match_mode=color_mode
     )
     assert isinstance(op, generation.TransformParameters)
 
-def test_colormatch_op_invalid(pil_image):
+def test_colormatch_invalid(pil_image):
     with pytest.raises(ValueError, match="invalid color match"):
         _ = color_adjust_transform(
             match_image=pil_image,
@@ -142,7 +148,7 @@ def test_colormatch_op_invalid(pil_image):
         )
 
 @pytest.mark.parametrize("border_mode", BORDER_MODES.keys())
-def test_resample_op_valid(border_mode):
+def test_resample_valid(border_mode):
     op = resample_transform(
         border_mode=border_mode, 
         transform=matrix.identity, 
@@ -153,7 +159,7 @@ def test_resample_op_valid(border_mode):
     assert isinstance(op, generation.TransformParameters)
 
 @pytest.mark.parametrize("border_mode", ['not a border mode'])
-def test_resample_op_invalid(border_mode):
+def test_resample_invalid(border_mode):
     with pytest.raises(ValueError, match="invalid border mode"):
         _ = resample_transform(
             border_mode=border_mode, 
