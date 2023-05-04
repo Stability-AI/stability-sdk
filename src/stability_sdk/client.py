@@ -2,6 +2,7 @@
 
 # fmt: off
 
+import getpass
 import grpc
 import logging
 import mimetypes
@@ -13,9 +14,9 @@ import uuid
 
 from argparse import ArgumentParser, Namespace
 from google.protobuf.json_format import MessageToJson
+from google.protobuf.struct_pb2 import Struct
 from PIL import Image
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union
-
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
@@ -24,7 +25,7 @@ from .api import open_channel
 from .utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
-    artifact_type_to_str,
+    artifact_type_to_string,
     image_to_prompt,
     open_images,
     sampler_from_string,
@@ -73,17 +74,17 @@ def process_artifacts_from_answers(
                 ext = ".pb"
                 contents = artifact.SerializeToString()
             out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
-            is_allowed_type = filter_types is None or artifact_type_to_str(artifact.type) in filter_types
+            is_allowed_type = filter_types is None or artifact_type_to_string(artifact.type) in filter_types
             if write:
                 if is_allowed_type:
                     with open(out_p, "wb") as f:
                         f.write(bytes(contents))
                         if verbose:
-                            logger.info(f"wrote {artifact_type_to_str(artifact.type)} to {out_p}")
+                            logger.info(f"wrote {artifact_type_to_string(artifact.type)} to {out_p}")
                 else:
                     if verbose:
                         logger.info(
-                            f"skipping {artifact_type_to_str(artifact.type)} due to artifact type filter")
+                            f"skipping {artifact_type_to_string(artifact.type)} due to artifact type filter")
 
             yield (out_p, artifact)
             idx += 1
@@ -94,7 +95,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-v1-5",
+        engine: str = "stable-diffusion-xl-beta-v2-2-2",
         upscale_engine: str = "esrgan-v1-x2plus",
         verbose: bool = False,
         wait_for_ready: bool = True,
@@ -288,7 +289,6 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-
         return self.emit_request(prompt=prompts, image_parameters=image_parameters)
     
     def upscale(
@@ -296,22 +296,62 @@ class StabilityInference:
         init_image: Image.Image,
         height: int = None,
         width: int = None,
+        prompt: Union[str, generation.Prompt] = None,
+        steps: Optional[int] = 20,
+        cfg_scale: float = 7.0,
+        seed: int = 0
     ) -> Generator[generation.Answer, None, None]:
+        """
+        Upscale an image.
+
+        :param init_image: Image to upscale.
+
+        Optional parameters for upscale method:
+
+        :param height: Height of the output images.
+        :param width: Width of the output images.
+        :param prompt: Prompt used in text conditioned models
+        :param steps: Number of diffusion steps
+        :param cfg_scale: Intensity of the prompt, when a prompt is used
+        :param seed: Seed for the random number generator.
+
+        Some variables are not used for specific engines, but are included for consistency.
+
+        Variables ignored in ESRGAN engines: prompt, steps, cfg_scale, seed
+
+        :return: Tuple of (prompts, image_parameters)
+        """
+
+        step_parameters = dict(
+            sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
+        )
+
         image_parameters=generation.ImageParameters(
             height=height,
             width=width,
+            seed=[seed],
+            steps=steps,
+            parameters=[generation.StepParameter(**step_parameters)],
         )
 
         prompts = [image_to_prompt(init_image)]
 
-        return self.emit_request(prompt=prompts, image_parameters=image_parameters, engine_id=self.upscale_engine)
+        if prompt:
+            if isinstance(prompt, str):
+                prompt = generation.Prompt(text=prompt)
+            elif not isinstance(prompt, generation.Prompt):
+                raise ValueError("prompt must be a string or Prompt object")
+            prompts.append(prompt)
 
+        return self.emit_request(prompt=prompts, image_parameters=image_parameters, engine_id=self.upscale_engine)
+    
 
     # The motivation here is to facilitate constructing requests by passing protobuf objects directly.
     def emit_request(
         self,
         prompt: generation.Prompt,
         image_parameters: generation.ImageParameters,
+        extra_parameters: Optional[Struct] = None,
         engine_id: str = None,
         request_id: str = None,
     ):
@@ -324,7 +364,8 @@ class StabilityInference:
             engine_id=engine_id,
             request_id=request_id,
             prompt=prompt,
-            image=image_parameters
+            image=image_parameters,
+            extras=extra_parameters
         )
 
         if self.verbose:
@@ -336,7 +377,7 @@ class StabilityInference:
             if self.verbose:
                 if len(answer.artifacts) > 0:
                     artifact_ts = [
-                        artifact_type_to_str(artifact.type)
+                        artifact_type_to_string(artifact.type)
                         for artifact in answer.artifacts
                     ]
                     logger.info(
@@ -351,39 +392,40 @@ class StabilityInference:
             yield answer
             start = time.time()
 
+def process_cli(logger: logging.Logger = None,
+                warn_client_call_deprecated: bool = True,
+                ):
+    if not logger:
+        logger = logging.getLogger(__name__)
+        logger.setLevel(level=logging.INFO)
 
-if __name__ == "__main__":
-    # Set up logging for output to console.
-    fh = logging.StreamHandler()
-    fh_formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s %(filename)s(%(process)d) - %(message)s"
-    )
-    fh.setFormatter(fh_formatter)
-    logger.addHandler(fh)
-
-    logger.warning(
-        "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
-        "[Deprecation Warning] Please modify your code to call the sdk without invoking the 'client' module instead."
-        "[Deprecation Warning] rather than:"
-        "[Deprecation Warning]    $ python -m stability_sdk.client ...  "
-        "[Deprecation Warning] instead do this:"
-        "[Deprecation Warning]    $ python -m stability_sdk ...  "
-    )
+        # Set up logging for output to console.
+        fh = logging.StreamHandler()
+        fh_formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s %(filename)s(%(process)d) - %(message)s"
+        )
+        fh.setFormatter(fh_formatter)
+        logger.addHandler(fh)
+    
+    if warn_client_call_deprecated:
+        logger.warning(
+            "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
+            "[Deprecation Warning] Please modify your code to call the sdk without invoking the 'client' module instead."
+            "[Deprecation Warning] rather than:"
+            "[Deprecation Warning]    $ python -m stability_sdk.client ...  "
+            "[Deprecation Warning] instead do this:"
+            "[Deprecation Warning]    $ python -m stability_sdk ...  "
+        )
 
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
     STABILITY_KEY = os.getenv("STABILITY_KEY", "")
 
-    if not STABILITY_HOST:
-        logger.warning("STABILITY_HOST environment variable needs to be set.")
-        sys.exit(1)
-
     if not STABILITY_KEY:
-        logger.warning(
-            "STABILITY_KEY environment variable needs to be set. You may"
-            " need to login to the Stability website to obtain the"
-            " API key."
+        print(
+            "Please enter your API key from dreamstudio.ai or set the "
+            "STABILITY_KEY environment variable to skip this prompt."
         )
-        sys.exit(1)
+        STABILITY_KEY = getpass.getpass("Enter your Stability API key: ")
 
     # CLI parsing
     parser = ArgumentParser()
@@ -404,6 +446,15 @@ if __name__ == "__main__":
         "--width", "-W", type=int, default=None, help="width of upscaled image"
     )
     parser_upscale.add_argument(
+        "--cfg_scale", "-C", type=float, default=7.0, help="[7.0] CFG scale factor (ignored in esrgan engines)"
+    )
+    parser_upscale.add_argument(
+        "--steps", "-s", type=int, default=None, help="[20] number of steps (ignored in esrgan engines)"
+    )
+    parser_upscale.add_argument(
+        "--seed", "-S", type=int, default=0, help="random seed to use (ignored in esrgan engines)"
+    )
+    parser_upscale.add_argument(
         "--prefix",
         "-p",
         type=str,
@@ -420,7 +471,9 @@ if __name__ == "__main__":
     parser_upscale.add_argument(
         "--no-store", action="store_true", help="do not write out artifacts"
     )
-    parser_upscale.add_argument("--show", action="store_true", help="open artifacts using PIL")
+    parser_upscale.add_argument(
+        "--show", action="store_true", help="open artifacts using PIL"
+    )
     parser_upscale.add_argument(
         "--engine",
         "-e",
@@ -428,6 +481,15 @@ if __name__ == "__main__":
         help="engine to use for upscale",
         default="esrgan-v1-x2plus",
     )
+    parser_upscale.add_argument(
+        "prompt", nargs="*"
+    )
+
+
+    parser_animate = subparsers.add_parser('animate')
+    parser_animate.add_argument("--gui", action="store_true", help="serve Gradio UI")
+    parser_animate.add_argument("--share", action="store_true", help="create shareable UI link")
+    parser_animate.add_argument("--output", "-o", type=str, default=".", help="root output folder")    
     
 
     parser_generate = subparsers.add_parser('generate')
@@ -461,7 +523,8 @@ if __name__ == "__main__":
     parser_generate.add_argument(
         "--steps", "-s", type=int, default=None, help="[auto] number of steps"
     )
-    parser_generate.add_argument("--seed", "-S", type=int, default=0, help="random seed to use")
+    parser_generate.add_argument(
+        "--seed", "-S", type=int, default=0, help="random seed to use")
     parser_generate.add_argument(
         "--prefix",
         "-p",
@@ -488,7 +551,7 @@ if __name__ == "__main__":
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-v1-5",
+        default="stable-diffusion-xl-beta-v2-2-2",
     )
     parser_generate.add_argument(
         "--init_image",
@@ -524,18 +587,25 @@ if __name__ == "__main__":
     
     if args.command == "upscale":
         args.init_image = Image.open(args.init_image)
+        if not args.prompt:
+            args.prompt = [""]
+        args.prompt = " ".join(args.prompt)
 
         request =  {
             "height": args.height,
             "width": args.width,
             "init_image": args.init_image,
+            "steps": args.steps,
+            "seed": args.seed,
+            "cfg_scale": args.cfg_scale,
+            "prompt": args.prompt,
         }
         stability_api = StabilityInference(
             STABILITY_HOST, STABILITY_KEY, upscale_engine=args.engine, verbose=True
         )
         answers = stability_api.upscale(**request)
         artifacts = process_artifacts_from_answers(
-            args.prefix, "", answers, write=not args.no_store, verbose=True,
+            args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
             filter_types=args.artifact_types,
         )
     elif args.command == "generate":
@@ -565,7 +635,7 @@ if __name__ == "__main__":
         }
 
         if args.sampler:
-            request["sampler"] = get_sampler_from_str(args.sampler)
+            request["sampler"] = sampler_from_string(args.sampler)
 
         if args.steps:
             request["steps"] = args.steps
@@ -578,6 +648,18 @@ if __name__ == "__main__":
             args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
             filter_types=args.artifact_types,
         )
+    elif args.command == "animate":
+        if args.gui:
+            from .animation_ui import create_ui
+            from .api import Context
+            ui = create_ui(Context(STABILITY_HOST, STABILITY_KEY), args.output)
+            ui.queue(concurrency_count=2, max_size=2)
+            ui.launch(show_api=False, debug=True, height=768, share=args.share, show_error=True)
+            sys.exit(0)
+        else:
+            logger.warning("animate must be invoked with --gui")
+            sys.exit(1)
+
     
     if args.show:
         for artifact in open_images(artifacts, verbose=True):
@@ -585,3 +667,7 @@ if __name__ == "__main__":
     else:
         for artifact in artifacts:
             pass
+
+
+if __name__ == "__main__":
+    process_cli(logger)

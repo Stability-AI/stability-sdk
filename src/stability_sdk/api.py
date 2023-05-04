@@ -1,29 +1,17 @@
 import grpc
-import json
+import io
 import logging
 import random
 import time
-import warnings
 
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
-
-try:
-    import cv2
-    import numpy as np
-except ImportError:
-    warnings.warn(
-        "Failed to import animation reqs. To use the animation toolchain, install the requisite dependencies via:" 
-        "   pip install --upgrade stability_sdk[anim]"
-    )
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2 as dashboard
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2_grpc as dashboard_grpc
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
-import stability_sdk.interfaces.gooseai.project.project_pb2 as project
-import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
 
 from .utils import (
     image_mix,
@@ -36,7 +24,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
 
-def open_channel(host: str, api_key: str = None, max_message_len: int = 10*1024*1024) -> grpc.Channel:
+def open_channel(host: str, api_key: str = None, max_message_len: int = 20*1024*1024) -> grpc.Channel:
     options=[
         ('grpc.max_send_message_length', max_message_len),
         ('grpc.max_receive_message_length', max_message_len),
@@ -74,148 +62,33 @@ class Endpoint:
         self.stub = stub
         self.engine_id = engine_id
 
-class Project():
-    def __init__(self, context: 'Context', project: project.Project):
-        self._context = context
-        self._project = project
-
-    @property
-    def id(self) -> str:
-        return self._project.id
-
-    @property
-    def file_id(self) -> str:
-        return self._project.file.id
-
-    @property
-    def title(self) -> str:
-        return self._project.title
-
-    @staticmethod
-    def create(
-        context: 'Context', 
-        title: str, 
-        access: project.ProjectAccess=project.PROJECT_ACCESS_PRIVATE,
-        status: project.ProjectStatus=project.PROJECT_STATUS_ACTIVE
-    ) -> 'Project':
-        req = project.CreateProjectRequest(title=title, access=access, status=status)
-        proj: project.Project = context._proj_stub.Create(req)
-        return Project(context, proj)
-
-    def delete(self):
-        self._context._proj_stub.Delete(project.DeleteProjectRequest(id=self.id))
-
-    @staticmethod
-    def list_projects(context: 'Context') -> List['Project']:
-        list_req = project.ListProjectRequest(owner_id="")
-        results = []
-        for proj in context._proj_stub.List(list_req):
-            if proj.id == "00000000-0000-0000-0000-000000000000":                
-                continue # skip the default project with still image history
-            results.append(Project(context, proj))
-        results.sort(key=lambda x: x.title.lower())
-        return results
-
-    def load_settings(self) -> dict:
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[generation.Prompt(
-                artifact=generation.Artifact(
-                    type=generation.ARTIFACT_TEXT,
-                    mime="application/json",
-                    uuid=self.file_id,
-                )
-            )],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_GET, 
-                project_id=self.id,
-                use=generation.ASSET_USE_PROJECT
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return json.loads(results[generation.ARTIFACT_TEXT][0])
-        raise Exception(f"Failed to load project file for {self.id}")
-
-    def save_settings(self, data: dict) -> str:
-        contents = json.dumps(data)
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[generation.Prompt(
-                artifact=generation.Artifact(
-                    type=generation.ARTIFACT_TEXT,
-                    text=contents,
-                    mime="application/json",
-                    uuid=self.file_id
-                )
-            )],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_PUT, 
-                project_id=self.id, 
-                use=generation.ASSET_USE_PROJECT
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return results[generation.ARTIFACT_TEXT][0]
-        raise Exception(f"Failed to save project file for {self.id}")
-
-    def put_image_asset(
-        self, 
-        image: Union[Image.Image, np.ndarray],
-        use: generation.AssetUse=generation.ASSET_USE_OUTPUT
-    ):
-        request = generation.Request(
-            engine_id=self._context._asset.engine_id,
-            prompt=[image_to_prompt(image)],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_PUT, 
-                project_id=self.id, 
-                use=use
-            )
-        )
-        results = self._context._run_request(self._context._asset, request)
-        if generation.ARTIFACT_TEXT in results:
-            return results[generation.ARTIFACT_TEXT][0]
-        raise Exception(f"Failed to store image asset for project {self.id}")
-
-    def update(self, title:str=None, file_id:str=None, file_uri:str=None):
-        file = project.ProjectAsset(
-            id=file_id,
-            uri=file_uri,
-            use=project.PROJECT_ASSET_USE_PROJECT,
-        ) if file_id and file_uri else None
-        
-        self._context._proj_stub.Update(project.UpdateProjectRequest(
-            id=self.id, 
-            title=title,
-            file=file
-        ))
-
-        if title:
-            self._project.title = title
-        if file_id:
-            self._project.file.id = file_id
-        if file_uri:
-            self._project.file.uri = file_uri
-
 
 class Context:
-    def __init__(self, host: str="", api_key: str=None, stub: generation_grpc.GenerationServiceStub=None):
+    def __init__(
+            self, 
+            host: str="", 
+            api_key: str=None, 
+            stub: generation_grpc.GenerationServiceStub=None,
+            generate_engine_id: str="stable-diffusion-xl-beta-v2-2-2",
+            inpaint_engine_id: str="stable-inpainting-512-v2-0",
+            interpolate_engine_id: str="interpolation-server-v1",
+            transform_engine_id: str="transform-server-v1",
+            upscale_engine_id: str="esrgan-v1-x2plus",
+        ):
         if not host and stub is None:
             raise Exception("Must provide either GRPC host or stub to Api")
+
         channel = open_channel(host, api_key) if host else None
         if not stub:
             stub = generation_grpc.GenerationServiceStub(channel)
 
         self._dashboard_stub = dashboard_grpc.DashboardServiceStub(channel) if channel else None
-        self._proj_stub = project_grpc.ProjectServiceStub(channel) if channel else None
 
-        self._asset = Endpoint(stub, 'asset-service')
-        self._generate = Endpoint(stub, 'stable-diffusion-v1-5')
-        self._inpaint = Endpoint(stub, 'stable-inpainting-512-v2-0')
-        self._interpolate = Endpoint(stub, 'interpolation-server-v1')
-        self._transform = Endpoint(stub, 'transform-server-v1')
+        self._generate = Endpoint(stub, generate_engine_id)
+        self._inpaint = Endpoint(stub, inpaint_engine_id)
+        self._interpolate = Endpoint(stub, interpolate_engine_id)
+        self._transform = Endpoint(stub, transform_engine_id)
+        self._upscale = Endpoint(stub, upscale_engine_id)
 
         self._debug_no_chains = False
         self._max_retries = 5             # retry request on RPC error
@@ -224,15 +97,8 @@ class Context:
         self._retry_obfuscation = False   # retry request with different seed on classifier obfuscation
         self._retry_schedule_offset = 0.1 # increase schedule start by this amount on each retry after the first
 
-        self._user_organization_id = None
-        self._user_profile_picture = None
-
-        logger.warning(
-            "\n"
-            "The functionality available through this API Context class is in beta and subject to changes in both functionality and pricing.\n"
-            "Please be aware that these changes may affect your implementation and usage of this class.\n"
-            "\n"
-        )
+        self._user_organization_id: Optional[str] = None
+        self._user_profile_picture: str = ''
 
     def generate(
         self,
@@ -245,19 +111,18 @@ class Context:
         samples: int = 1,
         cfg_scale: float = 7.0, 
         sampler: generation.DiffusionSampler = None,
-        init_image: Optional[np.ndarray] = None,
+        init_image: Optional[Image.Image] = None,
         init_strength: float = 0.0,
         init_noise_scale: Optional[float] = None,
-        init_depth: Optional[np.ndarray] = None,
-        mask: Optional[np.ndarray] = None,
+        init_depth: Optional[Image.Image] = None,
+        mask: Optional[Image.Image] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ORIGINAL,
-        mask_fixup: bool = True,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
         preset: Optional[str] = None,
         return_request: bool = False,
-    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+    ) -> Dict[int, List[Any]]:
         """
         Generate an image from a set of weighted prompts.
 
@@ -275,7 +140,6 @@ class Context:
         :param init_noise_scale: Scale of the initial noise
         :param mask: Mask to use (0 for pixels to change, 255 for pixels to keep)
         :param masked_area_init: How to initialize the masked area
-        :param mask_fixup: Whether to restore the unmasked area after diffusion
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
@@ -312,10 +176,6 @@ class Context:
 
         results = self._run_request(self._generate, request)
 
-        # optionally force pixels in unmasked areas not to change
-        if init_image is not None and mask is not None and mask_fixup:
-            results[generation.ARTIFACT_IMAGE] = [image_mix(image, init_image, mask) for image in results[generation.ARTIFACT_IMAGE]]
-
         return results
 
     def get_user_info(self) -> Tuple[float, str]:
@@ -329,8 +189,8 @@ class Context:
 
     def inpaint(
         self,
-        image: np.ndarray,
-        mask: np.ndarray,
+        image: Image.Image,
+        mask: Image.Image,
         prompts: List[str], 
         weights: List[float], 
         steps: Optional[int] = None, 
@@ -341,12 +201,11 @@ class Context:
         init_strength: float = 0.0,
         init_noise_scale: Optional[float] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
-        mask_fixup: bool = False,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
         preset: Optional[str] = None,
-    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+    ) -> Dict[int, List[Any]]:
         """
         Apply inpainting to an image.
         
@@ -362,21 +221,19 @@ class Context:
         :param init_strength: Strength of the initial image
         :param init_noise_scale: Scale of the initial noise
         :param masked_area_init: How to initialize the masked area
-        :param mask_fixup: Whether to restore the unmasked area after diffusion
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
         :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
-        width, height = image.shape[1], image.shape[0]
-
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if image is not None:
             p.append(image_to_prompt(image))
             if mask is not None:
                 p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
 
+        width, height = image.size
         start_schedule = 1.0-init_strength
         image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
                                                 start_schedule, init_noise_scale, masked_area_init, 
@@ -389,18 +246,14 @@ class Context:
         request = generation.Request(engine_id=self._inpaint.engine_id, prompt=p, image=image_params, extras=extras)        
         results = self._run_request(self._inpaint, request)
 
-        # optionally force pixels in unmasked areas not to change
-        if mask_fixup:
-            results[generation.ARTIFACT_IMAGE] = [image_mix(res_image, image, mask) for res_image in results[generation.ARTIFACT_IMAGE]]
-
         return results
 
     def interpolate(
         self,
-        images: Iterable[np.ndarray], 
+        images: Sequence[Image.Image], 
         ratios: List[float],
         mode: generation.InterpolateMode = generation.INTERPOLATE_LINEAR,
-    ) -> List[np.ndarray]:
+    ) -> List[Image.Image]:
         """
         Interpolate between two images
 
@@ -432,11 +285,11 @@ class Context:
 
     def transform_and_generate(
         self,
-        image: Optional[np.ndarray],
+        image: Optional[Image.Image],
         params: List[generation.TransformParameters],
         generate_request: generation.Request,
         extras: Optional[Dict] = None,
-    ) -> np.ndarray:
+    ) -> Image.Image:
         extras_struct = None
         if extras is not None:
             extras_struct = Struct()
@@ -492,10 +345,10 @@ class Context:
 
     def transform(
         self,
-        images: Iterable[np.ndarray],
+        images: Sequence[Image.Image],
         params: Union[generation.TransformParameters, List[generation.TransformParameters]],
         extras: Optional[Dict] = None
-    ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
+    ) -> Tuple[List[Image.Image], Optional[List[Image.Image]]]:
         """
         Transform images
 
@@ -504,7 +357,7 @@ class Context:
         :return: One image artifact for each image and one transform dependent mask
         """
         assert len(images)
-        assert isinstance(images[0], np.ndarray)
+        assert isinstance(images[0], Image.Image)
 
         extras_struct = None
         if extras is not None:
@@ -550,16 +403,15 @@ class Context:
         masks = results.get(generation.ARTIFACT_MASK, None)
         return images, masks
 
-    # TODO: Add option to do transform using given depth map (e.g. for Blender use cases)
     def transform_3d(
         self, 
-        images: Iterable[np.ndarray], 
+        images: Sequence[Image.Image], 
         depth_calc: generation.TransformParameters,
         transform: generation.TransformParameters,
         extras: Optional[Dict] = None
-    ) -> Tuple[List[np.ndarray], Optional[List[np.ndarray]]]:
+    ) -> Tuple[List[Image.Image], Optional[List[Image.Image]]]:
         assert len(images)
-        assert isinstance(images[0], np.ndarray)
+        assert isinstance(images[0], Image.Image)
 
         image_prompts = [image_to_prompt(image) for image in images]
         warped_images = []
@@ -615,6 +467,68 @@ class Context:
         warp_mask = results.get(generation.ARTIFACT_MASK, None)
 
         return warped_images, warp_mask
+    
+    def upscale(
+        self,
+        init_image: Image.Image,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        prompt: Union[str, generation.Prompt] = None,
+        steps: Optional[int] = 20,
+        cfg_scale: Optional[float] = 7.0,
+        seed: int = 0
+    ) -> Image.Image:
+        """
+        Upscale an image.
+
+        :param init_image: Image to upscale.
+
+        Optional parameters for upscale method:
+
+        :param width: Width of the output images.
+        :param height: Height of the output images.
+        :param prompt: Prompt used in text conditioned models
+        :param steps: Number of diffusion steps
+        :param cfg_scale: Intensity of the prompt, when a prompt is used
+        :param seed: Seed for the random number generator.
+
+        Some variables are not used for specific engines, but are included for consistency.
+
+        Variables ignored in ESRGAN engines: prompt, steps, cfg_scale, seed
+
+        :return: Tuple of (prompts, image_parameters)
+        """
+
+        prompts = [image_to_prompt(init_image)]
+        if prompt:
+            if isinstance(prompt, str):
+                prompt = generation.Prompt(text=prompt)
+            elif not isinstance(prompt, generation.Prompt):
+                raise ValueError("prompt must be a string or Prompt object")
+            prompts.append(prompt)
+
+        request = generation.Request(
+            engine_id=self._upscale.engine_id,
+            prompt=prompts, 
+            image=generation.ImageParameters(
+                width=width,
+                height=height,
+                seed=[seed],
+                steps=steps,
+                parameters=[generation.StepParameter(
+                    sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
+                )],
+            )
+        )
+        results = self._run_request(self._upscale, request)
+        return results[generation.ARTIFACT_IMAGE][0]
+
+    def _adjust_request_engine(self, request: generation.Request):
+        if request.engine_id == self._transform.engine_id:
+            assert request.HasField("transform")
+            if request.transform.HasField("color_adjust") or \
+                (request.transform.HasField("resample") and len(request.transform.resample.transform.data) == 9):
+                request.engine_id = self._transform.engine_id + "-cpu"
 
     def _adjust_request_for_retry(self, request: generation.Request, attempt: int):
         logger.warning(f"  adjusting request, will retry {self._max_retries-attempt} more times")
@@ -668,8 +582,8 @@ class Context:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-    def _process_response(self, response) -> Dict[int, List[np.ndarray]]:
-        results: Dict[int, List[np.ndarray]] = {}
+    def _process_response(self, response) -> Dict[int, List[Any]]:
+        results: Dict[int, List[Any]] = {}
         for resp in response:
             for artifact in resp.artifacts:
                 # check for classifier rejecting a text prompt
@@ -682,9 +596,8 @@ class Context:
                 if artifact.type == generation.ARTIFACT_CLASSIFICATIONS:
                     results[artifact.type].append(artifact.classifier)
                 elif artifact.type in (generation.ARTIFACT_DEPTH, generation.ARTIFACT_IMAGE, generation.ARTIFACT_MASK):
-                    nparr = np.frombuffer(artifact.binary, np.uint8)
-                    im = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    results[artifact.type].append(im)
+                    image = Image.open(io.BytesIO(artifact.binary))
+                    results[artifact.type].append(image)
                 elif artifact.type == generation.ARTIFACT_TENSOR:
                     results[artifact.type].append(artifact.tensor)
                 elif artifact.type == generation.ARTIFACT_TEXT:
@@ -696,11 +609,16 @@ class Context:
         self, 
         endpoint: Endpoint, 
         request: Union[generation.ChainRequest, generation.Request]
-    ) -> Dict[int, List[Union[np.ndarray, Any]]]:
+    ) -> Dict[int, List[Any]]:        
+        if isinstance(request, generation.Request):
+            self._adjust_request_engine(request)
+        elif isinstance(request, generation.ChainRequest):
+            for stage in request.stage:
+                self._adjust_request_engine(stage.request)
+
         for attempt in range(self._max_retries+1):
             try:
                 if isinstance(request, generation.Request):
-                    assert endpoint.engine_id == request.engine_id
                     response = endpoint.stub.Generate(request, timeout=self._request_timeout)
                 else:
                     response = endpoint.stub.ChainGenerate(request, timeout=self._request_timeout)
@@ -730,8 +648,11 @@ class Context:
                 else:
                     raise ce
             except grpc.RpcError as rpc_error:
-                if hasattr(rpc_error, "code") and rpc_error.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
-                    raise OutOfCreditsException(rpc_error.details())
+                if hasattr(rpc_error, "code"):
+                    if rpc_error.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
+                        raise OutOfCreditsException(rpc_error.details())
+                    elif grpc.StatusCode.UNAUTHENTICATED:
+                        raise rpc_error                
 
                 if attempt == self._max_retries:
                     raise rpc_error
