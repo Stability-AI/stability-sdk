@@ -6,3 +6,5 @@ pyenv/
 *venv/
 .env
 generation-*.pb.json
+build/
+!tests/resources/*.png

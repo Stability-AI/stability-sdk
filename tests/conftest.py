@@ -14,7 +14,7 @@ assert genPath.exists()
 assert tensPath.exists()
 
 logger = logging.getLogger(__name__)
-sys.path.extend([str(genPath), str(tensPath)])
+#sys.path.extend([str(genPath), str(tensPath)])
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
