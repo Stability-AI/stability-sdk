@@ -24,7 +24,8 @@ setup(
         'grpcio==1.54.0',
         'grpcio-tools==1.54.0',
         'python-dotenv',
-        'protobuf==4.22.4'
+        'protobuf==4.22.4',
+        'tensorizer==1.1.0'
     ],
     extras_require={
         'dev': [
