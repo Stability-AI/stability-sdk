@@ -78,7 +78,27 @@ def test_image_to_image_with_schedule():
 
     # todo - check step schedule
 
-def test_image_to_image_with_mask():
+def test_image_to_image_with_init_image_alpha():
+    image_base64 = base64.b64encode(open("tests/resources/beach.png", "rb").read()).decode("utf-8")    
+
+    request = CreateRequest({
+        "text_prompts": [
+            {"text": "A photo of a cat sitting on a couch."},
+        ],
+        "init_image": image_base64,
+        "mask_source": "INIT_IMAGE_ALPHA"
+    })
+
+    prompts = request.prompt
+    assert len(prompts) == 3
+    assert prompts[0].text == "A photo of a cat sitting on a couch."
+    assert prompts[0].parameters.weight == 1.0
+    assert prompts[1].artifact is not None
+    assert prompts[1].artifact.binary is not None
+    assert prompts[2].artifact is not None
+    assert prompts[2].artifact.binary is not None
+
+def test_image_to_image_with_mask_image_white():
     image_base64 = base64.b64encode(open("tests/resources/beach.png", "rb").read()).decode("utf-8")
     # todo make a real mask so we can test image transforms
     mask_base64 = base64.b64encode(open("tests/resources/beach.png", "rb").read()).decode("utf-8")
@@ -91,3 +111,35 @@ def test_image_to_image_with_mask():
         "mask_source": "MASK_IMAGE_WHITE",
         "mask_image": mask_base64,
     })
+
+    prompts = request.prompt
+    assert len(prompts) == 3
+    assert prompts[0].text == "A photo of a cat sitting on a couch."
+    assert prompts[0].parameters.weight == 1.0
+    assert prompts[1].artifact is not None
+    assert prompts[1].artifact.binary is not None
+    assert prompts[2].artifact is not None
+    assert prompts[2].artifact.binary is not None
+
+def test_image_to_image_with_mask_image_black():
+    image_base64 = base64.b64encode(open("tests/resources/beach.png", "rb").read()).decode("utf-8")
+    # todo make a real mask so we can test image transforms
+    mask_base64 = base64.b64encode(open("tests/resources/beach.png", "rb").read()).decode("utf-8")
+
+    request = CreateRequest({
+        "text_prompts": [
+            {"text": "A photo of a cat sitting on a couch."},
+        ],
+        "init_image": image_base64,
+        "mask_source": "MASK_IMAGE_BLACK",
+        "mask_image": mask_base64,
+    })
+
+    prompts = request.prompt
+    assert len(prompts) == 3
+    assert prompts[0].text == "A photo of a cat sitting on a couch."
+    assert prompts[0].parameters.weight == 1.0
+    assert prompts[1].artifact is not None
+    assert prompts[1].artifact.binary is not None
+    assert prompts[2].artifact is not None
+    assert prompts[2].artifact.binary is not None    

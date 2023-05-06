@@ -176,7 +176,8 @@ def api_request_to_proto(req: GenerationRequest) -> generation.Request:
 
         if mask_source == MaskSource.INIT_IMAGE_ALPHA:
             # Extracts the alpha channel from the init image and uses it as a mask.
-            init_image = Image.open(init_image_artifact.binary)
+            init_image_binary = BytesIO(init_image_artifact.binary)
+            init_image = Image.open(init_image_binary)
             if init_image.mode != "RGBA":
                 init_image = init_image.convert("RGBA")
             mask_image = init_image.split()[-1] # Extract alpha channel
