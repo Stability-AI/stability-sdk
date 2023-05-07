@@ -24,16 +24,16 @@ jobs:
         with:
           python-version: "3.9"
           #cache: 'pip'
-      - name: Install build dependencies
+      - name: Install hatch
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools wheel twine build
+          pip install hatch --upgrade
       - name: Build package
         run: |
-          python -m build
+          hatch build
       - name: Install package
         run: |
-          python setup.py install
+          pip install .
       - name: Test package
         env:
           STABILITY_KEY: ${{ secrets.STABILITY_KEY }}
