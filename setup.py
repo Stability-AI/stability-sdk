@@ -7,11 +7,12 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.7.0',
+    version='0.8.0',
     author='Stability AI',
     author_email='support@stability.ai',
     maintainer='Stability AI',
     maintainer_email='support@stability.ai',
+    requires=['python (>=3.8.0)'],
     url='https://beta.dreamstudio.ai/',
     download_url='https://github.com/Stability-AI/stability-sdk/',
 
