@@ -78,10 +78,10 @@ class GenerationRequest(BaseModel):
     def protobuf(self) -> generation.Request:
         return api_request_to_proto(self)
 
-class BinaryArtifact(BaseModel):
-    id: str
+class BinaryArtifact(BaseModel):    
     seed: int
     base64: str
+    finishReason: str
 
 class GenerationErrorResponse(BaseModel):
     id: str
