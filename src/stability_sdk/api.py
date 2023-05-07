@@ -78,10 +78,10 @@ class GenerationRequest(BaseModel):
     def protobuf(self) -> generation.Request:
         return api_request_to_proto(self)
 
-class BinaryArtifact(BaseModel):
-    id: str
+class BinaryArtifact(BaseModel):    
     seed: int
     base64: str
+    finishReason: str
 
 class GenerationErrorResponse(BaseModel):
     id: str
@@ -98,15 +98,11 @@ class GenerationResponse(BaseModel):
     artifacts: List[BinaryArtifact] = Field(None)        
     error: GenerationErrorResponse = Field(None)
 
-    # REST API v1 compatibility
-    id: str = Field(None)
-    name: str = Field(None)
-    message: str = Field(None)
-
     def __init__(self, **data):
         super().__init__(**data)
-        if self.error is None and self.result == "error" or (self.id is not None and self.name is not None and self.message is not None):
-            self.error = GenerationErrorResponse(id=self.id, name=self.name, message=self.message)
+        # REST API v1 compatibility
+        if self.error is None and self.result == "error" or (data.get('id') is not None and data.get('name') is not None and data.get('message') is not None):
+            self.error = GenerationErrorResponse(id=data['id'], name=data['name'], message=data['message'])
 
 def api_sampler_to_proto(sampler: Sampler) -> generation.DiffusionSampler:
     mappings = {

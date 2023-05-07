@@ -177,10 +177,10 @@ def test_image_to_image_with_mask_image_black():
     assert prompts[2].artifact.binary is not None
 
 def test_response_success():
-    test_result = {'result': 'success', 'artifacts': [{'base64': 'blahblah', 'id': 'blahblah', 'seed': 1}]}
+    test_result = {'result': 'success', 'artifacts': [{'base64': 'blahblah', 'finishReason': 'SUCCESS', 'seed': 1}]}
     response = GenerationResponse.parse_obj(test_result)
     assert response.result == 'success'
-    assert response.artifacts[0].id == 'blahblah'
+    assert response.artifacts[0].finishReason == 'SUCCESS'
     assert response.artifacts[0].seed == 1
     assert response.artifacts[0].base64 == 'blahblah'
 
