@@ -64,12 +64,19 @@ include = [
     "/src",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/stability_sdk",
+    "src/stability_sdk_sagemaker",
+]
+
 [tool.pytest.ini_options]
 log_cli = true
 log_cli_level = "DEBUG"
 
 [tool.hatch.envs.default]
 python = "3.9"
+packages = ["sagemaker"]
 
 [tool.hatch.envs.test]
 detached = false
