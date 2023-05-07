@@ -15,7 +15,7 @@ setup(
     url='https://beta.dreamstudio.ai/',
     download_url='https://github.com/Stability-AI/stability-sdk/',
 
-    description='Python SDK for interacting with stability.ai APIs',
+    description='Python SDK for interacting with Stability AI APIs',
     long_description=README,
     long_description_content_type="text/markdown",
 
@@ -25,7 +25,8 @@ setup(
         'grpcio-tools>=1.41.1',
         'python-dotenv',
         'protobuf>=3.19,<5.0',
-        'tensorizer>=1.1.0'
+        'sagemaker>=2.112.2',
+        'tensorizer>=1.1.0',        
     ],
     extras_require={
         'dev': [
