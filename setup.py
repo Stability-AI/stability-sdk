@@ -24,6 +24,7 @@ setup(
         'Pillow',
         'grpcio>=1.41.1',
         'grpcio-tools>=1.41.1',
+        'pydantic>=1.9.2,<2.0',
         'python-dotenv',
         'protobuf>=3.19,<5.0',
         'tensorizer>=1.1.0'
