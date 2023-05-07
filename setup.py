@@ -22,11 +22,11 @@ setup(
 
     install_requires=[
         'Pillow',
-        'grpcio>=1.49.0',
-        'grpcio-tools>=1.49.0',
+        'grpcio>=1.41.1',
+        'grpcio-tools>=1.41.1',
         'pydantic>=1.9.2,<2.0',
         'python-dotenv',
-        'protobuf>=3.19,<5.0',
+        'protobuf>=3.19,<4.0',
         'sagemaker>=2.112.2',
         'tensorizer>=1.1.0',        
     ],
