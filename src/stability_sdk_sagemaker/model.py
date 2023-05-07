@@ -1,6 +1,6 @@
 from enum import Enum
 from sagemaker import ModelPackage, Predictor
-from stability_sdk.api import GenerationRequest, CreateRequest, CreateResponse
+from stability_sdk.api import GenerationRequest, GenerationResponse
 from typing import Optional, Any
 import json
 
