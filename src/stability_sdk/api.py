@@ -75,6 +75,28 @@ class GenerationRequest(BaseModel):
     mask_source: MaskSource = Field(None)
     mask_image: str = Field(None)
 
+    def protobuf(self) -> generation.Request:
+        return api_request_to_proto(self)
+
+class BinaryArtifact(BaseModel):
+    id: str
+    seed: int
+    base64: str
+
+class GenerationErrorResponse(BaseModel):
+    id: str
+    name: str
+    message: str
+
+class GenerationError(Exception):
+    def __init__(self, error: GenerationErrorResponse):
+        super().__init__(error.message)
+        self.error = error
+
+class GenerationResponse(BaseModel):    
+    result: "error" or "success"
+    artifacts: List[BinaryArtifact] = Field(None)
+    error: GenerationErrorResponse = Field(None)
 
 def api_sampler_to_proto(sampler: Sampler) -> generation.DiffusionSampler:
     mappings = {
@@ -230,35 +252,39 @@ def get_finish_reason(reason: generation.FinishReason) -> str:
     return mappings.get(reason, "unknown")
 
 
-def CreateResponse(answer: generation.Answer) -> Dict[str, any]:
+def CreateResponse(answer: generation.Answer) -> GenerationResponse:
     """Converts a protobuf Answer to a JSON response."""
     images = []
     error_id = answer.answer_id
     for artifact in answer.artifacts:
         if artifact.type == generation.ARTIFACT_TEXT:
             if artifact.finish_reason == generation.ERROR:
-                return {
-                    "result": "error",
-                    "id": error_id,
-                    "name": "generation_error",
-                    "message": generation.text,
-                }
+                return GenerationResponse(
+                    result="error",
+                    error=GenerationError(
+                        id=error_id,
+                        name="generation_error",
+                        message=artifact.text,
+                    ),
+                )
             if artifact.finish_reason == generation.FILTER:
-                return {
-                    "result": "error",
-                    "id": error_id,
-                    "name": "invalid_prompts",
-                    "message": "One or more prompts contains filtered words.",
-                }
+                return GenerationResponse(
+                    result="error",
+                    error=GenerationError(
+                        id=error_id,
+                        name="invalid_prompts",
+                        message="One or more prompts contains filtered words.",
+                    )
+                )
         if artifact.type == generation.ARTIFACT_IMAGE:
             artifact_b64 = base64.b64encode(artifact.binary).decode("utf-8")
-            image = {
-                "base64": artifact_b64,
-                "seed": artifact.seed,
-                "finishReason": get_finish_reason(artifact.finish_reason),
-            }
+            image = BinaryArtifact(
+                base64=artifact_b64,
+                seed=artifact.seed,
+                finishReason=get_finish_reason(artifact.finish_reason),
+            )
             images.append(image)
-    response = {"result": "success", "artifacts": images}
+    response = GenerationResponse(result="success", artifacts=images)
     return response
 
 
