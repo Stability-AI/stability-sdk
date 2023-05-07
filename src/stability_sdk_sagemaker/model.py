@@ -65,4 +65,4 @@ class StabilityModelPackage(ModelPackage):
             "ContentType": "application/json",
             "Accept": "application/json;png",
         }
-        return json.loads(self.predictor.predict(data=data, initial_args=endpoint_args))
+        return GenerationResponse.parse_obj(json.loads(self.predictor.predict(data=data, initial_args=endpoint_args)))
