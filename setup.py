@@ -22,8 +22,8 @@ setup(
 
     install_requires=[
         'Pillow',
-        'grpcio>=1.41.1',
-        'grpcio-tools>=1.41.1',
+        'grpcio>=1.49.0',
+        'grpcio-tools>=1.49.0',
         'pydantic>=1.9.2,<2.0',
         'python-dotenv',
         'protobuf>=3.19,<5.0',
