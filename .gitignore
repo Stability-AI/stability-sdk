@@ -8,3 +8,6 @@ pyenv/
 generation-*.pb.json
 build/
 !tests/resources/*.png
+__pycache__/
+.pytest_cache/
+.coverage
