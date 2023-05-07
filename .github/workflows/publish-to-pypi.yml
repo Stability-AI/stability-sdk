@@ -40,7 +40,9 @@ jobs:
         run: |
           python -m stability_sdk A beautiful painting of a happy robot
           python -m stability_sdk.client A nice drawing of a horse
-      # - name: Publish to PyPI
-      #   uses: pypa/gh-action-pypi-publish@release/v1
-      #   with:
-      #     password: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Publish
+        run: |
+          hatch publish
+        env:
+          HATCH_INDEX_USER: __token__
+          HATCH_INDEX_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
