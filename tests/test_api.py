@@ -2,7 +2,7 @@ import pytest
 import os, sys
 import base64
 
-from stability_sdk.api import CreateRequest
+from stability_sdk.api import CreateRequest, GenerationResponse
 
 
 def test_text_to_image():
@@ -175,3 +175,28 @@ def test_image_to_image_with_mask_image_black():
     assert prompts[1].artifact.binary is not None
     assert prompts[2].artifact is not None
     assert prompts[2].artifact.binary is not None
+
+def test_response_success():
+    test_result = {'result': 'success', 'artifacts': [{'base64': 'blahblah', 'id': 'blahblah', 'seed': 1}]}
+    response = GenerationResponse.parse_obj(test_result)
+    assert response.result == 'success'
+    assert response.artifacts[0].id == 'blahblah'
+    assert response.artifacts[0].seed == 1
+    assert response.artifacts[0].base64 == 'blahblah'
+
+def test_response_error():
+    test_result = {'result': 'error', 'error': {'id': 'blahblah', 'message': 'blahblah', 'name': 'blahblah'}}
+    response = GenerationResponse.parse_obj(test_result)
+    assert response.result == 'error'
+    assert response.error.id == 'blahblah'
+    assert response.error.message == 'blahblah'
+    assert response.error.name == 'blahblah'
+
+def test_v1_error():
+    test_result = {'result': 'error', 'id': 'blahblah', 'message': 'blahblah', 'name': 'blahblah'}
+    response = GenerationResponse.parse_obj(test_result)
+    assert response.result == 'error'
+    assert response.error.id == 'blahblah'
+    assert response.error.message == 'blahblah'
+    assert response.error.name == 'blahblah'
+    
