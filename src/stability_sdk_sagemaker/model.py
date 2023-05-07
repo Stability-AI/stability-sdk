@@ -5,15 +5,6 @@ from typing import Optional, Any
 import json
 
 
-class StabilityModelRelease(Enum):
-    SDXL_BETA_V2_2_2 = "stable-diffusion-xl-beta-v2-2-2"
-
-
-modelArns = {
-    StabilityModelRelease.SDXL_BETA_V2_2_2: "arn:aws:sagemaker:us-east-1:740929234339:model-package/stable-diffusion-xl-beta-v2-2-2-rc1"
-}
-
-
 class StabilityModelPackage(ModelPackage):
     endpoint_name: Optional[str] = None
     sagemaker_session: Optional[Any] = None
@@ -22,13 +13,13 @@ class StabilityModelPackage(ModelPackage):
     def __init__(
         self,
         role,
-        model: StabilityModelRelease,
+        model_package_arn: str,
         sagemaker_session=None,
         existing_endpoint_name=None,
     ):
         super().__init__(
             role=role,
-            model_package_arn=modelArns[model],
+            model_package_arn=model_package_arn,
             sagemaker_session=sagemaker_session,
         )
         self.sagemaker_session = sagemaker_session
