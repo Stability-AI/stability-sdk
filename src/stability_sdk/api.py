@@ -94,9 +94,19 @@ class GenerationError(Exception):
         self.error = error
 
 class GenerationResponse(BaseModel):    
-    result: "error" or "success"
-    artifacts: List[BinaryArtifact] = Field(None)
+    result: str = Field(None)
+    artifacts: List[BinaryArtifact] = Field(None)        
     error: GenerationErrorResponse = Field(None)
+
+    # REST API v1 compatibility
+    id: str = Field(None)
+    name: str = Field(None)
+    message: str = Field(None)
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.error is None and self.result == "error" or (self.id is not None and self.name is not None and self.message is not None):
+            self.error = GenerationErrorResponse(id=self.id, name=self.name, message=self.message)
 
 def api_sampler_to_proto(sampler: Sampler) -> generation.DiffusionSampler:
     mappings = {
