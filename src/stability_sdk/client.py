@@ -118,7 +118,6 @@ class StabilityInference:
         self.grpc_args = {"wait_for_ready": wait_for_ready}
         if verbose:
             logger.info(f"Opening channel to {host}")
-        self.stub = generation_grpc.GenerationServiceStub(open_channel(host=host, api_key=key))
 
         call_credentials = []
 
