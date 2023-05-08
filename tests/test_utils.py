@@ -15,24 +15,17 @@ from stability_sdk.utils import (
     color_adjust_transform,
     color_match_from_string,
     depth_calc_transform,
+    expand_subprompts,
     guidance_from_string,
     image_mix,
     image_to_jpg_bytes,
     image_to_png_bytes,
     image_to_prompt,
+    parse_weighted_subprompts,
     resample_transform,
     sampler_from_string,
     truncate_fit,
 )
-
-@pytest.mark.parametrize("border", BORDER_MODES.keys())
-def test_border_mode_from_str_2d_valid(border):
-    border_mode_from_string(s=border)
-    assert True
-
-def test_border_mode_from_str_2d_invalid():
-    with pytest.raises(ValueError, match="invalid border mode"):
-        border_mode_from_string(s='not a real border mode')
 
 @pytest.mark.parametrize("artifact_type", generation.ArtifactType.values())
 def test_artifact_type_to_str_valid(artifact_type):
@@ -43,23 +36,14 @@ def test_artifact_type_to_str_invalid():
     type_str = artifact_type_to_string(-1)
     assert type_str == 'ARTIFACT_UNRECOGNIZED'
 
-@pytest.mark.parametrize("sampler_name", SAMPLERS.keys())
-def test_sampler_from_str_valid(sampler_name):
-    sampler_from_string(s=sampler_name)
+@pytest.mark.parametrize("border", BORDER_MODES.keys())
+def test_border_mode_from_str_2d_valid(border):
+    border_mode_from_string(s=border)
     assert True
 
-def test_sampler_from_str_invalid():
-    with pytest.raises(ValueError, match="invalid sampler"):
-        sampler_from_string(s='not a real sampler')
-
-@pytest.mark.parametrize("preset_name", GUIDANCE_PRESETS.keys())
-def test_guidance_from_string_valid(preset_name):
-    guidance_from_string(s=preset_name)
-    assert True
-
-def test_guidance_from_string_invalid():
-    with pytest.raises(ValueError, match="invalid guidance preset"):
-        guidance_from_string(s='not a real preset')
+def test_border_mode_from_str_2d_invalid():
+    with pytest.raises(ValueError, match="invalid border mode"):
+        border_mode_from_string(s='not a real border mode')
 
 @pytest.mark.parametrize("color_match_mode", COLOR_MATCH_MODES.keys())
 def test_color_match_from_string_valid(color_match_mode):
@@ -70,9 +54,42 @@ def test_color_match_from_string_invalid():
     with pytest.raises(ValueError, match="invalid color match"):
         color_match_from_string(s='not a real color match mode')
 
+def test_expand_subprompts():
+    assert expand_subprompts("single prompt") == (["single prompt"], [1.0])
+    assert expand_subprompts(["one","two"]) == (["one", "two"], [1.0, 1.0])
+    assert expand_subprompts(["single prompt"], [1.0]) == (["single prompt"], [1.0])
+    assert expand_subprompts(["one", "two"], [1.0, 1.0]) == (["one", "two"], [1.0, 1.0])
+    assert expand_subprompts(["one:0.1|two:0.2"], [1.0]) == (["one", "two"], [0.1, 0.2])
+    assert expand_subprompts(["one:0.1|two:0.2", "three"], [0.5, 1.0]) == (["one", "two", "three"], [0.05, 0.1, 1.0])
+    with pytest.raises(ValueError, match="Length of prompts and weights must be the same"):
+        expand_subprompts(["one","two"], [1.0])
 
-####################################
-# to do: pytest.mark.paramaterized #
+@pytest.mark.parametrize("preset_name", GUIDANCE_PRESETS.keys())
+def test_guidance_from_string_valid(preset_name):
+    guidance_from_string(s=preset_name)
+    assert True
+
+def test_guidance_from_string_invalid():
+    with pytest.raises(ValueError, match="invalid guidance preset"):
+        guidance_from_string(s='not a real preset')
+
+def test_parse_weighted_prompts():
+    assert parse_weighted_subprompts("single prompt") == (["single prompt"], [1.0])
+    assert parse_weighted_subprompts("one|two") == (["one", "two"], [1.0, 1.0])
+    assert parse_weighted_subprompts("  whitespace  |    removed") == (["whitespace", "removed"], [1.0, 1.0])
+    assert parse_weighted_subprompts("single with weight :0.5") == (["single with weight"], [0.5])
+    assert parse_weighted_subprompts("nospace:.1") == (["nospace"], [0.1])
+    assert parse_weighted_subprompts("two:2|weighted:3") == (["two", "weighted"], [2,3])
+    assert parse_weighted_subprompts("one:.1|two|three:3.3") == (["one", "two", "three"], [.1,1,3.3])
+
+@pytest.mark.parametrize("sampler_name", SAMPLERS.keys())
+def test_sampler_from_str_valid(sampler_name):
+    sampler_from_string(s=sampler_name)
+    assert True
+
+def test_sampler_from_str_invalid():
+    with pytest.raises(ValueError, match="invalid sampler"):
+        sampler_from_string(s='not a real sampler')
 
 def test_truncate_fit0():
     outv = truncate_fit(
