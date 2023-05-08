@@ -14,6 +14,7 @@ import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
 from .utils import (
+    expand_subprompts,
     image_mix,
     image_to_prompt,
     tensor_to_prompt,
@@ -102,8 +103,8 @@ class Context:
 
     def generate(
         self,
-        prompts: List[str], 
-        weights: List[float], 
+        prompts: Union[str, List[str]], 
+        weights: Optional[List[float]] = None, 
         width: int = 512, 
         height: int = 512, 
         steps: Optional[int] = None,
@@ -126,8 +127,8 @@ class Context:
         """
         Generate an image from a set of weighted prompts.
 
-        :param prompts: List of text prompts
-        :param weights: List of prompt weights
+        :param prompts: Text prompt or list of prompts
+        :param weights: Optional list of prompt weights
         :param width: Width of the generated image
         :param height: Height of the generated image
         :param steps: Number of steps to run the diffusion process
@@ -151,7 +152,9 @@ class Context:
             raise ValueError("prompt and/or init_image must be provided")
 
         if (mask is not None) and (init_image is None) and not return_request:
-            raise ValueError("If mask_image is provided, init_image must also be provided")
+            raise ValueError("If mask_image is provided, init_image must also be provided")        
+
+        prompts, weights = expand_subprompts(prompts, weights)
 
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
@@ -191,8 +194,8 @@ class Context:
         self,
         image: Image.Image,
         mask: Image.Image,
-        prompts: List[str], 
-        weights: List[float], 
+        prompts: Union[str, List[str]], 
+        weights: Optional[List[float]] = None, 
         steps: Optional[int] = None, 
         seed: Union[Sequence[int], int] = 0,
         samples: int = 1,
@@ -211,8 +214,8 @@ class Context:
         
         :param image: Source image
         :param mask: Mask image with 0 for pixels to change and 255 for pixels to keep
-        :param prompts: List of text prompts
-        :param weights: List of prompt weights
+        :param prompts: Text prompt or list of prompts
+        :param weights: Optional list of prompt weights
         :param steps: Number of steps to run
         :param seed: Random seed
         :param samples: Number of samples to generate
@@ -227,6 +230,8 @@ class Context:
         :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
+        prompts, weights = expand_subprompts(prompts, weights)
+
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if image is not None:
             p.append(image_to_prompt(image))

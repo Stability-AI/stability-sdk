@@ -1,9 +1,10 @@
 import io
 import logging
+import re
 import os
 
 from PIL import Image
-from typing import Dict, Generator, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import Dict, Generator, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 from .api import generation
 from .matrix import Matrix
@@ -207,6 +208,37 @@ def artifact_type_to_string(artifact_type: generation.ArtifactType):
         )
         return "ARTIFACT_UNRECOGNIZED"
 
+def expand_subprompts(
+    prompts: Union[str, List[str]], 
+    weights: Optional[List[float]] = None
+) -> Tuple[List[str], List[float]]:
+    """
+    Expand a list of prompts with weighted subprompts.
+    """
+    if isinstance(prompts, str):
+        prompts = [prompts]
+
+    if weights is None:
+        weights = [1.0] * len(prompts)
+
+    if len(prompts) != len(weights):
+        raise ValueError("Length of prompts and weights must be the same")
+
+    expanded_prompts = []
+    expanded_weights = []
+
+    for prompt, weight in zip(prompts, weights):
+        subprompts, subweights = parse_weighted_subprompts(prompt)
+        if len(subprompts) > 1:
+            for subprompt, subweight in zip(subprompts, subweights):
+                expanded_prompts.append(subprompt)
+                expanded_weights.append(subweight * weight)
+        else:
+            expanded_prompts.append(prompt)
+            expanded_weights.append(weight)
+
+    return expanded_prompts, expanded_weights
+
 def image_mix(img_a: Image.Image, img_b: Image.Image, ratio: Union[float, Image.Image]) -> Image.Image:
     """
     Performs a linear interpolation between two images
@@ -282,6 +314,27 @@ def open_images(
             img = Image.open(io.BytesIO(artifact.binary))
             img.show()
         yield (path, artifact)
+
+def parse_weighted_subprompts(prompt_str: str) -> Tuple[List[str], List[float]]:
+    """
+    Parse a prompt string into a list of subprompts and weights. Subprompts are
+    separated by the pipe character (|). Weights are specified by a colon
+    followed by a floating point number.
+    Example: "A|B:0.5|C:0.25" -> ["A", "B", "C"], [1.0, 0.5, 0.25]
+    """
+    prompts, weights = [], []
+
+    prompt_pattern = re.compile(r"([^|:]+)(?::([\d.]+))?(?:\s*\|\s*|$)")
+    for match in prompt_pattern.finditer(prompt_str):
+        prompt, weight = match.groups()
+        prompts.append(prompt.strip())
+        weights.append(float(weight) if weight else 1.0)
+
+    if not prompts:
+        prompts.append(prompt_str.strip())
+        weights.append(1.0)
+
+    return prompts, weights
 
 def tensor_to_prompt(tensor: 'tensors_pb.Tensor') -> generation.Prompt:
     """
