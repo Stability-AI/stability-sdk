@@ -650,9 +650,11 @@ class Context:
             except grpc.RpcError as rpc_error:
                 if hasattr(rpc_error, "code"):
                     if rpc_error.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
+                        if "message larger than max" in rpc_error.details():
+                            raise rpc_error
                         raise OutOfCreditsException(rpc_error.details())
-                    elif grpc.StatusCode.UNAUTHENTICATED:
-                        raise rpc_error                
+                    elif rpc_error.code() == grpc.StatusCode.UNAUTHENTICATED:
+                        raise rpc_error
 
                 if attempt == self._max_retries:
                     raise rpc_error
