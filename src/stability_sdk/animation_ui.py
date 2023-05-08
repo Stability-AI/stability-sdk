@@ -160,6 +160,9 @@ last_project_settings_path = None
 last_upscale = None
 projects: List[Project] = []
 project: Optional[Project] = None
+resume_checkbox = gr.Checkbox(label="Resume", value=False, interactive=True)
+resume_from_number = gr.Number(label="Resume from frame", value=-1, interactive=True, precision=0,
+                               info="Positive frame number to resume from, or -1 to resume from the last")
 
 project_create_button = gr.Button("Create")
 project_data_log = gr.Textbox(label="Status", visible=False)
@@ -505,9 +508,12 @@ def project_tab():
     button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, project_row_create, project_row_import, project_row_load, header])
     button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log])
 
-def remove_frames_from_path(path):
+def remove_frames_from_path(path, leave_first=None):
     if os.path.isdir(path):
-        for f in glob.glob(os.path.join(path, "frame_*.png")):
+        frames = sorted(glob.glob(os.path.join(path, "frame_*.png")))
+        if leave_first is not None:
+            frames = frames[leave_first:]
+        for f in frames:
             os.remove(f)
 
 def render_tab():
@@ -521,7 +527,7 @@ def render_tab():
             button_stop = gr.Button("Stop", visible=False)
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def render(*render_args):
+    def render(resume: bool, resume_from: int, *render_args):
         global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, last_upscale, project
         interrupt = False
 
@@ -581,7 +587,13 @@ def render_tab():
         }
 
         # delete frames from previous animation
-        remove_frames_from_path(outdir)
+        if resume:
+            if resume_from > 0:
+                remove_frames_from_path(outdir, resume_from)
+            elif resume_from == 0 or resume_from < -1:
+                raise gr.Error("Please specify a positive frame number to resume from it or -1 to resume from the last frame")
+        else:
+            remove_frames_from_path(outdir)
 
         frame_idx, error = 0, None
         try:
@@ -592,9 +604,9 @@ def render_tab():
                 out_dir=outdir,
                 negative_prompt=negative_prompt,
                 negative_prompt_weight=negative_prompt_weight,
-                resume=False,
+                resume=resume,
             )
-            for frame_idx, frame in enumerate(tqdm(animator.render(), initial=animator.start_frame_idx, total=args.max_frames)):
+            for frame_idx, frame in enumerate(tqdm(animator.render(), initial=animator.start_frame_idx, total=args.max_frames), start=animator.start_frame_idx):
                 if interrupt:
                     break
 
@@ -637,7 +649,7 @@ def render_tab():
 
     button.click(
         render,
-        inputs=list(controls.values()),
+        inputs=[resume_checkbox, resume_from_number] + list(controls.values()),
         outputs=[button, button_stop, image_out, video_out, header, error_log]
     )
 
@@ -725,6 +737,9 @@ def ui_layout_tabs():
         accordion_from_args("3D render", args_render_3d, open=False)
         accordion_from_args("Inpainting", args_inpaint, open=False)
     with gr.Tab("Input"):
+        with gr.Row():
+            resume_checkbox.render()
+            resume_from_number.render()
         ui_for_init_and_mask(args_generation)
         with gr.Column():
             p = args_vid_in.param
