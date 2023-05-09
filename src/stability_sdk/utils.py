@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import subprocess
 
 from PIL import Image
 from typing import Dict, Generator, Optional, Sequence, Tuple, Type, TypeVar, Union
@@ -206,6 +207,29 @@ def artifact_type_to_string(artifact_type: generation.ArtifactType):
             "If updating the client does not make this warning message go away, please report this behavior to https://github.com/Stability-AI/stability-sdk/issues/new"
         )
         return "ARTIFACT_UNRECOGNIZED"
+
+def extract_frames_from_video(video_path: str, frames_subdir: str='frames'):
+    """
+    Extracts all frames from a video to a subdirectory of the video's parent folder.
+    :param video_path: A path to the video.
+    :param frames_subdir: Name of the subdirectory to save the frames into.
+    :return: The frames subdirectory path.
+    """
+    out_dir = os.path.join(os.path.dirname(video_path), frames_subdir)
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+    
+    cmd = [
+        'ffmpeg',
+        '-i', video_path,
+        os.path.join(out_dir, "frame_%05d.png"),
+    ]
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, stderr = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(stderr)
+
+    return out_dir
 
 def image_mix(img_a: Image.Image, img_b: Image.Image, ratio: Union[float, Image.Image]) -> Image.Image:
     """

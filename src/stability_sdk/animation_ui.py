@@ -40,7 +40,7 @@ from .animation import (
     create_video_from_frames,
     interpolate_frames
 )
-from .utils import interpolate_mode_from_string
+from .utils import extract_frames_from_video, interpolate_mode_from_string
 
 
 DATA_VERSION = "0.1"
@@ -266,7 +266,10 @@ def get_default_project():
 def post_process_tab():
     with gr.Row():
         with gr.Column():
-            fps = gr.Number(label="FPS", value=24, interactive=True, precision=0)
+            with gr.Row():
+                use_video_instead = gr.Checkbox(label="Postprocess a video instead", value=False, interactive=True)
+                video_to_postprocess = gr.Text(label="Videofile to postprocess", value="", interactive=True)
+            fps = gr.Number(label="Output FPS", value=24, interactive=True, precision=0)
             reverse = gr.Checkbox(label="Reverse", value=False, interactive=True)
             with gr.Row():
                 frame_interp_mode = gr.Dropdown(label="Frame interpolation mode", choices=['None', 'film', 'rife'], value='None', interactive=True)       
@@ -280,11 +283,14 @@ def post_process_tab():
             stop_button = gr.Button("Stop", visible=False)
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool):
+    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool,
+                          use_video_instead: bool, video_to_postprocess: str):
         global interrupt, last_interp_factor, last_interp_mode, last_upscale
         interrupt = False
-        if last_project_settings_path is None:
-            raise gr.Error("Must render an animation first")
+        if not use_video_instead and last_project_settings_path is None:
+            raise gr.Error("Please render an animation first or specify a videofile to postprocess")
+        if use_video_instead and not os.path.exists(video_to_postprocess):
+            raise gr.Error("Videofile does not exist")
 
         yield {
             header: gr.update(),
@@ -297,7 +303,9 @@ def post_process_tab():
 
         error = None
         try:
-            outdir = os.path.dirname(last_project_settings_path)
+            outdir = os.path.dirname(last_project_settings_path) \
+                if not use_video_instead \
+                else extract_frames_from_video(video_to_postprocess)
             suffix = ""
 
             can_skip_upscale = last_upscale == upscale
@@ -349,7 +357,11 @@ def post_process_tab():
                     last_interp_mode, last_interp_factor = interp_mode, interp_factor
                 outdir = interp_dir
 
-            output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            if not use_video_instead:
+                output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            else:
+                _, video_ext = os.path.splitext(video_to_postprocess)
+                output_video = video_to_postprocess.replace(video_ext, f"{suffix}.mp4")
             create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
         except Exception as e:
             traceback.print_exc()
@@ -366,7 +378,7 @@ def post_process_tab():
 
     process_button.click(
         postprocess_video, 
-        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale], 
+        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale, use_video_instead, video_to_postprocess], 
         outputs=[header, image_out, video_out, process_button, stop_button, error_log]
     )    
 
@@ -591,7 +603,7 @@ def render_tab():
             if resume_from > 0:
                 remove_frames_from_path(outdir, resume_from)
             elif resume_from == 0 or resume_from < -1:
-                raise gr.Error("Please specify a positive frame number to resume from it or -1 to resume from the last frame")
+                raise gr.Error("Frame number to resume from must be positive, or -1 to resume from the last frame")
         else:
             remove_frames_from_path(outdir)
 
