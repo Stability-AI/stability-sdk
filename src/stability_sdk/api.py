@@ -260,41 +260,57 @@ def get_finish_reason(reason: generation.FinishReason) -> str:
 
 def CreateResponse(answer: generation.Answer) -> GenerationResponse:
     """Converts a protobuf Answer to a JSON response."""
-    images = []
-    if not isinstance(answer, generation.Answer):
-        raise Exception('answer is not generation.Answer')
-    error_id = answer.answer_id
-    for artifact in answer.artifacts:
-        if artifact.type == generation.ARTIFACT_TEXT:
-            if artifact.finish_reason == generation.ERROR:
-                return GenerationResponse(
-                    result="error",
-                    error=GenerationErrorResponse(
-                        id=error_id,
-                        name="generation_error",
-                        message=artifact.text,
-                    ),
-                )
-            if artifact.finish_reason == generation.FILTER:
-                return GenerationResponse(
-                    result="error",
-                    error=GenerationErrorResponse(
-                        id=error_id,
-                        name="invalid_prompts",
-                        message="One or more prompts contains filtered words.",
-                    )
-                )
-        if artifact.type == generation.ARTIFACT_IMAGE:
-            artifact_b64 = base64.b64encode(artifact.binary).decode("utf-8")
-            image = BinaryArtifact(
-                base64=artifact_b64,
-                seed=artifact.seed,
-                finishReason=get_finish_reason(artifact.finish_reason),
+    try:
+        images = []
+        if answer is None:
+            return GenerationResponse(
+                result="error",
+                error=GenerationErrorResponse(
+                    id=0,
+                    name="generation_error",
+                    message="No response from the server.",
+                ),
             )
-            images.append(image)
-    response = GenerationResponse(result="success", artifacts=images)
-    return response
-
+        error_id = answer.answer_id 
+        for artifact in answer.artifacts:
+            if artifact.type == generation.ARTIFACT_TEXT:
+                if artifact.finish_reason == generation.ERROR:
+                    return GenerationResponse(
+                        result="error",
+                        error=GenerationErrorResponse(
+                            id=error_id,
+                            name="generation_error",
+                            message=artifact.text,
+                        ),
+                    )
+                if artifact.finish_reason == generation.FILTER:
+                    return GenerationResponse(
+                        result="error",
+                        error=GenerationErrorResponse(
+                            id=error_id,
+                            name="invalid_prompts",
+                            message="One or more prompts contains filtered words.",
+                        )
+                    )
+            if artifact.type == generation.ARTIFACT_IMAGE:
+                artifact_b64 = base64.b64encode(artifact.binary).decode("utf-8")
+                image = BinaryArtifact(
+                    base64=artifact_b64,
+                    seed=artifact.seed,
+                    finishReason=get_finish_reason(artifact.finish_reason),
+                )
+                images.append(image)
+        response = GenerationResponse(result="success", artifacts=images)
+        return response
+    except Exception as e:
+        return GenerationResponse(
+            result="error",
+            error=GenerationErrorResponse(
+                id=answer.answer_id,
+                name="generation_error",
+                message=str(e),
+            ),
+        )
 
 def CreateRequest(json: Dict[str, any]) -> generation.Request:
     """Converts a JSON request to a protobuf Request."""
