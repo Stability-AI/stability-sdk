@@ -70,7 +70,7 @@ class BasicSettings(param.Parameterized):
     custom_model = param.String(default="", doc="Identifier of custom model to use.")
     seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
-    clip_guidance = param.Selector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
+    clip_guidance = param.Selector(default='None', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
     init_sizing = param.Selector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
     mask_path = param.String(default="", doc="Path to image or video mask")
