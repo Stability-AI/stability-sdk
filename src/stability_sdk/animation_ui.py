@@ -315,7 +315,7 @@ def post_process_tab():
                 suffix += "_x2"
                 upscale_dir = os.path.join(outdir, "upscale") 
                 os.makedirs(upscale_dir, exist_ok=True)
-                frame_paths = glob.glob(os.path.join(outdir, "frame_*.png"))
+                frame_paths = sorted(glob.glob(os.path.join(outdir, "frame_*.png")))
                 num_frames = len(frame_paths)
                 if not can_skip_upscale:
                     remove_frames_from_path(upscale_dir)
