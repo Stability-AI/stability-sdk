@@ -82,8 +82,8 @@ PRESETS = {
         "animation_prompts": "{\n0:\"Mystical pumpkin field landscapes on starry Halloween night, pop surrealism art\"\n}"
     },
     "Outpaint": {
-        "animation_mode":"2D", "diffusion_cadence_curve":"0:(24)", "cadence_spans":True, "strength_curve":"0:(0.75)",
-        "inpaint_border":True, "use_inpainting_model":True, "zoom":"0:(0.95)",
+        "animation_mode":"2D", "diffusion_cadence_curve":"0:(16)", "cadence_spans":True, "use_inpainting_model":True,
+        "strength_curve":"0:(1)", "reverse":True, "preset": "fantasy-art", "inpaint_border":True, "zoom":"0:(0.95)", 
         "animation_prompts": "{\n0:\"an ancient and magical portal, in a fantasy corridor\"\n}"
     },
     "Video Stylize": {
