@@ -261,13 +261,15 @@ def get_finish_reason(reason: generation.FinishReason) -> str:
 def CreateResponse(answer: generation.Answer) -> GenerationResponse:
     """Converts a protobuf Answer to a JSON response."""
     images = []
+    if not isinstance(answer, generation.Answer):
+        raise Exception('answer is not generation.Answer')
     error_id = answer.answer_id
     for artifact in answer.artifacts:
         if artifact.type == generation.ARTIFACT_TEXT:
             if artifact.finish_reason == generation.ERROR:
                 return GenerationResponse(
                     result="error",
-                    error=GenerationError(
+                    error=GenerationErrorResponse(
                         id=error_id,
                         name="generation_error",
                         message=artifact.text,
@@ -276,7 +278,7 @@ def CreateResponse(answer: generation.Answer) -> GenerationResponse:
             if artifact.finish_reason == generation.FILTER:
                 return GenerationResponse(
                     result="error",
-                    error=GenerationError(
+                    error=GenerationErrorResponse(
                         id=error_id,
                         name="invalid_prompts",
                         message="One or more prompts contains filtered words.",

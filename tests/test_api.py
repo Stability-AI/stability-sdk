@@ -1,9 +1,10 @@
 import pytest
-import os, sys
+import time
 import base64
 
-from stability_sdk.api import CreateRequest, GenerationResponse
-
+from stability_sdk.api import CreateRequest, CreateResponse, GenerationResponse
+from stability_sdk.interfaces.gooseai.generation.generation_pb2 import Answer, Artifact
+import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 
 def test_text_to_image():
     request = CreateRequest(
@@ -176,7 +177,7 @@ def test_image_to_image_with_mask_image_black():
     assert prompts[2].artifact is not None
     assert prompts[2].artifact.binary is not None
 
-def test_response_success():
+def test_generation_response_success():
     test_result = {'result': 'success', 'artifacts': [{'base64': 'blahblah', 'finishReason': 'SUCCESS', 'seed': 1}]}
     response = GenerationResponse.parse_obj(test_result)
     assert response.result == 'success'
@@ -184,15 +185,15 @@ def test_response_success():
     assert response.artifacts[0].seed == 1
     assert response.artifacts[0].base64 == 'blahblah'
 
-def test_response_error():
+def test_generation_response_error():
     test_result = {'result': 'error', 'error': {'id': 'blahblah', 'message': 'blahblah', 'name': 'blahblah'}}
     response = GenerationResponse.parse_obj(test_result)
     assert response.result == 'error'
     assert response.error.id == 'blahblah'
     assert response.error.message == 'blahblah'
     assert response.error.name == 'blahblah'
-
-def test_v1_error():
+    
+def test_generation_response_v1_error():
     test_result = {'result': 'error', 'id': 'blahblah', 'message': 'blahblah', 'name': 'blahblah'}
     response = GenerationResponse.parse_obj(test_result)
     assert response.result == 'error'
@@ -200,3 +201,44 @@ def test_v1_error():
     assert response.error.message == 'blahblah'
     assert response.error.name == 'blahblah'
     
+def test_create_response_filter():
+    error_artifact = Artifact(
+        type=generation.ARTIFACT_TEXT,
+        mime="text/plain",
+        text="Prompt is invalid.",
+        finish_reason=generation.FILTER,
+    )
+    error_answer = generation.Answer(
+        answer_id="error",
+        request_id="test",
+        created=int(time.time() * 1000),
+        received=int(time.time() * 1000),
+    )
+    error_answer.artifacts.append(error_artifact)
+
+    error_response = CreateResponse(error_answer)
+    assert error_response.result == "error"
+    assert error_response.artifacts is None
+    assert error_response.error is not None
+    assert error_response.error.name == "invalid_prompts"
+
+def test_create_response_error():
+    error_artifact = Artifact(
+        type=generation.ARTIFACT_TEXT,
+        mime="text/plain",
+        text="Error generating.",
+        finish_reason=generation.ERROR,
+    )
+    error_answer = generation.Answer(
+        answer_id="error",
+        request_id="test",
+        created=int(time.time() * 1000),
+        received=int(time.time() * 1000),
+    )
+    error_answer.artifacts.append(error_artifact)
+
+    error_response = CreateResponse(error_answer)
+    assert error_response.result == "error"
+    assert error_response.artifacts is None
+    assert error_response.error is not None    
+    assert error_response.error.name == "generation_error"
