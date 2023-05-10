@@ -103,11 +103,15 @@ def test_image_mix(pil_image):
     result = image_mix(img_a=pil_image, img_b=pil_image, ratio=0.5)
     assert isinstance(result, Image.Image)
     assert result.size == pil_image.size
+    result = image_mix(img_a=Image.new('L', (64,64), 0), img_b=Image.new('L', (64,64), 255), ratio=1.0)
+    assert all(pixel_value == 255 for pixel_value in result.getdata())
 
 def test_image_mix_mask(pil_image):
     result = image_mix(img_a=pil_image, img_b=pil_image, ratio=pil_image.convert('L'))
     assert isinstance(result, Image.Image)
     assert result.size == pil_image.size
+    result = image_mix(img_a=Image.new('L', (64,64), 0), img_b=Image.new('L', (64,64), 255), ratio=Image.new('L', (64,64), 255))
+    assert all(pixel_value == 255 for pixel_value in result.getdata())
 
 def test_image_to_jpg_bytes(pil_image):
     result = image_to_jpg_bytes(pil_image)

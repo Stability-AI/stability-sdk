@@ -15,9 +15,9 @@ import subprocess
 from collections import OrderedDict, deque
 from dataclasses import dataclass, fields
 from keyframed.dsl import curve_from_cn_string
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageOps
 from types import SimpleNamespace
-from typing import cast, Deque, Generator, List, Optional, Tuple, Union
+from typing import Callable, cast, Deque, Dict, Generator, List, Optional, Tuple, Union
 
 from stability_sdk.api import Context, generation
 from stability_sdk.utils import (
@@ -70,7 +70,7 @@ class BasicSettings(param.Parameterized):
     custom_model = param.String(default="", doc="Identifier of custom model to use.")
     seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
-    clip_guidance = param.Selector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
+    clip_guidance = param.Selector(default='None', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
     init_sizing = param.Selector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
     mask_path = param.String(default="", doc="Path to image or video mask")
@@ -126,6 +126,7 @@ class ColorSettings(param.Parameterized):
     hue_curve = param.String(default="0:(0.0)")
     saturation_curve = param.String(default="0:(1.0)")
     lightness_curve = param.String(default="0:(0.0)")
+    color_match_animate = param.Boolean(default=True, doc="Animate color match between key frames.")
 
 
 class DepthSettings(param.Parameterized):
@@ -147,7 +148,7 @@ class InpaintingSettings(param.Parameterized):
     use_inpainting_model = param.Boolean(default=False, doc="If True, inpainting will be performed using dedicated inpainting model. If False, inpainting will be performed with the regular model that is selected")
     inpaint_border = param.Boolean(default=False, doc="Use inpainting on top of border regions for 2D and 3D warp modes. Defaults to False")
     mask_min_value = param.String(default="0:(0.25)", doc="Mask postprocessing for non-inpainting model. Mask floor values will be clipped by this value prior to inpainting")
-    mask_binarization_thr = param.Number(default=0.15, softbounds=(0,1), doc="Applied when inpainting with inpainting model. Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
+    mask_binarization_thr = param.Number(default=0.5, softbounds=(0,1), doc="Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
     save_inpaint_masks = param.Boolean(default=False)
 
 class VideoInputSettings(param.Parameterized):
@@ -215,40 +216,6 @@ def args_to_dict(args):
     else:
         raise NotImplementedError(f"Unsupported arguments object type: {type(args)}")
 
-def create_video_from_frames(frames_path: str, mp4_path: str, fps: int=24, reverse: bool=False):
-    """
-    Convert a series of image frames to a video file using ffmpeg.
-
-    :param frames_path: The path to the directory containing the image frames named frame_00000.png, frame_00001.png, etc.
-    :param mp4_path: The path to save the output video file.
-    :param fps: The frames per second for the output video. Default is 24.
-    :param reverse: A flag to reverse the order of the frames in the output video. Default is False.
-    """
-
-    cmd = [
-        'ffmpeg',
-        '-y',
-        '-vcodec', 'png',
-        '-r', str(fps),
-        '-start_number', str(0),
-        '-i', os.path.join(frames_path, "frame_%05d.png"),
-        '-c:v', 'libx264',
-        '-vf',
-        f'fps={fps}',
-        '-pix_fmt', 'yuv420p',
-        '-crf', '17',
-        '-preset', 'veryslow',
-        mp4_path
-    ]
-    if reverse:
-        cmd.insert(-1, '-vf')
-        cmd.insert(-1, 'reverse')    
-
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, stderr = process.communicate()
-    if process.returncode != 0:
-        raise RuntimeError(stderr)
-
 def cv2_to_pil(cv2_img: np.ndarray) -> Image.Image:
     """Convert a cv2 BGR ndarray to a PIL Image"""
     return Image.fromarray(cv2_img[:, :, ::-1])
@@ -306,7 +273,8 @@ def make_xform_2d(
     rotate = matrix.rotation_euler(0, 0, rotation_angle)
     scale = matrix.scale(scale_factor, scale_factor, 1)
     rotate_scale = matrix.multiply(post, matrix.multiply(rotate, matrix.multiply(scale, pre)))
-    translate = matrix.translation(translate_x, translate_y, 0)
+    # match 3D camera translation, +X moves camera to right, +Y moves camera up
+    translate = matrix.translation(-translate_x, translate_y, 0)
     return matrix.multiply(rotate_scale, translate)
 
 def model_supports_clip_guidance(model_name: str) -> bool:
@@ -344,7 +312,7 @@ class Animator:
         self.api = api_context
         self.animation_prompts = animation_prompts
         self.args = args or AnimationArgs()
-        self.color_match_image: Optional[Image.Image] = None
+        self.color_match_images: Optional[Dict[int, Image.Image]] = {}
         self.diffusion_cadence_ofs: int = 0
         self.frame_args: FrameArgs
         self.inpaint_mask: Optional[Image.Image] = None
@@ -420,16 +388,50 @@ class Animator:
         return results[0]
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
+        prev, next, tween = self.get_key_frame_tween(frame_idx)
+        if prev == next or not self.args.interpolate_prompts:
+            return [self.animation_prompts[prev]], [1.0]
+        else:
+            return [self.animation_prompts[prev], self.animation_prompts[next]], [1.0 - tween, tween]
+
+    def get_color_match_image(self, frame_idx: int) -> Image.Image:
+        if not self.args.color_match_animate:
+            return self.color_match_images.get(0)
+
+        prev, next, tween = self.get_key_frame_tween(frame_idx)
+
+        if prev not in self.color_match_images:
+            self.color_match_images[prev] = self._render_frame(prev, self.args.seed)
+        prev_match = self.color_match_images[prev]
+        if prev == next:
+            return prev_match
+
+        if next not in self.color_match_images:
+            self.color_match_images[next] = self._render_frame(next, self.args.seed)
+        next_match = self.color_match_images[next]
+
+        # Create image combining colors from previous and next key frames without mixing
+        # the RGB values. Tiles of next key frame are filled in over tiles of previous 
+        # key frame. The tween value increases the subtile size on each axis so the transition
+        # is non-linear - staying with previous key frame longer then quickly moving to next.
+        blended = prev_match.copy()
+        width, height, tile_size = blended.width, blended.height, 64
+        for y in range(0, height, tile_size):
+            for x in range(0, width, tile_size):
+                cut = next_match.crop((x, y, x + int(tile_size * tween), y + int(tile_size * tween)))
+                blended.paste(cut, (x, y))
+        return blended
+
+    def get_key_frame_tween(self, frame_idx: int) -> Tuple[int, int, float]:
+        """Returns previous and next key frames along with in between ratio"""
         keys = self.key_frame_values
         idx = bisect.bisect_right(keys, frame_idx)
         prev, next = idx - 1, idx
-        if not self.args.interpolate_prompts:
-            return [self.animation_prompts[keys[min(len(keys)-1, prev)]]], [1.0]
-        elif next == len(keys):
-            return [self.animation_prompts[keys[-1]]], [1.0]
+        if next == len(keys):
+            return keys[-1], keys[-1], 1.0
         else:
             tween = (frame_idx - keys[prev]) / (keys[next] - keys[prev])
-            return [self.animation_prompts[keys[prev]], self.animation_prompts[keys[next]]], [1.0 - tween, tween]
+            return keys[prev], keys[next], tween
 
     def get_frame_filename(self, frame_idx, prefix="frame") -> Optional[str]:
         return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png") if self.out_dir else None
@@ -470,7 +472,7 @@ class Animator:
 
         if args.use_inpainting_model:
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, blur_radius=mask_blur_radius)
+                mask, binarize=True, blur_radius=mask_blur_radius)
             results = self.api.inpaint(
                 image, binary_mask,
                 prompts, weights, 
@@ -486,7 +488,7 @@ class Animator:
         else:
             mask_min_value = self.frame_args.mask_min_value[frame_idx]
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
+                mask, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
             adjusted_steps = max(5, int(steps * (1.0 - mask_min_value))) if args.steps_strength_adj else steps
             noise_scale = self.frame_args.noise_scale_curve[frame_idx]
             results = self.api.generate(
@@ -570,7 +572,11 @@ class Animator:
         lightness = frame_args.lightness_curve[frame_idx]
         noise_amount = frame_args.noise_add_curve[frame_idx]
 
-        do_color_match = args.color_coherence != 'None' and self.color_match_image is not None
+        color_match_image = None
+        if args.color_coherence != 'None' and frame_idx > 0:
+            color_match_image = self.get_color_match_image(frame_idx)
+
+        do_color_match = args.color_coherence != 'None' and color_match_image is not None
         do_bchsl = brightness != 1.0 or contrast != 1.0 or hue != 0.0 or saturation != 1.0 or lightness != 0.0
         do_noise = noise_amount > 0.0
 
@@ -583,7 +589,7 @@ class Animator:
                 hue=hue,
                 saturation=saturation,
                 lightness=lightness,
-                match_image=self.color_match_image,
+                match_image=color_match_image,
                 match_mode=args.color_coherence,
                 noise_amount=noise_amount,
                 noise_seed=noise_seed
@@ -682,7 +688,7 @@ class Animator:
                     mask_min_value = self.frame_args.mask_min_value[frame_idx]
                     init_strength = min(strength, mask_min_value) 
                     self.inpaint_mask = self._postprocess_inpainting_mask(
-                        self.inpaint_mask, frame_idx, 
+                        self.inpaint_mask, 
                         mask_pow=args.mask_power if args.animation_mode == '3D render' else None,
                         mask_multiplier=strength,
                         blur_radius=None,
@@ -712,8 +718,8 @@ class Animator:
                 )
                 image = self.api.transform_and_generate(init_image, init_image_ops, generate_request)
 
-                if self.color_match_image is None and args.color_coherence != 'None':
-                    self.color_match_image = image
+                if args.color_coherence != 'None' and frame_idx == 0:
+                    self.color_match_images[0] = image
                 if not len(self.prior_frames):
                     self.prior_frames.append(image)
                     self.prior_diffused.append(image)
@@ -954,7 +960,6 @@ class Animator:
     def _postprocess_inpainting_mask(
         self,
         mask: Union[Image.Image, np.ndarray],
-        frame_idx: int,
         mask_pow: Optional[float] = None,
         mask_multiplier: Optional[float] = None,
         binarize: bool = False,
@@ -963,7 +968,7 @@ class Animator:
     ) -> Image.Image:
         # Being applied in 3D render mode. Camera pose transform operation returns a mask which pixel values encode
         # how much signal from the previous frame is present there. But a mapping from the signal presence values
-        # to the optimal per-pixel init strength is unknown, and roughly guessed as a per-pixel power fuction.
+        # to the optimal per-pixel init strength is unknown, and roughly guessed as a per-pixel power function.
         # Leaving mask_pow=1 results in near objects changing to a greater extent than a natural emergence of fine details when approaching an object.
         if isinstance(mask, Image.Image):
             mask = np.array(mask)
@@ -972,8 +977,8 @@ class Animator:
         if mask_multiplier is not None:
             mask = (mask * mask_multiplier).astype(np.uint8)
         if binarize:
-            np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
-        if blur_radius is not None:
+            mask = np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
+        if blur_radius:
             kernel_size = blur_radius*2+1
             mask = cv2.erode(mask, np.ones((kernel_size, kernel_size), np.uint8))
             mask = cv2.GaussianBlur(mask, (kernel_size, kernel_size), 0)
@@ -981,11 +986,11 @@ class Animator:
             mask = mask.clip(255 * min_val, 255).astype(np.uint8)
         return Image.fromarray(mask)
     
-    def _span_render_frame(
+    def _render_frame(
         self, 
         frame_idx: int, 
         seed: int, 
-        init: Optional[Image.Image], 
+        init: Optional[Image.Image]=None, 
         mask: Optional[Image.Image]=None, 
         strength: Optional[float]=None
     ) -> Image.Image:
@@ -1023,12 +1028,12 @@ class Animator:
 
         result_image = self.api.transform_and_generate(init, init_ops, generate_request)
 
-        if self.color_match_image is None and args.color_coherence != 'None':
-            self.color_match_image = result_image
+        if args.color_coherence != 'None' and frame_idx == 0:
+            self.color_match_images[0] = result_image
 
         return result_image
 
-    def _span_render(self, start: int, end: int, seed: int, prev_frame: Optional[Image.Image]) -> Generator[Tuple[int, Image.Image], None, None]:
+    def _span_render(self, start: int, end: int, prev_frame: Image.Image, next_seed: Callable[[], int]) -> Generator[Tuple[int, Image.Image], None, None]:
         args = self.args
 
         def apply_xform(frame: Image.Image, xform: matrix.Matrix, frame_idx: int) -> Tuple[Image.Image, Image.Image]:
@@ -1048,9 +1053,6 @@ class Animator:
             masks = cast(List[Image.Image], masks)
             return frames[0], masks[0]
 
-        if prev_frame is None:
-            prev_frame = self._span_render_frame(start, seed, None)
-
         # transform the previous frame forward
         accum_xform = matrix.identity
         forward_frames, forward_masks = [], []
@@ -1063,18 +1065,18 @@ class Animator:
         # inpaint the final frame
         if not np.all(forward_masks[-1]):
             forward_frames[-1] = self.inpaint_frame(
-                end-1, forward_frames[-1], forward_masks[-1], mask_blur_radius=0,
-                seed=None if args.use_inpainting_model else seed)
+                end-1, forward_frames[-1], forward_masks[-1], 
+                mask_blur_radius=0, seed=next_seed())
 
         # run diffusion on top of the final result to allow content to evolve over time
         strength = max(0.0, self.frame_args.strength_curve[end-1])
         if strength < 1.0:
-            final_frame = self._span_render_frame(end-1, seed, forward_frames[-1])
+            final_frame = self._render_frame(end-1, next_seed(), forward_frames[-1])
         else:
             final_frame = forward_frames[-1]
 
         # go backwards through the frames in the span        
-        backward_frames, backward_masks = [final_frame], [np.full_like(forward_masks[-1], 255)]
+        backward_frames, backward_masks = [final_frame], [Image.new('L', forward_masks[-1].size, 255)]
         accum_xform = matrix.identity
         for frame_idx in range(end-2, start-1, -1):
             frame_xform = self.build_frame_xform(frame_idx+1)
@@ -1087,8 +1089,8 @@ class Animator:
         # inpaint the backwards frame
         if not np.all(backward_masks[0]):
             backward_frames[0] = self.inpaint_frame(
-                start, backward_frames[0], backward_masks[0], mask_blur_radius=0,
-                seed=None if args.use_inpainting_model else seed)
+                start, backward_frames[0], backward_masks[0], 
+                mask_blur_radius=0, seed=next_seed())
 
         # yield the final frames blending from forward to backward
         for idx, (frame_fwd, frame_bwd) in enumerate(zip(forward_frames, backward_frames)):
@@ -1105,7 +1107,15 @@ class Animator:
     def _spans_render(self) -> Generator[Tuple[int, Image.Image], None, None]:
         frame_idx = self.start_frame_idx
         seed = self.args.seed
-        prev_frame: Optional[Image.Image] = None
+        def next_seed() -> int:
+            nonlocal seed
+            if not self.args.locked_seed:
+                seed += 1
+            return seed
+
+        prev_frame = self._render_frame(frame_idx, seed, None)
+        yield frame_idx, prev_frame
+
         while frame_idx < self.args.max_frames:
             # determine how many frames the span will process together
             diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_curve[frame_idx]))
@@ -1113,10 +1123,9 @@ class Animator:
                 diffusion_cadence = self.args.max_frames - frame_idx
 
             # render all frames in the span
-            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, seed, prev_frame):
+            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, prev_frame, next_seed):
                 yield idx, frame
                 prev_frame = frame
-                if not self.args.locked_seed:
-                    seed += 1
+                next_seed()
 
             frame_idx += diffusion_cadence
