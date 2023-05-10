@@ -523,10 +523,10 @@ def project_tab():
     button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, project_row_create, project_row_import, project_row_load, header])
     button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log])
 
-def remove_frames_from_path(path, leave_first=None):
+def remove_frames_from_path(path: str, leave_first: Optional[int]=None):
     if os.path.isdir(path):
         frames = sorted(glob.glob(os.path.join(path, "frame_*.png")))
-        if leave_first is not None:
+        if leave_first:
             frames = frames[leave_first:]
         for f in frames:
             os.remove(f)
