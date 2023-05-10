@@ -444,6 +444,10 @@ class Animator:
             self.color_match_images[next] = self._render_frame(next, self.args.seed)
         next_match = self.color_match_images[next]
 
+        # Create image combining colors from previous and next key frames without mixing
+        # the RGB values. Tiles of next key frame are filled in over tiles of previous 
+        # key frame. The tween value increases the subtile size on each axis so the transition
+        # is non-linear - staying with previous key frame longer then quickly moving to next.
         blended = prev_match.copy()
         width, height, tile_size = blended.width, blended.height, 64
         for y in range(0, height, tile_size):
