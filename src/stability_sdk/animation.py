@@ -17,7 +17,7 @@ from dataclasses import dataclass, fields
 from keyframed.dsl import curve_from_cn_string
 from PIL import Image, ImageOps
 from types import SimpleNamespace
-from typing import Callable, cast, Deque, Generator, List, Optional, Tuple, Union
+from typing import Callable, cast, Deque, Dict, Generator, List, Optional, Tuple, Union
 
 from stability_sdk.api import Context, generation
 from stability_sdk.utils import (
@@ -126,6 +126,7 @@ class ColorSettings(param.Parameterized):
     hue_curve = param.String(default="0:(0.0)")
     saturation_curve = param.String(default="0:(1.0)")
     lightness_curve = param.String(default="0:(0.0)")
+    color_match_animate = param.Boolean(default=True, doc="Animate color match between key frames.")
 
 
 class DepthSettings(param.Parameterized):
@@ -272,7 +273,8 @@ def make_xform_2d(
     rotate = matrix.rotation_euler(0, 0, rotation_angle)
     scale = matrix.scale(scale_factor, scale_factor, 1)
     rotate_scale = matrix.multiply(post, matrix.multiply(rotate, matrix.multiply(scale, pre)))
-    translate = matrix.translation(translate_x, translate_y, 0)
+    # match 3D camera translation, +X moves camera to right, +Y moves camera up
+    translate = matrix.translation(-translate_x, translate_y, 0)
     return matrix.multiply(rotate_scale, translate)
 
 def model_supports_clip_guidance(model_name: str) -> bool:
@@ -310,7 +312,7 @@ class Animator:
         self.api = api_context
         self.animation_prompts = animation_prompts
         self.args = args or AnimationArgs()
-        self.color_match_image: Optional[Image.Image] = None
+        self.color_match_images: Optional[Dict[int, Image.Image]] = {}
         self.diffusion_cadence_ofs: int = 0
         self.frame_args: FrameArgs
         self.inpaint_mask: Optional[Image.Image] = None
@@ -386,16 +388,50 @@ class Animator:
         return results[0]
 
     def get_animation_prompts_weights(self, frame_idx: int) -> Tuple[List[str], List[float]]:
+        prev, next, tween = self.get_key_frame_tween(frame_idx)
+        if prev == next or not self.args.interpolate_prompts:
+            return [self.animation_prompts[prev]], [1.0]
+        else:
+            return [self.animation_prompts[prev], self.animation_prompts[next]], [1.0 - tween, tween]
+
+    def get_color_match_image(self, frame_idx: int) -> Image.Image:
+        if not self.args.color_match_animate:
+            return self.color_match_images.get(0)
+
+        prev, next, tween = self.get_key_frame_tween(frame_idx)
+
+        if prev not in self.color_match_images:
+            self.color_match_images[prev] = self._render_frame(prev, self.args.seed)
+        prev_match = self.color_match_images[prev]
+        if prev == next:
+            return prev_match
+
+        if next not in self.color_match_images:
+            self.color_match_images[next] = self._render_frame(next, self.args.seed)
+        next_match = self.color_match_images[next]
+
+        # Create image combining colors from previous and next key frames without mixing
+        # the RGB values. Tiles of next key frame are filled in over tiles of previous 
+        # key frame. The tween value increases the subtile size on each axis so the transition
+        # is non-linear - staying with previous key frame longer then quickly moving to next.
+        blended = prev_match.copy()
+        width, height, tile_size = blended.width, blended.height, 64
+        for y in range(0, height, tile_size):
+            for x in range(0, width, tile_size):
+                cut = next_match.crop((x, y, x + int(tile_size * tween), y + int(tile_size * tween)))
+                blended.paste(cut, (x, y))
+        return blended
+
+    def get_key_frame_tween(self, frame_idx: int) -> Tuple[int, int, float]:
+        """Returns previous and next key frames along with in between ratio"""
         keys = self.key_frame_values
         idx = bisect.bisect_right(keys, frame_idx)
         prev, next = idx - 1, idx
-        if not self.args.interpolate_prompts:
-            return [self.animation_prompts[keys[min(len(keys)-1, prev)]]], [1.0]
-        elif next == len(keys):
-            return [self.animation_prompts[keys[-1]]], [1.0]
+        if next == len(keys):
+            return keys[-1], keys[-1], 1.0
         else:
             tween = (frame_idx - keys[prev]) / (keys[next] - keys[prev])
-            return [self.animation_prompts[keys[prev]], self.animation_prompts[keys[next]]], [1.0 - tween, tween]
+            return keys[prev], keys[next], tween
 
     def get_frame_filename(self, frame_idx, prefix="frame") -> Optional[str]:
         return os.path.join(self.out_dir, f"{prefix}_{frame_idx:05d}.png") if self.out_dir else None
@@ -536,7 +572,11 @@ class Animator:
         lightness = frame_args.lightness_curve[frame_idx]
         noise_amount = frame_args.noise_add_curve[frame_idx]
 
-        do_color_match = args.color_coherence != 'None' and self.color_match_image is not None
+        color_match_image = None
+        if args.color_coherence != 'None' and frame_idx > 0:
+            color_match_image = self.get_color_match_image(frame_idx)
+
+        do_color_match = args.color_coherence != 'None' and color_match_image is not None
         do_bchsl = brightness != 1.0 or contrast != 1.0 or hue != 0.0 or saturation != 1.0 or lightness != 0.0
         do_noise = noise_amount > 0.0
 
@@ -549,7 +589,7 @@ class Animator:
                 hue=hue,
                 saturation=saturation,
                 lightness=lightness,
-                match_image=self.color_match_image,
+                match_image=color_match_image,
                 match_mode=args.color_coherence,
                 noise_amount=noise_amount,
                 noise_seed=noise_seed
@@ -678,8 +718,8 @@ class Animator:
                 )
                 image = self.api.transform_and_generate(init_image, init_image_ops, generate_request)
 
-                if self.color_match_image is None and args.color_coherence != 'None':
-                    self.color_match_image = image
+                if args.color_coherence != 'None' and frame_idx == 0:
+                    self.color_match_images[0] = image
                 if not len(self.prior_frames):
                     self.prior_frames.append(image)
                     self.prior_diffused.append(image)
@@ -946,11 +986,11 @@ class Animator:
             mask = mask.clip(255 * min_val, 255).astype(np.uint8)
         return Image.fromarray(mask)
     
-    def _span_render_frame(
+    def _render_frame(
         self, 
         frame_idx: int, 
         seed: int, 
-        init: Optional[Image.Image], 
+        init: Optional[Image.Image]=None, 
         mask: Optional[Image.Image]=None, 
         strength: Optional[float]=None
     ) -> Image.Image:
@@ -988,8 +1028,8 @@ class Animator:
 
         result_image = self.api.transform_and_generate(init, init_ops, generate_request)
 
-        if self.color_match_image is None and args.color_coherence != 'None':
-            self.color_match_image = result_image
+        if args.color_coherence != 'None' and frame_idx == 0:
+            self.color_match_images[0] = result_image
 
         return result_image
 
@@ -1031,7 +1071,7 @@ class Animator:
         # run diffusion on top of the final result to allow content to evolve over time
         strength = max(0.0, self.frame_args.strength_curve[end-1])
         if strength < 1.0:
-            final_frame = self._span_render_frame(end-1, next_seed(), forward_frames[-1])
+            final_frame = self._render_frame(end-1, next_seed(), forward_frames[-1])
         else:
             final_frame = forward_frames[-1]
 
@@ -1073,7 +1113,7 @@ class Animator:
                 seed += 1
             return seed
 
-        prev_frame = self._span_render_frame(frame_idx, seed, None)
+        prev_frame = self._render_frame(frame_idx, seed, None)
         yield frame_idx, prev_frame
 
         while frame_idx < self.args.max_frames:

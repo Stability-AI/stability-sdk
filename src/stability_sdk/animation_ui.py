@@ -196,6 +196,7 @@ def accordion_for_color(args: ColorSettings):
             controls["hue_curve"] = gr.Text(label="Hue curve", value=p.hue_curve.default, interactive=True)
             controls["saturation_curve"] = gr.Text(label="Saturation curve", value=p.saturation_curve.default, interactive=True)
             controls["lightness_curve"] = gr.Text(label="Lightness curve", value=p.lightness_curve.default, interactive=True)
+        controls["color_match_animate"] = gr.Checkbox(label="Animated color match", value=p.color_match_animate.default, interactive=True)
 
 def accordion_from_args(name: str, args: param.Parameterized, exclude: List[str]=[], open=False):
     with gr.Accordion(name, open=open):
