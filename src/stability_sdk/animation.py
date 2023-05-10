@@ -15,9 +15,9 @@ import subprocess
 from collections import OrderedDict, deque
 from dataclasses import dataclass, fields
 from keyframed.dsl import curve_from_cn_string
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageOps
 from types import SimpleNamespace
-from typing import cast, Deque, Generator, List, Optional, Tuple, Union
+from typing import Callable, cast, Deque, Generator, List, Optional, Tuple, Union
 
 from stability_sdk.api import Context, generation
 from stability_sdk.utils import (
@@ -70,7 +70,7 @@ class BasicSettings(param.Parameterized):
     custom_model = param.String(default="", doc="Identifier of custom model to use.")
     seed = param.Integer(default=-1, doc="Provide a seed value for more deterministic behavior. Negative seed values will be replaced with a random seed (default).")
     cfg_scale = param.Number(default=7, softbounds=(0,20), doc="Classifier-free guidance scale. Strength of prompt influence on denoising process. `cfg_scale=0` gives unconditioned sampling.")
-    clip_guidance = param.Selector(default='FastBlue', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
+    clip_guidance = param.Selector(default='None', objects=["None", "Simple", "FastBlue", "FastGreen"], doc="CLIP-guidance preset.")
     init_image = param.String(default='', doc="Path to image. Height and width dimensions will be inherited from image.")
     init_sizing = param.Selector(default='stretch', objects=["cover", "stretch", "resize-canvas"])
     mask_path = param.String(default="", doc="Path to image or video mask")
@@ -436,7 +436,7 @@ class Animator:
 
         if args.use_inpainting_model:
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, blur_radius=mask_blur_radius)
+                mask, binarize=True, blur_radius=mask_blur_radius)
             results = self.api.inpaint(
                 image, binary_mask,
                 prompts, weights, 
@@ -452,8 +452,7 @@ class Animator:
         else:
             mask_min_value = self.frame_args.mask_min_value[frame_idx]
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
-            mask_min_value = np.array(binary_mask).min() / 255.  # Mask's actual min value might be higher than the threshold
+                mask, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
             adjusted_steps = max(5, int(steps * (1.0 - mask_min_value))) if args.steps_strength_adj else steps
             noise_scale = self.frame_args.noise_scale_curve[frame_idx]
             results = self.api.generate(
@@ -649,7 +648,7 @@ class Animator:
                     mask_min_value = self.frame_args.mask_min_value[frame_idx]
                     init_strength = min(strength, mask_min_value) 
                     self.inpaint_mask = self._postprocess_inpainting_mask(
-                        self.inpaint_mask, frame_idx, 
+                        self.inpaint_mask, 
                         mask_pow=args.mask_power if args.animation_mode == '3D render' else None,
                         mask_multiplier=strength,
                         blur_radius=None,
@@ -921,7 +920,6 @@ class Animator:
     def _postprocess_inpainting_mask(
         self,
         mask: Union[Image.Image, np.ndarray],
-        frame_idx: int,
         mask_pow: Optional[float] = None,
         mask_multiplier: Optional[float] = None,
         binarize: bool = False,
@@ -930,7 +928,7 @@ class Animator:
     ) -> Image.Image:
         # Being applied in 3D render mode. Camera pose transform operation returns a mask which pixel values encode
         # how much signal from the previous frame is present there. But a mapping from the signal presence values
-        # to the optimal per-pixel init strength is unknown, and roughly guessed as a per-pixel power fuction.
+        # to the optimal per-pixel init strength is unknown, and roughly guessed as a per-pixel power function.
         # Leaving mask_pow=1 results in near objects changing to a greater extent than a natural emergence of fine details when approaching an object.
         if isinstance(mask, Image.Image):
             mask = np.array(mask)
@@ -940,7 +938,7 @@ class Animator:
             mask = (mask * mask_multiplier).astype(np.uint8)
         if binarize:
             mask = np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
-        if blur_radius is not None:
+        if blur_radius:
             kernel_size = blur_radius*2+1
             mask = cv2.erode(mask, np.ones((kernel_size, kernel_size), np.uint8))
             mask = cv2.GaussianBlur(mask, (kernel_size, kernel_size), 0)
@@ -995,7 +993,7 @@ class Animator:
 
         return result_image
 
-    def _span_render(self, start: int, end: int, seed: int, prev_frame: Optional[Image.Image]) -> Generator[Tuple[int, Image.Image], None, None]:
+    def _span_render(self, start: int, end: int, prev_frame: Image.Image, next_seed: Callable[[], int]) -> Generator[Tuple[int, Image.Image], None, None]:
         args = self.args
 
         def apply_xform(frame: Image.Image, xform: matrix.Matrix, frame_idx: int) -> Tuple[Image.Image, Image.Image]:
@@ -1015,9 +1013,6 @@ class Animator:
             masks = cast(List[Image.Image], masks)
             return frames[0], masks[0]
 
-        if prev_frame is None:
-            prev_frame = self._span_render_frame(start, seed, None)
-
         # transform the previous frame forward
         accum_xform = matrix.identity
         forward_frames, forward_masks = [], []
@@ -1030,18 +1025,18 @@ class Animator:
         # inpaint the final frame
         if not np.all(forward_masks[-1]):
             forward_frames[-1] = self.inpaint_frame(
-                end-1, forward_frames[-1], forward_masks[-1], mask_blur_radius=0,
-                seed=None if args.use_inpainting_model else seed)
+                end-1, forward_frames[-1], forward_masks[-1], 
+                mask_blur_radius=0, seed=next_seed())
 
         # run diffusion on top of the final result to allow content to evolve over time
         strength = max(0.0, self.frame_args.strength_curve[end-1])
         if strength < 1.0:
-            final_frame = self._span_render_frame(end-1, seed, forward_frames[-1])
+            final_frame = self._span_render_frame(end-1, next_seed(), forward_frames[-1])
         else:
             final_frame = forward_frames[-1]
 
         # go backwards through the frames in the span        
-        backward_frames, backward_masks = [final_frame], [np.full_like(forward_masks[-1], 255)]
+        backward_frames, backward_masks = [final_frame], [Image.new('L', forward_masks[-1].size, 255)]
         accum_xform = matrix.identity
         for frame_idx in range(end-2, start-1, -1):
             frame_xform = self.build_frame_xform(frame_idx+1)
@@ -1054,8 +1049,8 @@ class Animator:
         # inpaint the backwards frame
         if not np.all(backward_masks[0]):
             backward_frames[0] = self.inpaint_frame(
-                start, backward_frames[0], backward_masks[0], mask_blur_radius=0,
-                seed=None if args.use_inpainting_model else seed)
+                start, backward_frames[0], backward_masks[0], 
+                mask_blur_radius=0, seed=next_seed())
 
         # yield the final frames blending from forward to backward
         for idx, (frame_fwd, frame_bwd) in enumerate(zip(forward_frames, backward_frames)):
@@ -1072,7 +1067,15 @@ class Animator:
     def _spans_render(self) -> Generator[Tuple[int, Image.Image], None, None]:
         frame_idx = self.start_frame_idx
         seed = self.args.seed
-        prev_frame: Optional[Image.Image] = None
+        def next_seed() -> int:
+            nonlocal seed
+            if not self.args.locked_seed:
+                seed += 1
+            return seed
+
+        prev_frame = self._span_render_frame(frame_idx, seed, None)
+        yield frame_idx, prev_frame
+
         while frame_idx < self.args.max_frames:
             # determine how many frames the span will process together
             diffusion_cadence = max(1, int(self.frame_args.diffusion_cadence_curve[frame_idx]))
@@ -1080,10 +1083,9 @@ class Animator:
                 diffusion_cadence = self.args.max_frames - frame_idx
 
             # render all frames in the span
-            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, seed, prev_frame):
+            for idx, frame in self._span_render(frame_idx, frame_idx + diffusion_cadence, prev_frame, next_seed):
                 yield idx, frame
                 prev_frame = frame
-                if not self.args.locked_seed:
-                    seed += 1
+                next_seed()
 
             frame_idx += diffusion_cadence
