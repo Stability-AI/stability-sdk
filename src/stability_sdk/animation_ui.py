@@ -44,7 +44,7 @@ from .utils import interpolate_mode_from_string
 
 
 DATA_VERSION = "0.1"
-DATA_GENERATOR = "alpha-test-notebook"
+DATA_GENERATOR = "stability_sdk.animation_ui"
 
 PRESETS = {
     "Default": {},
