@@ -126,6 +126,7 @@ class ColorSettings(param.Parameterized):
     hue_curve = param.String(default="0:(0.0)")
     saturation_curve = param.String(default="0:(1.0)")
     lightness_curve = param.String(default="0:(0.0)")
+    color_match_animate = param.Boolean(default=True, doc="Animate color match between key frames.")
 
 
 class DepthSettings(param.Parameterized):
@@ -306,7 +307,8 @@ def make_xform_2d(
     rotate = matrix.rotation_euler(0, 0, rotation_angle)
     scale = matrix.scale(scale_factor, scale_factor, 1)
     rotate_scale = matrix.multiply(post, matrix.multiply(rotate, matrix.multiply(scale, pre)))
-    translate = matrix.translation(translate_x, translate_y, 0)
+    # match 3D camera translation, +X moves camera to right, +Y moves camera up
+    translate = matrix.translation(-translate_x, translate_y, 0)
     return matrix.multiply(rotate_scale, translate)
 
 def model_supports_clip_guidance(model_name: str) -> bool:
@@ -427,6 +429,9 @@ class Animator:
             return [self.animation_prompts[prev], self.animation_prompts[next]], [1.0 - tween, tween]
 
     def get_color_match_image(self, frame_idx: int) -> Image.Image:
+        if not self.args.color_match_animate:
+            return self.color_match_images.get(0)
+
         prev, next, tween = self.get_key_frame_tween(frame_idx)
 
         if prev not in self.color_match_images:
@@ -497,7 +502,7 @@ class Animator:
 
         if args.use_inpainting_model:
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, blur_radius=mask_blur_radius)
+                mask, binarize=True, blur_radius=mask_blur_radius)
             results = self.api.inpaint(
                 image, binary_mask,
                 prompts, weights, 
@@ -513,7 +518,7 @@ class Animator:
         else:
             mask_min_value = self.frame_args.mask_min_value[frame_idx]
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
+                mask, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
             adjusted_steps = max(5, int(steps * (1.0 - mask_min_value))) if args.steps_strength_adj else steps
             noise_scale = self.frame_args.noise_scale_curve[frame_idx]
             results = self.api.generate(
@@ -713,7 +718,7 @@ class Animator:
                     mask_min_value = self.frame_args.mask_min_value[frame_idx]
                     init_strength = min(strength, mask_min_value) 
                     self.inpaint_mask = self._postprocess_inpainting_mask(
-                        self.inpaint_mask, frame_idx, 
+                        self.inpaint_mask, 
                         mask_pow=args.mask_power if args.animation_mode == '3D render' else None,
                         mask_multiplier=strength,
                         blur_radius=None,
