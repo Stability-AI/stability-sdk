@@ -435,13 +435,13 @@ class Animator:
         prev, next, tween = self.get_key_frame_tween(frame_idx)
 
         if prev not in self.color_match_images:
-            self.color_match_images[prev] = self._span_render_frame(prev, self.args.seed)
+            self.color_match_images[prev] = self._render_frame(prev, self.args.seed)
         prev_match = self.color_match_images[prev]
         if prev == next:
             return prev_match
 
         if next not in self.color_match_images:
-            self.color_match_images[next] = self._span_render_frame(next, self.args.seed)
+            self.color_match_images[next] = self._render_frame(next, self.args.seed)
         next_match = self.color_match_images[next]
 
         blended = prev_match.copy()
@@ -1016,7 +1016,7 @@ class Animator:
             mask = mask.clip(255 * min_val, 255).astype(np.uint8)
         return Image.fromarray(mask)
     
-    def _span_render_frame(
+    def _render_frame(
         self, 
         frame_idx: int, 
         seed: int, 
@@ -1101,7 +1101,7 @@ class Animator:
         # run diffusion on top of the final result to allow content to evolve over time
         strength = max(0.0, self.frame_args.strength_curve[end-1])
         if strength < 1.0:
-            final_frame = self._span_render_frame(end-1, next_seed(), forward_frames[-1])
+            final_frame = self._render_frame(end-1, next_seed(), forward_frames[-1])
         else:
             final_frame = forward_frames[-1]
 
@@ -1143,7 +1143,7 @@ class Animator:
                 seed += 1
             return seed
 
-        prev_frame = self._span_render_frame(frame_idx, seed, None)
+        prev_frame = self._render_frame(frame_idx, seed, None)
         yield frame_idx, prev_frame
 
         while frame_idx < self.args.max_frames:
