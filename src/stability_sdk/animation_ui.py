@@ -44,11 +44,14 @@ from .utils import interpolate_mode_from_string
 
 
 DATA_VERSION = "0.1"
-DATA_GENERATOR = "alpha-test-notebook"
+DATA_GENERATOR = "stability_sdk.animation_ui"
 
 PRESETS = {
     "Default": {},
-    "3D warp rotate": {"animation_mode": "3D warp", "rotation_y":"0:(0.4)", "translation_x":"0:(-1.2)"},
+    "3D warp rotate": {
+        "animation_mode": "3D warp", "rotation_y":"0:(0.4)", "translation_x":"0:(-1.2)", "depth_model_weight":1.0,
+        "animation_prompts": "{\n0:\"a flower vase on a table\"\n}"
+    },
     "3D warp zoom": {
         "animation_mode":"3D warp", "diffusion_cadence_curve":"0:(4)", "noise_scale_curve":"0:(1.04)", 
         "strength_curve":"0:(0.7)", "translation_z":"0:(1.0)",
@@ -69,7 +72,7 @@ PRESETS = {
         "animation_prompts": "{\n0:\"Phantasmagoric carnival, carnival attractions shifting and changing, bizarre surreal circus\"\n}"
     },
     "Prompt interpolate": {
-        "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":48, 
+        "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":24, 
         "strength_curve":"0:(0)", "diffusion_cadence_curve":"0:(4)", "cadence_interp":"film",
         "clip_guidance":"None", "animation_prompts": "{\n0:\"a photo of a cute cat\",\n24:\"a photo of a cute dog\"\n}"
     },
@@ -79,8 +82,8 @@ PRESETS = {
         "animation_prompts": "{\n0:\"Mystical pumpkin field landscapes on starry Halloween night, pop surrealism art\"\n}"
     },
     "Outpaint": {
-        "animation_mode":"2D", "diffusion_cadence_curve":"0:(24)", "cadence_spans":True, "strength_curve":"0:(0.75)",
-        "inpaint_border":True, "use_inpainting_model":True, "zoom":"0:(0.95)",
+        "animation_mode":"2D", "diffusion_cadence_curve":"0:(16)", "cadence_spans":True, "use_inpainting_model":True,
+        "strength_curve":"0:(1)", "reverse":True, "preset": "fantasy-art", "inpaint_border":True, "zoom":"0:(0.95)", 
         "animation_prompts": "{\n0:\"an ancient and magical portal, in a fantasy corridor\"\n}"
     },
     "Video Stylize": {
@@ -402,15 +405,16 @@ def project_import(title, file):
     titles = [p.title for p in projects]
     if title in titles:
         raise gr.Error(f"Project with title '{title}' already exists")
-    project = Project.create(context, title)
-    projects.append(project)
-    projects = sorted(projects, key=lambda p: p.title)
 
     # read json from file
     try:
-        project.settings = json.loads(file.decode('utf-8'))
+        settings = json.loads(file.decode('utf-8'))
     except Exception as e:
         raise gr.Error(f"Failed to read settings from file: {e}")
+
+    project = Project(title, settings)
+    projects.append(project)
+    projects = sorted(projects, key=lambda p: p.title)
 
     log = f"Imported project '{title}'"
 
@@ -451,7 +455,12 @@ def project_tab():
             projects_dropdown.render()
             with gr.Column():
                 project_load_button.render()
-                button_delete_project = gr.Button("Delete")
+                with gr.Row():
+                    delete_btn = gr.Button("Delete")
+                    confirm_btn = gr.Button("Confirm delete", variant="stop", visible=False)
+                    cancel_btn = gr.Button("Cancel", visible=False)                
+                delete_btn.click(lambda :[gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)], None, [delete_btn, confirm_btn, cancel_btn])
+                cancel_btn.click(lambda :[gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)], None, [delete_btn, confirm_btn, cancel_btn])
 
     with gr.Accordion("Create a new project", open=True, visible=False) as project_row_create_:
         project_row_create = project_row_create_
@@ -476,17 +485,23 @@ def project_tab():
     def delete_project(title: str):
         ensure_api_context()
         global project, projects
+
         project = next(p for p in projects if p.title == title)
+        project_path = os.path.join(outputs_path, project.folder)
+        if os.path.exists(project_path):
+            shutil.rmtree(project_path)
+
         projects.remove(project)
         project = None
 
-        shutil.rmtree(os.path.join(outputs_path, project.path))
-
-        log = f"Deleted project '{title}'"
+        log = f"Deleted project \"{title}\" at \"{project_path}\""
         return {
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
             project_row_load: gr.update(visible=len(projects) > 0),
-            project_data_log: gr.update(value=log, visible=True)
+            project_data_log: gr.update(value=log, visible=True),
+            delete_btn: gr.update(visible=True), 
+            confirm_btn: gr.update(visible=False), 
+            cancel_btn: gr.update(visible=False)
         }
 
     def load_projects():
@@ -503,7 +518,7 @@ def project_tab():
         }
 
     button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, project_row_create, project_row_import, project_row_load, header])
-    button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log])
+    confirm_btn.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log, delete_btn, confirm_btn, cancel_btn])
 
 def remove_frames_from_path(path):
     if os.path.isdir(path):
@@ -623,7 +638,11 @@ def render_tab():
             last_project_settings_path = project_settings_path
             last_interp_factor, last_interp_mode, last_upscale = None, None, None
             output_video = project_settings_path.replace(".json", ".mp4")
-            create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
+            try:
+                create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
+            except RuntimeError as e:
+                error = f"Error creating video: {e}"
+                output_video = None
         else:
             output_video = None
         yield {
