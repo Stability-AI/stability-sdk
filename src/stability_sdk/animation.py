@@ -487,6 +487,7 @@ class Animator:
             mask_min_value = self.frame_args.mask_min_value[frame_idx]
             binary_mask = self._postprocess_inpainting_mask(
                 mask, frame_idx, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
+            mask_min_value = np.array(binary_mask).min() / 255.  # Mask's actual min value might be higher than the threshold
             adjusted_steps = max(5, int(steps * (1.0 - mask_min_value))) if args.steps_strength_adj else steps
             noise_scale = self.frame_args.noise_scale_curve[frame_idx]
             results = self.api.generate(
@@ -972,7 +973,7 @@ class Animator:
         if mask_multiplier is not None:
             mask = (mask * mask_multiplier).astype(np.uint8)
         if binarize:
-            np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
+            mask = np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
         if blur_radius is not None:
             kernel_size = blur_radius*2+1
             mask = cv2.erode(mask, np.ones((kernel_size, kernel_size), np.uint8))
