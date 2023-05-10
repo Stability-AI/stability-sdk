@@ -147,7 +147,7 @@ class InpaintingSettings(param.Parameterized):
     use_inpainting_model = param.Boolean(default=False, doc="If True, inpainting will be performed using dedicated inpainting model. If False, inpainting will be performed with the regular model that is selected")
     inpaint_border = param.Boolean(default=False, doc="Use inpainting on top of border regions for 2D and 3D warp modes. Defaults to False")
     mask_min_value = param.String(default="0:(0.25)", doc="Mask postprocessing for non-inpainting model. Mask floor values will be clipped by this value prior to inpainting")
-    mask_binarization_thr = param.Number(default=0.15, softbounds=(0,1), doc="Applied when inpainting with inpainting model. Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
+    mask_binarization_thr = param.Number(default=0.5, softbounds=(0,1), doc="Grayscale mask values lower than this value will be set to 0, values that are higher — to 1.")
     save_inpaint_masks = param.Boolean(default=False)
 
 class VideoInputSettings(param.Parameterized):
@@ -214,40 +214,6 @@ def args_to_dict(args):
         return OrderedDict(vars(args))
     else:
         raise NotImplementedError(f"Unsupported arguments object type: {type(args)}")
-
-def create_video_from_frames(frames_path: str, mp4_path: str, fps: int=24, reverse: bool=False):
-    """
-    Convert a series of image frames to a video file using ffmpeg.
-
-    :param frames_path: The path to the directory containing the image frames named frame_00000.png, frame_00001.png, etc.
-    :param mp4_path: The path to save the output video file.
-    :param fps: The frames per second for the output video. Default is 24.
-    :param reverse: A flag to reverse the order of the frames in the output video. Default is False.
-    """
-
-    cmd = [
-        'ffmpeg',
-        '-y',
-        '-vcodec', 'png',
-        '-r', str(fps),
-        '-start_number', str(0),
-        '-i', os.path.join(frames_path, "frame_%05d.png"),
-        '-c:v', 'libx264',
-        '-vf',
-        f'fps={fps}',
-        '-pix_fmt', 'yuv420p',
-        '-crf', '17',
-        '-preset', 'veryslow',
-        mp4_path
-    ]
-    if reverse:
-        cmd.insert(-1, '-vf')
-        cmd.insert(-1, 'reverse')    
-
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, stderr = process.communicate()
-    if process.returncode != 0:
-        raise RuntimeError(stderr)
 
 def cv2_to_pil(cv2_img: np.ndarray) -> Image.Image:
     """Convert a cv2 BGR ndarray to a PIL Image"""
@@ -971,7 +937,7 @@ class Animator:
         if mask_multiplier is not None:
             mask = (mask * mask_multiplier).astype(np.uint8)
         if binarize:
-            np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
+            mask = np.where(mask > self.args.mask_binarization_thr * 255, 255, 0).astype(np.uint8)
         if blur_radius:
             kernel_size = blur_radius*2+1
             mask = cv2.erode(mask, np.ones((kernel_size, kernel_size), np.uint8))

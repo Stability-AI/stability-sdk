@@ -37,10 +37,13 @@ from .animation import (
     Rendering3dSettings,
     VideoInputSettings,
     VideoOutputSettings,
-    create_video_from_frames,
     interpolate_frames
 )
-from .utils import interpolate_mode_from_string
+from .utils import (
+    create_video_from_frames,
+    extract_frames_from_video,
+    interpolate_mode_from_string
+)
 
 
 DATA_VERSION = "0.1"
@@ -163,6 +166,9 @@ last_project_settings_path = None
 last_upscale = None
 projects: List[Project] = []
 project: Optional[Project] = None
+resume_checkbox = gr.Checkbox(label="Resume", value=False, interactive=True)
+resume_from_number = gr.Number(label="Resume from frame", value=-1, interactive=True, precision=0,
+                               info="Positive frame number to resume from, or -1 to resume from the last")
 
 project_create_button = gr.Button("Create")
 project_data_log = gr.Textbox(label="Status", visible=False)
@@ -266,7 +272,10 @@ def get_default_project():
 def post_process_tab():
     with gr.Row():
         with gr.Column():
-            fps = gr.Number(label="FPS", value=24, interactive=True, precision=0)
+            with gr.Row():
+                use_video_instead = gr.Checkbox(label="Postprocess a video instead", value=False, interactive=True)
+                video_to_postprocess = gr.Text(label="Videofile to postprocess", value="", interactive=True)
+            fps = gr.Number(label="Output FPS", value=24, interactive=True, precision=0)
             reverse = gr.Checkbox(label="Reverse", value=False, interactive=True)
             with gr.Row():
                 frame_interp_mode = gr.Dropdown(label="Frame interpolation mode", choices=['None', 'film', 'rife'], value='None', interactive=True)       
@@ -280,11 +289,14 @@ def post_process_tab():
             stop_button = gr.Button("Stop", visible=False)
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool):
+    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool,
+                          use_video_instead: bool, video_to_postprocess: str):
         global interrupt, last_interp_factor, last_interp_mode, last_upscale
         interrupt = False
-        if last_project_settings_path is None:
-            raise gr.Error("Must render an animation first")
+        if not use_video_instead and last_project_settings_path is None:
+            raise gr.Error("Please render an animation first or specify a videofile to postprocess")
+        if use_video_instead and not os.path.exists(video_to_postprocess):
+            raise gr.Error("Videofile does not exist")
 
         yield {
             header: gr.update(),
@@ -297,7 +309,9 @@ def post_process_tab():
 
         error = None
         try:
-            outdir = os.path.dirname(last_project_settings_path)
+            outdir = os.path.dirname(last_project_settings_path) \
+                if not use_video_instead \
+                else extract_frames_from_video(video_to_postprocess)
             suffix = ""
 
             can_skip_upscale = last_upscale == upscale
@@ -307,7 +321,7 @@ def post_process_tab():
                 suffix += "_x2"
                 upscale_dir = os.path.join(outdir, "upscale") 
                 os.makedirs(upscale_dir, exist_ok=True)
-                frame_paths = glob.glob(os.path.join(outdir, "frame_*.png"))
+                frame_paths = sorted(glob.glob(os.path.join(outdir, "frame_*.png")))
                 num_frames = len(frame_paths)
                 if not can_skip_upscale:
                     remove_frames_from_path(upscale_dir)
@@ -349,7 +363,11 @@ def post_process_tab():
                     last_interp_mode, last_interp_factor = interp_mode, interp_factor
                 outdir = interp_dir
 
-            output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            if not use_video_instead:
+                output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            else:
+                _, video_ext = os.path.splitext(video_to_postprocess)
+                output_video = video_to_postprocess.replace(video_ext, f"{suffix}.mp4")
             create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
         except Exception as e:
             traceback.print_exc()
@@ -366,7 +384,7 @@ def post_process_tab():
 
     process_button.click(
         postprocess_video, 
-        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale], 
+        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale, use_video_instead, video_to_postprocess], 
         outputs=[header, image_out, video_out, process_button, stop_button, error_log]
     )    
 
@@ -520,9 +538,12 @@ def project_tab():
     button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, project_row_create, project_row_import, project_row_load, header])
     confirm_btn.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log, delete_btn, confirm_btn, cancel_btn])
 
-def remove_frames_from_path(path):
+def remove_frames_from_path(path: str, leave_first: Optional[int]=None):
     if os.path.isdir(path):
-        for f in glob.glob(os.path.join(path, "frame_*.png")):
+        frames = sorted(glob.glob(os.path.join(path, "frame_*.png")))
+        if leave_first:
+            frames = frames[leave_first:]
+        for f in frames:
             os.remove(f)
 
 def render_tab():
@@ -536,7 +557,7 @@ def render_tab():
             button_stop = gr.Button("Stop", visible=False)
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def render(*render_args):
+    def render(resume: bool, resume_from: int, *render_args):
         global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, last_upscale, project
         interrupt = False
 
@@ -596,7 +617,13 @@ def render_tab():
         }
 
         # delete frames from previous animation
-        remove_frames_from_path(outdir)
+        if resume:
+            if resume_from > 0:
+                remove_frames_from_path(outdir, resume_from)
+            elif resume_from == 0 or resume_from < -1:
+                raise gr.Error("Frame number to resume from must be positive, or -1 to resume from the last frame")
+        else:
+            remove_frames_from_path(outdir)
 
         frame_idx, error = 0, None
         try:
@@ -607,9 +634,9 @@ def render_tab():
                 out_dir=outdir,
                 negative_prompt=negative_prompt,
                 negative_prompt_weight=negative_prompt_weight,
-                resume=False,
+                resume=resume,
             )
-            for frame_idx, frame in enumerate(tqdm(animator.render(), initial=animator.start_frame_idx, total=args.max_frames)):
+            for frame_idx, frame in enumerate(tqdm(animator.render(), initial=animator.start_frame_idx, total=args.max_frames), start=animator.start_frame_idx):
                 if interrupt:
                     break
 
@@ -656,7 +683,7 @@ def render_tab():
 
     button.click(
         render,
-        inputs=list(controls.values()),
+        inputs=[resume_checkbox, resume_from_number] + list(controls.values()),
         outputs=[button, button_stop, image_out, video_out, header, error_log]
     )
 
@@ -744,6 +771,9 @@ def ui_layout_tabs():
         accordion_from_args("3D render", args_render_3d, open=False)
         accordion_from_args("Inpainting", args_inpaint, open=False)
     with gr.Tab("Input"):
+        with gr.Row():
+            resume_checkbox.render()
+            resume_from_number.render()
         ui_for_init_and_mask(args_generation)
         with gr.Column():
             p = args_vid_in.param
