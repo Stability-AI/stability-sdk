@@ -470,7 +470,7 @@ class Animator:
 
         if args.use_inpainting_model:
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, blur_radius=mask_blur_radius)
+                mask, binarize=True, blur_radius=mask_blur_radius)
             results = self.api.inpaint(
                 image, binary_mask,
                 prompts, weights, 
@@ -486,7 +486,7 @@ class Animator:
         else:
             mask_min_value = self.frame_args.mask_min_value[frame_idx]
             binary_mask = self._postprocess_inpainting_mask(
-                mask, frame_idx, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
+                mask, binarize=True, min_val=mask_min_value, blur_radius=mask_blur_radius)
             adjusted_steps = max(5, int(steps * (1.0 - mask_min_value))) if args.steps_strength_adj else steps
             noise_scale = self.frame_args.noise_scale_curve[frame_idx]
             results = self.api.generate(
@@ -682,7 +682,7 @@ class Animator:
                     mask_min_value = self.frame_args.mask_min_value[frame_idx]
                     init_strength = min(strength, mask_min_value) 
                     self.inpaint_mask = self._postprocess_inpainting_mask(
-                        self.inpaint_mask, frame_idx, 
+                        self.inpaint_mask, 
                         mask_pow=args.mask_power if args.animation_mode == '3D render' else None,
                         mask_multiplier=strength,
                         blur_radius=None,
