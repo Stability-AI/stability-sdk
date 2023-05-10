@@ -37,18 +37,24 @@ from .animation import (
     Rendering3dSettings,
     VideoInputSettings,
     VideoOutputSettings,
-    create_video_from_frames,
     interpolate_frames
 )
-from .utils import interpolate_mode_from_string
+from .utils import (
+    create_video_from_frames,
+    extract_frames_from_video,
+    interpolate_mode_from_string
+)
 
 
 DATA_VERSION = "0.1"
-DATA_GENERATOR = "alpha-test-notebook"
+DATA_GENERATOR = "stability_sdk.animation_ui"
 
 PRESETS = {
     "Default": {},
-    "3D warp rotate": {"animation_mode": "3D warp", "rotation_y":"0:(0.4)", "translation_x":"0:(-1.2)"},
+    "3D warp rotate": {
+        "animation_mode": "3D warp", "rotation_y":"0:(0.4)", "translation_x":"0:(-1.2)", "depth_model_weight":1.0,
+        "animation_prompts": "{\n0:\"a flower vase on a table\"\n}"
+    },
     "3D warp zoom": {
         "animation_mode":"3D warp", "diffusion_cadence_curve":"0:(4)", "noise_scale_curve":"0:(1.04)", 
         "strength_curve":"0:(0.7)", "translation_z":"0:(1.0)",
@@ -69,7 +75,7 @@ PRESETS = {
         "animation_prompts": "{\n0:\"Phantasmagoric carnival, carnival attractions shifting and changing, bizarre surreal circus\"\n}"
     },
     "Prompt interpolate": {
-        "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":48, 
+        "animation_mode":"2D", "interpolate_prompts":True, "locked_seed":True, "max_frames":24, 
         "strength_curve":"0:(0)", "diffusion_cadence_curve":"0:(4)", "cadence_interp":"film",
         "clip_guidance":"None", "animation_prompts": "{\n0:\"a photo of a cute cat\",\n24:\"a photo of a cute dog\"\n}"
     },
@@ -79,8 +85,8 @@ PRESETS = {
         "animation_prompts": "{\n0:\"Mystical pumpkin field landscapes on starry Halloween night, pop surrealism art\"\n}"
     },
     "Outpaint": {
-        "animation_mode":"2D", "diffusion_cadence_curve":"0:(24)", "cadence_spans":True, "strength_curve":"0:(0.75)",
-        "inpaint_border":True, "use_inpainting_model":True, "zoom":"0:(0.95)",
+        "animation_mode":"2D", "diffusion_cadence_curve":"0:(16)", "cadence_spans":True, "use_inpainting_model":True,
+        "strength_curve":"0:(1)", "reverse":True, "preset": "fantasy-art", "inpaint_border":True, "zoom":"0:(0.95)", 
         "animation_prompts": "{\n0:\"an ancient and magical portal, in a fantasy corridor\"\n}"
     },
     "Video Stylize": {
@@ -160,6 +166,9 @@ last_project_settings_path = None
 last_upscale = None
 projects: List[Project] = []
 project: Optional[Project] = None
+resume_checkbox = gr.Checkbox(label="Resume", value=False, interactive=True)
+resume_from_number = gr.Number(label="Resume from frame", value=-1, interactive=True, precision=0,
+                               info="Positive frame number to resume from, or -1 to resume from the last")
 
 project_create_button = gr.Button("Create")
 project_data_log = gr.Textbox(label="Status", visible=False)
@@ -187,6 +196,7 @@ def accordion_for_color(args: ColorSettings):
             controls["hue_curve"] = gr.Text(label="Hue curve", value=p.hue_curve.default, interactive=True)
             controls["saturation_curve"] = gr.Text(label="Saturation curve", value=p.saturation_curve.default, interactive=True)
             controls["lightness_curve"] = gr.Text(label="Lightness curve", value=p.lightness_curve.default, interactive=True)
+        controls["color_match_animate"] = gr.Checkbox(label="Animated color match", value=p.color_match_animate.default, interactive=True)
 
 def accordion_from_args(name: str, args: param.Parameterized, exclude: List[str]=[], open=False):
     with gr.Accordion(name, open=open):
@@ -263,7 +273,10 @@ def get_default_project():
 def post_process_tab():
     with gr.Row():
         with gr.Column():
-            fps = gr.Number(label="FPS", value=24, interactive=True, precision=0)
+            with gr.Row():
+                use_video_instead = gr.Checkbox(label="Postprocess a video instead", value=False, interactive=True)
+                video_to_postprocess = gr.Text(label="Videofile to postprocess", value="", interactive=True)
+            fps = gr.Number(label="Output FPS", value=24, interactive=True, precision=0)
             reverse = gr.Checkbox(label="Reverse", value=False, interactive=True)
             with gr.Row():
                 frame_interp_mode = gr.Dropdown(label="Frame interpolation mode", choices=['None', 'film', 'rife'], value='None', interactive=True)       
@@ -277,11 +290,14 @@ def post_process_tab():
             stop_button = gr.Button("Stop", visible=False)
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool):
+    def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool,
+                          use_video_instead: bool, video_to_postprocess: str):
         global interrupt, last_interp_factor, last_interp_mode, last_upscale
         interrupt = False
-        if last_project_settings_path is None:
-            raise gr.Error("Must render an animation first")
+        if not use_video_instead and last_project_settings_path is None:
+            raise gr.Error("Please render an animation first or specify a videofile to postprocess")
+        if use_video_instead and not os.path.exists(video_to_postprocess):
+            raise gr.Error("Videofile does not exist")
 
         yield {
             header: gr.update(),
@@ -294,7 +310,9 @@ def post_process_tab():
 
         error = None
         try:
-            outdir = os.path.dirname(last_project_settings_path)
+            outdir = os.path.dirname(last_project_settings_path) \
+                if not use_video_instead \
+                else extract_frames_from_video(video_to_postprocess)
             suffix = ""
 
             can_skip_upscale = last_upscale == upscale
@@ -304,7 +322,7 @@ def post_process_tab():
                 suffix += "_x2"
                 upscale_dir = os.path.join(outdir, "upscale") 
                 os.makedirs(upscale_dir, exist_ok=True)
-                frame_paths = glob.glob(os.path.join(outdir, "frame_*.png"))
+                frame_paths = sorted(glob.glob(os.path.join(outdir, "frame_*.png")))
                 num_frames = len(frame_paths)
                 if not can_skip_upscale:
                     remove_frames_from_path(upscale_dir)
@@ -346,7 +364,11 @@ def post_process_tab():
                     last_interp_mode, last_interp_factor = interp_mode, interp_factor
                 outdir = interp_dir
 
-            output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            if not use_video_instead:
+                output_video = last_project_settings_path.replace(".json", f"{suffix}.mp4")
+            else:
+                _, video_ext = os.path.splitext(video_to_postprocess)
+                output_video = video_to_postprocess.replace(video_ext, f"{suffix}.mp4")
             create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
         except Exception as e:
             traceback.print_exc()
@@ -363,7 +385,7 @@ def post_process_tab():
 
     process_button.click(
         postprocess_video, 
-        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale], 
+        inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale, use_video_instead, video_to_postprocess], 
         outputs=[header, image_out, video_out, process_button, stop_button, error_log]
     )    
 
@@ -402,15 +424,16 @@ def project_import(title, file):
     titles = [p.title for p in projects]
     if title in titles:
         raise gr.Error(f"Project with title '{title}' already exists")
-    project = Project.create(context, title)
-    projects.append(project)
-    projects = sorted(projects, key=lambda p: p.title)
 
     # read json from file
     try:
-        project.settings = json.loads(file.decode('utf-8'))
+        settings = json.loads(file.decode('utf-8'))
     except Exception as e:
         raise gr.Error(f"Failed to read settings from file: {e}")
+
+    project = Project(title, settings)
+    projects.append(project)
+    projects = sorted(projects, key=lambda p: p.title)
 
     log = f"Imported project '{title}'"
 
@@ -451,7 +474,12 @@ def project_tab():
             projects_dropdown.render()
             with gr.Column():
                 project_load_button.render()
-                button_delete_project = gr.Button("Delete")
+                with gr.Row():
+                    delete_btn = gr.Button("Delete")
+                    confirm_btn = gr.Button("Confirm delete", variant="stop", visible=False)
+                    cancel_btn = gr.Button("Cancel", visible=False)                
+                delete_btn.click(lambda :[gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)], None, [delete_btn, confirm_btn, cancel_btn])
+                cancel_btn.click(lambda :[gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)], None, [delete_btn, confirm_btn, cancel_btn])
 
     with gr.Accordion("Create a new project", open=True, visible=False) as project_row_create_:
         project_row_create = project_row_create_
@@ -476,17 +504,23 @@ def project_tab():
     def delete_project(title: str):
         ensure_api_context()
         global project, projects
+
         project = next(p for p in projects if p.title == title)
+        project_path = os.path.join(outputs_path, project.folder)
+        if os.path.exists(project_path):
+            shutil.rmtree(project_path)
+
         projects.remove(project)
         project = None
 
-        shutil.rmtree(os.path.join(outputs_path, project.path))
-
-        log = f"Deleted project '{title}'"
+        log = f"Deleted project \"{title}\" at \"{project_path}\""
         return {
             projects_dropdown: gr.update(choices=[p.title for p in projects], visible=True),
             project_row_load: gr.update(visible=len(projects) > 0),
-            project_data_log: gr.update(value=log, visible=True)
+            project_data_log: gr.update(value=log, visible=True),
+            delete_btn: gr.update(visible=True), 
+            confirm_btn: gr.update(visible=False), 
+            cancel_btn: gr.update(visible=False)
         }
 
     def load_projects():
@@ -503,11 +537,14 @@ def project_tab():
         }
 
     button_load_projects.click(load_projects, outputs=[button_load_projects, projects_dropdown, project_row_create, project_row_import, project_row_load, header])
-    button_delete_project.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log])
+    confirm_btn.click(delete_project, inputs=projects_dropdown, outputs=[projects_dropdown, project_row_load, project_data_log, delete_btn, confirm_btn, cancel_btn])
 
-def remove_frames_from_path(path):
+def remove_frames_from_path(path: str, leave_first: Optional[int]=None):
     if os.path.isdir(path):
-        for f in glob.glob(os.path.join(path, "frame_*.png")):
+        frames = sorted(glob.glob(os.path.join(path, "frame_*.png")))
+        if leave_first:
+            frames = frames[leave_first:]
+        for f in frames:
             os.remove(f)
 
 def render_tab():
@@ -521,7 +558,7 @@ def render_tab():
             button_stop = gr.Button("Stop", visible=False)
             error_log = gr.Textbox(label="Error", lines=3, visible=False)
 
-    def render(*render_args):
+    def render(resume: bool, resume_from: int, *render_args):
         global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, last_upscale, project
         interrupt = False
 
@@ -581,7 +618,13 @@ def render_tab():
         }
 
         # delete frames from previous animation
-        remove_frames_from_path(outdir)
+        if resume:
+            if resume_from > 0:
+                remove_frames_from_path(outdir, resume_from)
+            elif resume_from == 0 or resume_from < -1:
+                raise gr.Error("Frame number to resume from must be positive, or -1 to resume from the last frame")
+        else:
+            remove_frames_from_path(outdir)
 
         frame_idx, error = 0, None
         try:
@@ -592,9 +635,9 @@ def render_tab():
                 out_dir=outdir,
                 negative_prompt=negative_prompt,
                 negative_prompt_weight=negative_prompt_weight,
-                resume=False,
+                resume=resume,
             )
-            for frame_idx, frame in enumerate(tqdm(animator.render(), initial=animator.start_frame_idx, total=args.max_frames)):
+            for frame_idx, frame in enumerate(tqdm(animator.render(), initial=animator.start_frame_idx, total=args.max_frames), start=animator.start_frame_idx):
                 if interrupt:
                     break
 
@@ -623,7 +666,11 @@ def render_tab():
             last_project_settings_path = project_settings_path
             last_interp_factor, last_interp_mode, last_upscale = None, None, None
             output_video = project_settings_path.replace(".json", ".mp4")
-            create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
+            try:
+                create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
+            except RuntimeError as e:
+                error = f"Error creating video: {e}"
+                output_video = None
         else:
             output_video = None
         yield {
@@ -637,7 +684,7 @@ def render_tab():
 
     button.click(
         render,
-        inputs=list(controls.values()),
+        inputs=[resume_checkbox, resume_from_number] + list(controls.values()),
         outputs=[button, button_stop, image_out, video_out, header, error_log]
     )
 
@@ -725,6 +772,9 @@ def ui_layout_tabs():
         accordion_from_args("3D render", args_render_3d, open=False)
         accordion_from_args("Inpainting", args_inpaint, open=False)
     with gr.Tab("Input"):
+        with gr.Row():
+            resume_checkbox.render()
+            resume_from_number.render()
         ui_for_init_and_mask(args_generation)
         with gr.Column():
             p = args_vid_in.param

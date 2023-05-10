@@ -228,10 +228,8 @@ class Context:
         :return: dict mapping artifact type to data
         """
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
-        if image is not None:
-            p.append(image_to_prompt(image))
-            if mask is not None:
-                p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
+        p.append(image_to_prompt(image))
+        p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
 
         width, height = image.size
         start_schedule = 1.0-init_strength
