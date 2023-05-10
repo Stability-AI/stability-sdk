@@ -208,6 +208,40 @@ def artifact_type_to_string(artifact_type: generation.ArtifactType):
         )
         return "ARTIFACT_UNRECOGNIZED"
 
+def create_video_from_frames(frames_path: str, mp4_path: str, fps: int=24, reverse: bool=False):
+    """
+    Convert a series of image frames to a video file using ffmpeg.
+
+    :param frames_path: The path to the directory containing the image frames named frame_00000.png, frame_00001.png, etc.
+    :param mp4_path: The path to save the output video file.
+    :param fps: The frames per second for the output video. Default is 24.
+    :param reverse: A flag to reverse the order of the frames in the output video. Default is False.
+    """
+
+    cmd = [
+        'ffmpeg',
+        '-y',
+        '-vcodec', 'png',
+        '-r', str(fps),
+        '-start_number', str(0),
+        '-i', os.path.join(frames_path, "frame_%05d.png"),
+        '-c:v', 'libx264',
+        '-vf',
+        f'fps={fps}',
+        '-pix_fmt', 'yuv420p',
+        '-crf', '17',
+        '-preset', 'veryslow',
+        mp4_path
+    ]
+    if reverse:
+        cmd.insert(-1, '-vf')
+        cmd.insert(-1, 'reverse')    
+
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, stderr = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError(stderr)
+
 def extract_frames_from_video(video_path: str, frames_subdir: str='frames'):
     """
     Extracts all frames from a video to a subdirectory of the video's parent folder.

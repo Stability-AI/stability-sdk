@@ -37,10 +37,13 @@ from .animation import (
     Rendering3dSettings,
     VideoInputSettings,
     VideoOutputSettings,
-    create_video_from_frames,
     interpolate_frames
 )
-from .utils import extract_frames_from_video, interpolate_mode_from_string
+from .utils import (
+    create_video_from_frames,
+    extract_frames_from_video,
+    interpolate_mode_from_string
+)
 
 
 DATA_VERSION = "0.1"
