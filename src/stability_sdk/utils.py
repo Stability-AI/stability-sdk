@@ -221,7 +221,7 @@ def image_mix(img_a: Image.Image, img_b: Image.Image, ratio: Union[float, Image.
     if isinstance(ratio, Image.Image):
         if ratio.size != img_a.size:
             raise ValueError(f"mix ratio size {ratio.size} does not match img_a size {img_a.size}")
-        return Image.composite(img_a, img_b, ratio)
+        return Image.composite(img_b, img_a, ratio)
 
     return Image.blend(img_a, img_b, ratio)
 
