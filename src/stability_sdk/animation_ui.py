@@ -273,7 +273,7 @@ def get_default_project():
 def post_process_tab():
     with gr.Row():
         with gr.Column():
-            with gr.Row():
+            with gr.Row(visible=False):
                 use_video_instead = gr.Checkbox(label="Postprocess a video instead", value=False, interactive=True)
                 video_to_postprocess = gr.Text(label="Videofile to postprocess", value="", interactive=True)
             fps = gr.Number(label="Output FPS", value=24, interactive=True, precision=0)
