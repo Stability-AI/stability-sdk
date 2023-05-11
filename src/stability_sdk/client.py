@@ -2,64 +2,38 @@
 
 # fmt: off
 
-import pathlib
-import sys
-import os
-import uuid
-import random
-import io
-import logging
-import time
-import mimetypes
-
+import getpass
 import grpc
+import logging
+import mimetypes
+import os
+import random
+import sys
+import time
+import uuid
+
 from argparse import ArgumentParser, Namespace
-from typing import Dict, Generator, List, Optional, Union, Any, Sequence, Tuple
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
-
-try:
-    from dotenv import load_dotenv
-except ModuleNotFoundError:
-    pass
-else:
-    load_dotenv()
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
 
-from stability_sdk.utils import (
+from .api import open_channel
+from .utils import (
     SAMPLERS,
     MAX_FILENAME_SZ,
-    artifact_type_to_str,
-    truncate_fit,
-    get_sampler_from_str,
+    artifact_type_to_string,
+    image_to_prompt,
     open_images,
+    sampler_from_string,
+    truncate_fit,
 )
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
-
-def image_to_prompt(im, init: bool = False, mask: bool = False) -> generation.Prompt:
-    if init and mask:
-        raise ValueError("init and mask cannot both be True")
-    buf = io.BytesIO()
-    im.save(buf, format="PNG")
-    buf.seek(0)
-    if mask:
-        return generation.Prompt(
-            artifact=generation.Artifact(
-                type=generation.ARTIFACT_MASK, binary=buf.getvalue()
-            )
-        )
-    return generation.Prompt(
-        artifact=generation.Artifact(
-            type=generation.ARTIFACT_IMAGE, binary=buf.getvalue()
-        ),
-        parameters=generation.PromptParameters(init=init),
-    )
 
 
 def process_artifacts_from_answers(
@@ -100,17 +74,17 @@ def process_artifacts_from_answers(
                 ext = ".pb"
                 contents = artifact.SerializeToString()
             out_p = truncate_fit(prefix, prompt, ext, int(artifact_start), idx, MAX_FILENAME_SZ)
-            is_allowed_type = filter_types is None or artifact_type_to_str(artifact.type) in filter_types
+            is_allowed_type = filter_types is None or artifact_type_to_string(artifact.type) in filter_types
             if write:
                 if is_allowed_type:
                     with open(out_p, "wb") as f:
                         f.write(bytes(contents))
                         if verbose:
-                            logger.info(f"wrote {artifact_type_to_str(artifact.type)} to {out_p}")
+                            logger.info(f"wrote {artifact_type_to_string(artifact.type)} to {out_p}")
                 else:
                     if verbose:
                         logger.info(
-                            f"skipping {artifact_type_to_str(artifact.type)} due to artifact type filter")
+                            f"skipping {artifact_type_to_string(artifact.type)} due to artifact type filter")
 
             yield (out_p, artifact)
             idx += 1
@@ -142,7 +116,6 @@ class StabilityInference:
         self.upscale_engine = upscale_engine
 
         self.grpc_args = {"wait_for_ready": wait_for_ready}
-
         if verbose:
             logger.info(f"Opening channel to {host}")
 
@@ -259,10 +232,10 @@ class StabilityInference:
                 start=start_schedule,
                 end=end_schedule,
             )
-            prompts += [image_to_prompt(init_image, init=True)]
+            prompts += [image_to_prompt(init_image)]
 
             if mask_image is not None:
-                prompts += [image_to_prompt(mask_image, mask=True)]
+                prompts += [image_to_prompt(mask_image, type=generation.ARTIFACT_MASK)]
 
 
         if guidance_prompt:
@@ -360,7 +333,7 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-        prompts = [image_to_prompt(init_image, init=True)]
+        prompts = [image_to_prompt(init_image)]
 
         if prompt:
             if isinstance(prompt, str):
@@ -403,7 +376,7 @@ class StabilityInference:
             if self.verbose:
                 if len(answer.artifacts) > 0:
                     artifact_ts = [
-                        artifact_type_to_str(artifact.type)
+                        artifact_type_to_string(artifact.type)
                         for artifact in answer.artifacts
                     ]
                     logger.info(
@@ -446,17 +419,12 @@ def process_cli(logger: logging.Logger = None,
     STABILITY_HOST = os.getenv("STABILITY_HOST", "grpc.stability.ai:443")
     STABILITY_KEY = os.getenv("STABILITY_KEY", "")
 
-    if not STABILITY_HOST:
-        logger.warning("STABILITY_HOST environment variable needs to be set.")
-        sys.exit(1)
-
     if not STABILITY_KEY:
-        logger.warning(
-            "STABILITY_KEY environment variable needs to be set. You may"
-            " need to login to the Stability website to obtain the"
-            " API key."
+        print(
+            "Please enter your API key from dreamstudio.ai or set the "
+            "STABILITY_KEY environment variable to skip this prompt."
         )
-        sys.exit(1)
+        STABILITY_KEY = getpass.getpass("Enter your Stability API key: ")
 
     # CLI parsing
     parser = ArgumentParser()
@@ -515,6 +483,12 @@ def process_cli(logger: logging.Logger = None,
     parser_upscale.add_argument(
         "prompt", nargs="*"
     )
+
+
+    parser_animate = subparsers.add_parser('animate')
+    parser_animate.add_argument("--gui", action="store_true", help="serve Gradio UI")
+    parser_animate.add_argument("--share", action="store_true", help="create shareable UI link")
+    parser_animate.add_argument("--output", "-o", type=str, default=".", help="root output folder")    
     
 
     parser_generate = subparsers.add_parser('generate')
@@ -601,10 +575,10 @@ def process_cli(logger: logging.Logger = None,
     if command not in subparsers.choices.keys() and command != '-h' and command != '--help':
         logger.warning(f"command {command} not recognized, defaulting to 'generate'")
         logger.warning(
-        "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
-        "[Deprecation Warning] Please modify your code to call the sdk with the following syntax:"
-        "[Deprecation Warning] python -m stability_sdk <command> <args>"
-        "[Deprecation Warning] Where <command> is one of: upscale, generate"
+            "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
+            "[Deprecation Warning] Please modify your code to call the sdk with the following syntax:"
+            "[Deprecation Warning] python -m stability_sdk <command> <args>"
+            "[Deprecation Warning] Where <command> is one of: upscale, generate"
         )
         input_args = ['generate'] + input_args
       
@@ -624,7 +598,7 @@ def process_cli(logger: logging.Logger = None,
             "seed": args.seed,
             "cfg_scale": args.cfg_scale,
             "prompt": args.prompt,
-            }
+        }
         stability_api = StabilityInference(
             STABILITY_HOST, STABILITY_KEY, upscale_engine=args.engine, verbose=True
         )
@@ -660,7 +634,7 @@ def process_cli(logger: logging.Logger = None,
         }
 
         if args.sampler:
-            request["sampler"] = get_sampler_from_str(args.sampler)
+            request["sampler"] = sampler_from_string(args.sampler)
 
         if args.steps:
             request["steps"] = args.steps
@@ -673,6 +647,18 @@ def process_cli(logger: logging.Logger = None,
             args.prefix, args.prompt, answers, write=not args.no_store, verbose=True,
             filter_types=args.artifact_types,
         )
+    elif args.command == "animate":
+        if args.gui:
+            from .animation_ui import create_ui
+            from .api import Context
+            ui = create_ui(Context(STABILITY_HOST, STABILITY_KEY), args.output)
+            ui.queue(concurrency_count=2, max_size=2)
+            ui.launch(show_api=False, debug=True, height=768, share=args.share, show_error=True)
+            sys.exit(0)
+        else:
+            logger.warning("animate must be invoked with --gui")
+            sys.exit(1)
+
     
     if args.show:
         for artifact in open_images(artifacts, verbose=True):

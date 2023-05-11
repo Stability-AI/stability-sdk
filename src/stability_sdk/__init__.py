@@ -2,8 +2,10 @@ import pathlib, sys
 
 # this is necessary because of how the auto-generated code constructs its imports
 # should be a way to move this upstream
-thisPath = pathlib.Path(__file__).parent.resolve()
-genPath = thisPath / "interfaces/gooseai/generation"
-tensPath = thisPath / "interfaces/src/tensorizer/tensors"
-#sys.path.append(str(genPath))
-sys.path.extend([str(genPath), str(tensPath)])
+this_path = pathlib.Path(__file__).parent.resolve()
+sys.path.extend([
+    str(this_path / "interfaces/gooseai/dashboard"), 
+    str(this_path / "interfaces/gooseai/generation"), 
+    str(this_path / "interfaces/gooseai/project"), 
+    str(this_path / "interfaces/src/tensorizer/tensors")
+])
