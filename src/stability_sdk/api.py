@@ -4,7 +4,7 @@ from enum import Enum
 from PIL import Image, ImageOps
 import pathlib
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
 import sys
 
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation

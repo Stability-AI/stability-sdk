@@ -7,7 +7,7 @@ name = "stability-sdk"
 dynamic = ["version"]
 description = "Python SDK for interacting with Stability AI APIs"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.7"
 license = "MIT"
 authors = [
     { name = "Stability AI", email = "support@stability.ai" },
@@ -41,7 +41,6 @@ dependencies = [
     "protobuf>=3.19,<5.0",
     "pydantic>=1.9.2,<2.0",
     "python-dotenv",    
-    "tensorizer>=1.1.0",    
     "grpcio>=1.45.0",
 ]
 
@@ -88,10 +87,10 @@ dependencies = [
 ]
 
 [[tool.hatch.envs.test.matrix]]
-python = ["3.8", "3.9", "3.10", "3.11"]
+python = ["3.7", "3.8", "3.9", "3.10", "3.11"]
 
 [[tool.hatch.envs.test.matrix]]
-python = ["3.8", "3.9", "3.10", "3.11"]
+python = ["3.7", "3.8", "3.9", "3.10", "3.11"]
 features = ["sagemaker"]
 
 
