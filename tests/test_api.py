@@ -3,8 +3,8 @@ import time
 import base64
 
 from stability_sdk.api import CreateRequest, CreateResponse, GenerationResponse
-from stability_sdk.interfaces.gooseai.generation.generation_pb2 import Answer, Artifact
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
+from stability_api.platform.generation.v1.generation_pb2 import Answer, Artifact
+import stability_api.platform.generation.v1.generation_pb2 as generation
 
 def test_text_to_image():
     request = CreateRequest(

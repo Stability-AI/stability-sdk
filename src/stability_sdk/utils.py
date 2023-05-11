@@ -12,8 +12,8 @@ import mimetypes
 
 from PIL import Image
 
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_api.platform.generation.v1.generation_pb2 as generation
+import stability_api.platform.generation.v1.generation_pb2_grpc as generation_grpc
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)

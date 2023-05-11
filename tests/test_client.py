@@ -2,8 +2,8 @@ import pytest
 from PIL import Image
 
 from stability_sdk import client
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_api.platform.generation.v1.generation_pb2 as generation
+import stability_api.platform.generation.v1.generation_pb2_grpc as generation_grpc
 
 import grpc
 

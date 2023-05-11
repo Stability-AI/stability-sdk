@@ -37,6 +37,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
+    "stability-api @ git+https://git@github.com/Stability-AI/api-interfaces.git@19fd1bf29b08cede4f1da6787ee06469ac7e39f0#egg=stability_api",
     "Pillow",    
     "protobuf>=3.19,<5.0",
     "pydantic>=1.9.2,<2.0",
@@ -44,6 +45,8 @@ dependencies = [
     "grpcio>=1.45.0",
 ]
 
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [project.optional-dependencies]
 sagemaker = [
