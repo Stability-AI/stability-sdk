@@ -6,6 +6,7 @@ on:
     paths:
       - ".devcontainer/"
       - "pyproject.toml"
+      - ".github/workflows/devcontainer.yml"
       
 jobs:
   prebuild:
@@ -14,6 +15,6 @@ jobs:
     - name: Pre-build dev container image
       uses: devcontainers/ci@v0.3
       with:
-        imageName: ghcr.io/example/example-devcontainer
-        cacheFrom: ghcr.io/example/example-devcontainer
+        imageName: ghcr.io/stability-ai/stability-sdk-devcontainer
+        cacheFrom: ghcr.io/stability-ai/stability-sdk-devcontainer
         push: always
