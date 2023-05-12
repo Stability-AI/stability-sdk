@@ -300,15 +300,14 @@ def post_process_tab():
             raise gr.Error("Videofile does not exist")
 
         yield {
-            header: gr.update(),
-            image_out: gr.update(visible=True, label=""),
+            image_out: gr.update(visible=True, label="", value=None),
             video_out: gr.update(visible=False),
             process_button: gr.update(visible=False),
             stop_button: gr.update(visible=True),
             error_log: gr.update(visible=False),
         }
 
-        error = None
+        error, output_video = None, None
         try:
             outdir = os.path.dirname(last_project_settings_path) \
                 if not use_video_instead \
@@ -333,10 +332,6 @@ def post_process_tab():
                         yield {
                             header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
                             image_out: gr.update(value=frame, label=f"upscale {frame_idx}/{num_frames}", visible=True),
-                            video_out: gr.update(visible=False),
-                            process_button: gr.update(visible=False),
-                            stop_button: gr.update(visible=True),
-                            error_log: gr.update(visible=False),
                         }
                         if interrupt:
                             break
@@ -354,10 +349,6 @@ def post_process_tab():
                         yield {
                             header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
                             image_out: gr.update(value=frame, label=f"interpolate {frame_idx}/{num_frames}", visible=True),
-                            video_out: gr.update(visible=False),
-                            process_button: gr.update(visible=False),
-                            stop_button: gr.update(visible=True),
-                            error_log: gr.update(visible=False),
                         }
                         if interrupt:
                             break
@@ -369,6 +360,8 @@ def post_process_tab():
             else:
                 _, video_ext = os.path.splitext(video_to_postprocess)
                 output_video = video_to_postprocess.replace(video_ext, f"{suffix}.mp4")
+
+            yield { error_log: gr.update(label="Status", value="Compiling frames to MP4...", visible=True) }
             create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
         except Exception as e:
             traceback.print_exc()
@@ -380,7 +373,7 @@ def post_process_tab():
             video_out: gr.update(value=output_video, visible=True),
             process_button: gr.update(visible=True),
             stop_button: gr.update(visible=False),
-            error_log: gr.update(value=error, visible=bool(error))
+            error_log: gr.update(label="Error", value=error, visible=bool(error))
         }
 
     process_button.click(
@@ -389,10 +382,11 @@ def post_process_tab():
         outputs=[header, image_out, video_out, process_button, stop_button, error_log]
     )    
 
-    def stop_button_click():
+    def stop():
         global interrupt
         interrupt = True
-    stop_button.click(stop_button_click)
+        return { error_log: gr.update(label="Status", value="Stopping...", visible=True)}
+    stop_button.click(stop, outputs=[error_log])
 
 
 def project_create(title, preset):
@@ -611,9 +605,8 @@ def render_tab():
         yield {
             button: gr.update(visible=False),
             button_stop: gr.update(visible=True),
-            image_out: gr.update(visible=True, label=""),
+            image_out: gr.update(visible=True, label="", value=None),
             video_out: gr.update(visible=False),
-            header: gr.update(),
             error_log: gr.update(visible=False),
         }
 
@@ -641,16 +634,9 @@ def render_tab():
                 if interrupt:
                     break
 
-                # saving frames to project
-                #frame_uuid = project.put_image_asset(frame)
-
                 yield {
-                    button: gr.update(visible=False),
-                    button_stop: gr.update(visible=True),
                     image_out: gr.update(value=frame, label=f"frame {frame_idx}/{args.max_frames}", visible=True),
-                    video_out: gr.update(visible=False),
                     header: gr.update(value=format_header_html()) if frame_idx % 12 == 0 else gr.update(),
-                    error_log: gr.update(visible=False),
                 }
         except ClassifierException as e:
             error = "Animation terminated early due to NSFW classifier."
@@ -666,6 +652,9 @@ def render_tab():
             last_project_settings_path = project_settings_path
             last_interp_factor, last_interp_mode, last_upscale = None, None, None
             output_video = project_settings_path.replace(".json", ".mp4")
+            yield {
+                error_log: gr.update(label="Status", value="Compiling frames to MP4...", visible=True),
+            }
             try:
                 create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
             except RuntimeError as e:
@@ -679,7 +668,7 @@ def render_tab():
             image_out: gr.update(visible=False),
             video_out: gr.update(value=output_video, visible=True),
             header: gr.update(value=format_header_html()),
-            error_log: gr.update(value=error, visible=bool(error)),
+            error_log: gr.update(label="Error", value=error, visible=bool(error)),
         }
 
     button.click(
@@ -692,7 +681,8 @@ def render_tab():
     def stop():
         global interrupt
         interrupt = True
-    button_stop.click(stop)
+        return { error_log: gr.update(label="Status", value="Stopping...", visible=True) }
+    button_stop.click(stop, outputs=[error_log])
 
 def ui_for_animation_settings(args: AnimationSettings):
     with gr.Row():
