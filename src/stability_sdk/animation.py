@@ -809,6 +809,9 @@ class Animator:
         if args.border == 'wrap' and args.animation_mode != '2D':
             args.border = 'reflect'
             logger.warning(f"Border 'wrap' is only supported in 2D mode, switching to '{args.border}'.")
+        if args.border == 'prefill' and args.animation_mode in ('2D', '3D warp') and not args.inpaint_border:
+            args.border = 'reflect'
+            logger.warning(f"Border 'prefill' is only supported when 'inpaint_border' is enabled, switching to '{args.border}'.")
 
         # validate clip guidance setting against selected model and sampler
         if args.clip_guidance.lower() != 'none':
