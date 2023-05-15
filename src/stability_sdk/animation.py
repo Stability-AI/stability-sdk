@@ -10,7 +10,6 @@ import os
 import param
 import random
 import shutil
-import subprocess
 
 from collections import OrderedDict, deque
 from dataclasses import dataclass, fields
@@ -805,6 +804,11 @@ class Animator:
         # select image generation model
         self.api._generate.engine_id = args.custom_model if args.model == "custom" else args.model
 
+        # validate dimensions
+        if args.width % 64 != 0 or args.height % 64 != 0:
+            args.width, args.height = map(lambda x: x - x % 64, (args.width, args.height))
+            logger.warning(f"Adjusted dimensions to {args.width}x{args.height} to be multiples of 64.")
+
         # validate border settings
         if args.border == 'wrap' and args.animation_mode != '2D':
             args.border = 'reflect'
@@ -820,11 +824,8 @@ class Animator:
                 logger.warning(f"CLIP guidance is not supported by {unsupported}, disabling guidance.")
                 args.clip_guidance = 'None'
 
-        def curve_to_series(curve: str) -> List[float]:
-            return curve_from_cn_string(curve)
-
         # expand key frame strings to per frame series
-        frame_args_dict = {f.name: curve_to_series(getattr(args, f.name)) for f in fields(FrameArgs)}
+        frame_args_dict = {f.name: curve_from_cn_string(getattr(args, f.name)) for f in fields(FrameArgs)}
         self.frame_args = FrameArgs(**frame_args_dict)        
 
         # prepare sorted list of key frames
@@ -956,7 +957,6 @@ class Animator:
                     mask = masks[0]
                 self.prior_frames.extend(transformed_prior_frames)
             self.video_prev_frame = video_next_frame
-            self.color_match_image = video_next_frame
             return mask
         return None
 
