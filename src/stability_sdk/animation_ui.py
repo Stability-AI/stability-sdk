@@ -288,7 +288,7 @@ def post_process_tab():
             video_out = gr.Video(label="video", visible=False)
             process_button = gr.Button("Process")
             stop_button = gr.Button("Stop", visible=False)
-            error_log = gr.Textbox(label="Error", lines=3, visible=False)
+            status = gr.Textbox(lines=3, visible=False)
 
     def postprocess_video(fps: int, reverse: bool, interp_mode: str, interp_factor: int, upscale: bool,
                           use_video_instead: bool, video_to_postprocess: str):
@@ -304,7 +304,7 @@ def post_process_tab():
             video_out: gr.update(visible=False),
             process_button: gr.update(visible=False),
             stop_button: gr.update(visible=True),
-            error_log: gr.update(visible=False),
+            status: gr.update(visible=False),
         }
 
         error, output_video = None, None
@@ -361,7 +361,7 @@ def post_process_tab():
                 _, video_ext = os.path.splitext(video_to_postprocess)
                 output_video = video_to_postprocess.replace(video_ext, f"{suffix}.mp4")
 
-            yield { error_log: gr.update(label="Status", value="Compiling frames to MP4...", visible=True) }
+            yield { status: gr.update(label="Status", value="Compiling frames to MP4...", visible=True) }
             create_video_from_frames(outdir, output_video, fps=fps, reverse=reverse)
         except Exception as e:
             traceback.print_exc()
@@ -373,20 +373,20 @@ def post_process_tab():
             video_out: gr.update(value=output_video, visible=True),
             process_button: gr.update(visible=True),
             stop_button: gr.update(visible=False),
-            error_log: gr.update(label="Error", value=error, visible=bool(error))
+            status: gr.update(label="Error", value=error, visible=bool(error))
         }
 
     process_button.click(
         postprocess_video, 
         inputs=[fps, reverse, frame_interp_mode, frame_interp_factor, upscale, use_video_instead, video_to_postprocess], 
-        outputs=[header, image_out, video_out, process_button, stop_button, error_log]
+        outputs=[header, image_out, video_out, process_button, stop_button, status]
     )    
 
     def stop():
         global interrupt
         interrupt = True
-        return { error_log: gr.update(label="Status", value="Stopping...", visible=True)}
-    stop_button.click(stop, outputs=[error_log])
+        return { status: gr.update(label="Status", value="Stopping...", visible=True)}
+    stop_button.click(stop, outputs=[status])
 
 
 def project_create(title, preset):
@@ -550,7 +550,7 @@ def render_tab():
             video_out = gr.Video(label="video", visible=False)
             button = gr.Button("Render")
             button_stop = gr.Button("Stop", visible=False)
-            error_log = gr.Textbox(label="Error", lines=3, visible=False)
+            status = gr.Textbox(lines=3, visible=False)
 
     def render(resume: bool, resume_from: int, *render_args):
         global interrupt, last_interp_factor, last_interp_mode, last_project_settings_path, last_upscale, project
@@ -607,7 +607,7 @@ def render_tab():
             button_stop: gr.update(visible=True),
             image_out: gr.update(visible=True, label="", value=None),
             video_out: gr.update(visible=False),
-            error_log: gr.update(visible=False),
+            status: gr.update(visible=False),
         }
 
         # delete frames from previous animation
@@ -653,7 +653,7 @@ def render_tab():
             last_interp_factor, last_interp_mode, last_upscale = None, None, None
             output_video = project_settings_path.replace(".json", ".mp4")
             yield {
-                error_log: gr.update(label="Status", value="Compiling frames to MP4...", visible=True),
+                status: gr.update(label="Status", value="Compiling frames to MP4...", visible=True),
             }
             try:
                 create_video_from_frames(outdir, output_video, fps=args.fps, reverse=args.reverse)
@@ -668,21 +668,21 @@ def render_tab():
             image_out: gr.update(visible=False),
             video_out: gr.update(value=output_video, visible=True),
             header: gr.update(value=format_header_html()),
-            error_log: gr.update(label="Error", value=error, visible=bool(error)),
+            status: gr.update(label="Error", value=error, visible=bool(error)),
         }
 
     button.click(
         render,
         inputs=[resume_checkbox, resume_from_number] + list(controls.values()),
-        outputs=[button, button_stop, image_out, video_out, header, error_log]
+        outputs=[button, button_stop, image_out, video_out, header, status]
     )
 
     # stop animation in progress 
     def stop():
         global interrupt
         interrupt = True
-        return { error_log: gr.update(label="Status", value="Stopping...", visible=True) }
-    button_stop.click(stop, outputs=[error_log])
+        return { status: gr.update(label="Status", value="Stopping...", visible=True) }
+    button_stop.click(stop, outputs=[status])
 
 def ui_for_animation_settings(args: AnimationSettings):
     with gr.Row():
