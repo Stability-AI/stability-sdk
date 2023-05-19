@@ -1,0 +1,29 @@
+name: Build dev container image
+
+on:  
+  workflow_dispatch:
+  push:
+    paths:
+      - ".devcontainer/"
+      - "pyproject.toml"
+      - ".github/workflows/devcontainer.yml"
+      
+jobs:
+  prebuild:
+    runs-on: ubuntu-latest    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive  
+    - name: Login to container registry
+      uses: docker/login-action@v2.1.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Pre-build dev container image
+      uses: devcontainers/ci@v0.3
+      with:
+        imageName: ghcr.io/stability-ai/stability-sdk-devcontainer
+        cacheFrom: ghcr.io/stability-ai/stability-sdk-devcontainer
+        push: always

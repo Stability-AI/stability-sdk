@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 import sys
 
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_api.platform.generation.v1.generation_pb2 as generation
+import stability_api.platform.generation.v1.generation_pb2_grpc as generation_grpc
 
 
 class TextPrompt(BaseModel):
