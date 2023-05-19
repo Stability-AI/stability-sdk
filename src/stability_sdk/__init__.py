@@ -1,4 +1,4 @@
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 import pathlib, sys
 
 # this is necessary because of how the auto-generated code constructs its imports
