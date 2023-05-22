@@ -5,6 +5,7 @@ import pathlib, sys
 this_path = pathlib.Path(__file__).parent.resolve()
 sys.path.extend([
     str(this_path / "interfaces/gooseai/dashboard"), 
+    str(this_path / "interfaces/gooseai/finetuning"), 
     str(this_path / "interfaces/gooseai/generation"), 
     str(this_path / "interfaces/gooseai/project"), 
     str(this_path / "interfaces/src/tensorizer/tensors")
