@@ -65,16 +65,16 @@ class Endpoint:
 
 class Context:
     def __init__(
-            self, 
-            host: str="", 
-            api_key: str=None, 
-            stub: generation_grpc.GenerationServiceStub=None,
-            generate_engine_id: str="stable-diffusion-xl-beta-v2-2-2",
-            inpaint_engine_id: str="stable-inpainting-512-v2-0",
-            interpolate_engine_id: str="interpolation-server-v1",
-            transform_engine_id: str="transform-server-v1",
-            upscale_engine_id: str="esrgan-v1-x2plus",
-        ):
+        self, 
+        host: str="", 
+        api_key: str=None, 
+        stub: generation_grpc.GenerationServiceStub=None,
+        generate_engine_id: str="stable-diffusion-xl-beta-v2-2-2",
+        inpaint_engine_id: str="stable-inpainting-512-v2-0",
+        interpolate_engine_id: str="interpolation-server-v1",
+        transform_engine_id: str="transform-server-v1",
+        upscale_engine_id: str="esrgan-v1-x2plus",
+    ):
         if not host and stub is None:
             raise Exception("Must provide either GRPC host or stub to Api")
 
@@ -120,6 +120,7 @@ class Context:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        finetune_model: Optional[str] = None,
         preset: Optional[str] = None,
         return_request: bool = False,
     ) -> Dict[int, List[Any]]:
@@ -143,6 +144,7 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
+        :param finetune_model: Finetune model to use
         :param preset: Style preset to use
         :param return_request: Whether to return the request instead of running it
         :return: dict mapping artifact type to data
@@ -162,10 +164,12 @@ class Context:
             p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
 
         start_schedule = 1.0 - init_strength
-        image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
-                                                start_schedule, init_noise_scale, masked_area_init, 
-                                                guidance_preset, guidance_cuts, guidance_strength)
-
+        image_params = self._build_image_params(
+            width, height, sampler, steps, seed, samples, cfg_scale, 
+            start_schedule, init_noise_scale, masked_area_init, 
+            finetune_model, guidance_preset, guidance_cuts, guidance_strength,
+        )
+        
         extras = Struct()
         if preset and preset.lower() != 'none':
             extras.update({ '$IPC': { "preset": preset } })
@@ -204,6 +208,7 @@ class Context:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
+        finetune_model: Optional[str] = None,
         preset: Optional[str] = None,
     ) -> Dict[int, List[Any]]:
         """
@@ -224,6 +229,7 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
+        :param finetune_model: Finetune model to use
         :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
@@ -233,9 +239,11 @@ class Context:
 
         width, height = image.size
         start_schedule = 1.0-init_strength
-        image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
-                                                start_schedule, init_noise_scale, masked_area_init, 
-                                                guidance_preset, guidance_cuts, guidance_strength)
+        image_params = self._build_image_params(
+            width, height, sampler, steps, seed, samples, cfg_scale, 
+            start_schedule, init_noise_scale, masked_area_init, 
+            finetune_model, guidance_preset, guidance_cuts, guidance_strength,
+        )
 
         extras = Struct()
         if preset and preset.lower() != 'none':
@@ -538,7 +546,7 @@ class Context:
 
     def _build_image_params(self, width, height, sampler, steps, seed, samples, cfg_scale, 
                             schedule_start, init_noise_scale, masked_area_init, 
-                            guidance_preset, guidance_cuts, guidance_strength):
+                            finetune_model, guidance_preset, guidance_cuts, guidance_strength):
 
         if not seed:
             seed = [random.randrange(0, 4294967295)]
@@ -569,8 +577,13 @@ class Context:
                 ]
             )
 
+        fine_tuning_parameters = (
+            generation.FineTuningParameters(model_id=finetune_model)
+            if finetune_model else None
+        )
+
         return generation.ImageParameters(
-            transform=None if sampler is None else generation.TransformType(diffusion=sampler),
+            transform=generation.TransformType(diffusion=sampler) if sampler else None,
             height=height,
             width=width,
             seed=seed,
@@ -578,6 +591,7 @@ class Context:
             samples=samples,
             masked_area_init=masked_area_init,
             parameters=[generation.StepParameter(**step_parameters)],
+            fine_tuning_parameters=fine_tuning_parameters
         )
 
     def _process_response(self, response) -> Dict[int, List[Any]]:

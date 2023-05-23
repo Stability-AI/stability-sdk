@@ -24,17 +24,17 @@ TRAINING_IMAGE_MIN_SIZE = 384
 #==============================================================================
 
 class FineTuneMode(str, Enum):
-    NONE = "none"
-    FACE = "face"
-    STYLE = "style"
+    NONE   = "none"
+    FACE   = "face"
+    STYLE  = "style"
     OBJECT = "object"
 
 class FineTuneStatus(str, Enum):
-    NOT_STARTED_UNSPECIFIED = "none"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SUBMITTED = "submitted"
+    NOT_STARTED = "not started"
+    RUNNING     = "running"
+    COMPLETED   = "completed"
+    FAILED      = "failed"
+    SUBMITTED   = "submitted"
 
 class FineTuneModel(BaseModel):
     id: str = Field(description="UUID")
@@ -61,16 +61,16 @@ class Context:
         self._stub_project = project_grpc.ProjectServiceStub(channel)
 
 FINETUNE_STATUS_MAP = {
-    FineTuneStatus.NOT_STARTED_UNSPECIFIED: finetuning.FINE_TUNING_MODEL_STATUS_NOT_STARTED_UNSPECIFIED,
-    FineTuneStatus.RUNNING: finetuning.FINE_TUNING_MODEL_STATUS_RUNNING,
-    FineTuneStatus.COMPLETED: finetuning.FINE_TUNING_MODEL_STATUS_COMPLETED,
-    FineTuneStatus.FAILED: finetuning.FINE_TUNING_MODEL_STATUS_FAILED,
-    FineTuneStatus.SUBMITTED: finetuning.FINE_TUNING_MODEL_STATUS_SUBMITTED,
+    FineTuneStatus.NOT_STARTED: finetuning.FINE_TUNING_STATUS_NOT_STARTED,
+    FineTuneStatus.RUNNING:     finetuning.FINE_TUNING_STATUS_RUNNING,
+    FineTuneStatus.COMPLETED:   finetuning.FINE_TUNING_STATUS_COMPLETED,
+    FineTuneStatus.FAILED:      finetuning.FINE_TUNING_STATUS_FAILED,
+    FineTuneStatus.SUBMITTED:   finetuning.FINE_TUNING_STATUS_SUBMITTED,
 }
 
 
 #==============================================================================
-# Core fine tuning functions
+# Core fine-tuning functions
 #==============================================================================
 
 def create_model(
@@ -120,29 +120,52 @@ def create_model(
                     logging.info(f"Uploaded image {i}: {artifact.text}")
     
     # Create fine tuning model
-    request = finetuning.CreateFineTuningModelRequest(
+    request = finetuning.CreateModelRequest(
         name=params.name,
         mode=mode_to_proto(params.mode),
         object_name=params.object_name,
         project_id=proj.id,
         engine_id=params.engine_id,
     )
-    result = context._stub_finetune.CreateFineTuningModel(request)
+    result = context._stub_finetune.CreateModel(request)
     return model_from_proto(result.model)
 
 def delete_model(context: Context, model_id: str) -> FineTuneModel:
-    request = finetuning.DeleteFineTuningModelRequest(id=model_id)
-    result = context._stub_finetune.DeleteFineTuningModel(request)
+    request = finetuning.DeleteModelRequest(id=model_id)
+    result = context._stub_finetune.DeleteModel(request)
+    return model_from_proto(result.model)
+
+def get_model(context: Context, model_id: str) -> FineTuneModel:
+    request = finetuning.GetModelRequest(id=model_id)
+    result = context._stub_finetune.GetModel(request)
     return model_from_proto(result.model)
 
 def list_models(context: Context, org_id: str) -> List[FineTuneModel]:
-    request = finetuning.GetFineTuningModelsByOrgIdRequest(id=org_id)
-    result = context._stub_finetune.GetFineTuningModelsByOrgId(request)
+    request = finetuning.ListModelsRequest(org_id=org_id)
+    result = context._stub_finetune.ListModels(request)
     return [model_from_proto(model) for model in result.models]
 
-def model_status(context: Context, model_id: str) -> FineTuneModel:
-    request = finetuning.GetFineTuningModelStatusRequest(id=model_id)
-    result = context._stub_finetune.GetFineTuningModelStatus(request)
+def resubmit_model(context: Context, model_id: str) -> FineTuneModel:
+    request = finetuning.ResubmitModelRequest(id=model_id)
+    result = context._stub_finetune.ResubmitModel(request)
+    return model_from_proto(result.model)
+
+def update_model(
+    context: Context, 
+    model_id: str,
+    name: Optional[str] = None,
+    mode: Optional[FineTuneMode] = None,
+    object_name: Optional[str] = None,
+    engine_id: Optional[str] = None
+) -> FineTuneModel:
+    request = finetuning.UpdateModelRequest(
+        id=model_id,
+        name=name,
+        mode=mode_to_proto(mode) if mode is not None else None,
+        object_name=object_name,
+        engine_id=engine_id,
+    )
+    result = context._stub_finetune.UpdateModel(request)
     return model_from_proto(result.model)
 
 
@@ -152,7 +175,7 @@ def model_status(context: Context, model_id: str) -> FineTuneModel:
 
 def mode_to_proto(mode: FineTuneMode) -> finetuning.FineTuningMode:
     mapping = {
-        FineTuneMode.NONE: finetuning.FINE_TUNING_MODE_NONE_UNSPECIFIED,
+        FineTuneMode.NONE: finetuning.FINE_TUNING_MODE_UNSPECIFIED,
         FineTuneMode.FACE: finetuning.FINE_TUNING_MODE_FACE,
         FineTuneMode.STYLE: finetuning.FINE_TUNING_MODE_STYLE,
         FineTuneMode.OBJECT: finetuning.FINE_TUNING_MODE_OBJECT,
@@ -170,18 +193,18 @@ def model_from_proto(model: finetuning.FineTuningModel) -> FineTuneModel:
         object_name=model.object_name,
         project_id=model.project_id,
         engine_id=model.engine_id,
-        user_id=model.user.id,
+        user_id=model.user_id,
         duration=model.duration,
         status=status_from_proto(model.status),
     )
 
-def status_from_proto(status: finetuning.FineTuningModelStatus) -> FineTuneStatus:
+def status_from_proto(status: finetuning.FineTuningStatus) -> FineTuneStatus:
     for key, value in FINETUNE_STATUS_MAP.items():
         if value == status:
             return key
     raise ValueError(f"Invalid fine tuning status {status}")
 
-def status_to_proto(status: FineTuneStatus) -> finetuning.FineTuningModelStatus:
+def status_to_proto(status: FineTuneStatus) -> finetuning.FineTuningStatus:
     value = FINETUNE_STATUS_MAP.get(status)
     if value is None:
         raise ValueError(f"Invalid fine tuning status {status}")
