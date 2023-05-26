@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 from enum import Enum
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -60,6 +61,13 @@ class Context:
         self._stub_generation = generation_grpc.GenerationServiceStub(channel)
         self._stub_project = project_grpc.ProjectServiceStub(channel)
 
+FINETUNE_MODE_MAP = {
+    FineTuneMode.NONE: finetuning.FINE_TUNING_MODE_UNSPECIFIED,
+    FineTuneMode.FACE: finetuning.FINE_TUNING_MODE_FACE,
+    FineTuneMode.STYLE: finetuning.FINE_TUNING_MODE_STYLE,
+    FineTuneMode.OBJECT: finetuning.FINE_TUNING_MODE_OBJECT,
+}
+
 FINETUNE_STATUS_MAP = {
     FineTuneStatus.NOT_STARTED: finetuning.FINE_TUNING_STATUS_NOT_STARTED,
     FineTuneStatus.RUNNING:     finetuning.FINE_TUNING_STATUS_RUNNING,
@@ -96,18 +104,41 @@ def create_model(
             max_size = max(image.width, image.height)
             scale = TRAINING_IMAGE_MAX_SIZE / max_size
             image = image.resize((int(image.width * scale), int(image.height * scale)), resample=Image.LANCZOS)
-        images.append(image)
+            images.append(image)
+        else:
+            images.append(None)
 
     # Create project
-    request = project.CreateProjectRequest(title=params.name, access=project.PROJECT_ACCESS_PRIVATE, status=project.PROJECT_STATUS_ACTIVE)
+    request = project.CreateProjectRequest(
+        title=params.name, 
+        project_type=project.PROJECT_TYPE_TRAINING,
+        access=project.PROJECT_ACCESS_PRIVATE, 
+        status=project.PROJECT_STATUS_ACTIVE
+    )
     proj: project.Project = context._stub_project.Create(request)
     logging.info(f"Created project {proj.id}")
 
     # Upload images
     for i, image in enumerate(images):
+        logging.info(f"Uploading image {image_paths[i]} to project {proj.id}")
+
+        if image is None:
+            # Directly use the file from disk if it was already the right size
+            with open(image_paths[i], 'rb') as f:
+                bytes = f.read()
+            mime_type, _ = mimetypes.guess_type(image_paths[i])
+            prompt = generation.Prompt(artifact=generation.Artifact(
+                type=generation.ARTIFACT_IMAGE, 
+                binary=bytes,
+                mime=mime_type
+            ))
+        else:
+            # Encode the resized image
+            prompt = image_to_prompt(image)
+
         request = generation.Request(
-            engine_id="asset-service",
-            prompt=[image_to_prompt(image)],
+            engine_id="aws-asset-service",
+            prompt=[prompt],
             asset=generation.AssetParameters(
                 action=generation.ASSET_PUT, 
                 project_id=proj.id, 
@@ -173,6 +204,13 @@ def update_model(
 # Utility functions
 #==============================================================================
 
+def mode_from_proto(mode: finetuning.FineTuningMode) -> FineTuneMode:
+    for key, value in FINETUNE_MODE_MAP.items():
+        if value == mode:
+            return key
+    logging.warning(f"Unrecognized fine tuning mode {mode}")
+    return FineTuneMode.NONE
+
 def mode_to_proto(mode: FineTuneMode) -> finetuning.FineTuningMode:
     mapping = {
         FineTuneMode.NONE: finetuning.FINE_TUNING_MODE_UNSPECIFIED,
@@ -189,7 +227,7 @@ def model_from_proto(model: finetuning.FineTuningModel) -> FineTuneModel:
     return FineTuneModel(
         id=model.id,
         name=model.name,
-        mode=model.mode,
+        mode=mode_from_proto(model.mode),
         object_name=model.object_name,
         project_id=model.project_id,
         engine_id=model.engine_id,
@@ -202,7 +240,8 @@ def status_from_proto(status: finetuning.FineTuningStatus) -> FineTuneStatus:
     for key, value in FINETUNE_STATUS_MAP.items():
         if value == status:
             return key
-    raise ValueError(f"Invalid fine tuning status {status}")
+    logging.warning(f"Unrecognized fine tuning status {status}")
+    return FineTuneStatus.NOT_STARTED
 
 def status_to_proto(status: FineTuneStatus) -> finetuning.FineTuningStatus:
     value = FINETUNE_STATUS_MAP.get(status)

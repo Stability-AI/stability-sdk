@@ -317,7 +317,8 @@ def image_to_prompt(
     """
     return generation.Prompt(artifact=generation.Artifact(
         type=type, 
-        binary=image_to_png_bytes(image)
+        binary=image_to_png_bytes(image),
+        mime="image/png"
     ))
 
 def open_images(
