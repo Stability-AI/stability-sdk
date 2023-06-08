@@ -578,7 +578,7 @@ class Context:
             )
 
         fine_tuning_parameters = (
-            generation.FineTuningParameters(model_id=finetune_model)
+            [generation.FineTuningParameters(model_id=finetune_model)]
             if finetune_model else None
         )
 
