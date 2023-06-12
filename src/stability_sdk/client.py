@@ -499,6 +499,9 @@ def process_cli(logger: logging.Logger = None,
         "--width", "-W", type=int, default=512, help="[512] width of image"
     )
     parser_generate.add_argument(
+        "--sign_with_cai", type=bool, default=False, help="Sign artifacts using C2PA to include providence data containing engine id"
+    )
+    parser_generate.add_argument(
         "--start_schedule",
         type=float,
         default=0.5,
@@ -626,11 +629,12 @@ def process_cli(logger: logging.Logger = None,
             "width": args.width,
             "start_schedule": args.start_schedule,
             "end_schedule": args.end_schedule,
-            "cfg_scale": args.cfg_scale,            
+            "cfg_scale": args.cfg_scale,
             "seed": args.seed,
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
+            "sign_with_cai": args.sign_with_cai,
         }
 
         if args.sampler:

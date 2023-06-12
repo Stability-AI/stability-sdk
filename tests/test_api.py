@@ -32,7 +32,7 @@ class MockStub:
             for answer in self.Generate(stage.request):
                 artifacts.extend(answer.artifacts)
         for artifact in artifacts:
-            yield generation.Answer(artifacts=[artifact])        
+            yield generation.Answer(artifacts=[artifact])
 
     def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
         if request.HasField("image"):
@@ -98,6 +98,28 @@ def test_api_generate():
     image = results[generation.ARTIFACT_IMAGE][0]
     assert isinstance(image, Image.Image)
     assert image.size == (width, height)
+
+def test_api_generate_cai_signing_set():
+    class CAIMockStub(MockStub):
+        def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
+            assert request.image.cai_parameters.model_metadata == \
+                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['SIGN_WITH_ENGINE_ID'].number
+            return super().Generate(request, **kwargs)
+    api = Context(stub=CAIMockStub())
+    width, height = 512, 768
+    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height, sign_with_cai=True)
+
+def test_api_generate_cai_signing_unset():
+    class CAIMockStub(MockStub):
+        def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
+            assert request.image.cai_parameters.model_metadata == \
+                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['METADATA_UNSPECIFIED'].number
+            return super().Generate(request, **kwargs)
+    api = Context(stub=CAIMockStub())
+    width, height = 512, 768
+    # sign_with_cai should default to false.
+    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height)
+
 
 def test_api_inpaint():
     api = Context(stub=MockStub())
