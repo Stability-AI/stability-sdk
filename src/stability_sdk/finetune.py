@@ -111,7 +111,7 @@ def create_model(
     # Create project
     request = project.CreateProjectRequest(
         title=params.name, 
-        project_type=project.PROJECT_TYPE_TRAINING,
+        type=project.PROJECT_TYPE_TRAINING,
         access=project.PROJECT_ACCESS_PRIVATE, 
         status=project.PROJECT_STATUS_ACTIVE
     )
