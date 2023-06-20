@@ -91,6 +91,12 @@ options:
                         Init image
   --mask_image MASK_IMAGE, -m MASK_IMAGE
                         Mask image
+  --upscale_engine UPSCALE_ENGINE, -U UPSCALE_ENGINE
+                        [none] Engine to upscale image. 
+                        Can be 'none' for no upscale, or 'default' to use the default upscale engine esrgan-v1-x2plus.
+  --enhance_engine ENHANCE_ENGINE, -E ENHANCE_ENGINE
+                        [none] Engine to enhance image. 
+                        Can be 'none' for no enhancement, or 'default' to use the default enhance engine face-enhance-v1.
 ```
 For upscale:
 ```

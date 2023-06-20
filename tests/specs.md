@@ -103,3 +103,23 @@ SDK Usage:
 
 See usage demo notebooks in ./nbs
 
+# Enhance
+
+Upscale and face enhance can be added to a generate call.
+
+## Example calls
+
+Command line:
+
+Face enhance
+`python3 -m stability_sdk generate -W 512 -H 512 -E default "A stunning portrait."`
+
+Upscale
+`python3 -m stability_sdk generate -W 512 -H 512 -U default "A stunning portrait."`
+
+Upscale and face enhance
+`python3 -m stability_sdk generate -W 512 -H 512 -U default -E default  "A stunning portrait."`
+
+SDK Usage:
+
+See usage demo notebooks in ./nbs
