@@ -499,7 +499,7 @@ def process_cli(logger: logging.Logger = None,
         "--width", "-W", type=int, default=512, help="[512] width of image"
     )
     parser_generate.add_argument(
-        "--sign_with_cai", type=bool, default=False, help="Sign artifacts using C2PA to include providence data containing engine id"
+        "--cai_add_default_manifest", type=bool, default=False, help="Attatch a signed manifest to artifacts using C2PA. The default manifest will contain engine id and publisher name (Stability AI)"
     )
     parser_generate.add_argument(
         "--start_schedule",
@@ -634,7 +634,7 @@ def process_cli(logger: logging.Logger = None,
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
-            "sign_with_cai": args.sign_with_cai,
+            "cai_add_default_manifest": args.cai_add_default_manifest,
         }
 
         if args.sampler:

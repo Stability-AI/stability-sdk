@@ -103,17 +103,17 @@ def test_api_generate_cai_signing_set():
     class CAIMockStub(MockStub):
         def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
             assert request.image.cai_parameters.model_metadata == \
-                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['SIGN_WITH_ENGINE_ID'].number
+                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number
             return super().Generate(request, **kwargs)
     api = Context(stub=CAIMockStub())
     width, height = 512, 768
-    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height, sign_with_cai=True)
+    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height, cai_add_default_manifest=True)
 
 def test_api_generate_cai_signing_unset():
     class CAIMockStub(MockStub):
         def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
             assert request.image.cai_parameters.model_metadata == \
-                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['METADATA_UNSPECIFIED'].number
+                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['MODEL_METADATA_UNSPECIFIED'].number
             return super().Generate(request, **kwargs)
     api = Context(stub=CAIMockStub())
     width, height = 512, 768
