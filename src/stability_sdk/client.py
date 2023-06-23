@@ -137,8 +137,6 @@ class StabilityInference:
         :param wait_for_ready: Whether to wait for the server to be ready, or
             to fail immediately.
         """
-        logger.info("helloooooooo")
-        print("its me")
         self.verbose = verbose
         self.engine = engine
         self.upscale_engine = upscale_engine
@@ -201,7 +199,7 @@ class StabilityInference:
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
         adapter_type: generation.T2IAdapter = None,
-        adapter_weight: float = 1.0,
+        adapter_strength: float = 0.4,
         adapter_init_type: generation.T2IAdapterInit = generation.IMAGE,
     ) -> Generator[generation.Answer, None, None]:
         """
@@ -227,7 +225,7 @@ class StabilityInference:
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
         :param adapter_type: T2I adapter type, if any.
-        :param adapter_weight: Weight that multiplies the adapter weights
+        :param adapter_strength: Float between 0, 1 represneting the proportion of unet passes into which we inject adapter weights
         :param adapter_init_type: If "image" then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
         if adapter_type is "sketch" then init_image is converted into a sketch.
         :return: Generator of Answer objects.
@@ -281,12 +279,6 @@ class StabilityInference:
                 raise ValueError("guidance_prompt must be a string or Prompt object")
         if guidance_strength == 0.0:
             guidance_strength = None
-
-        # make a generation.GuidanceParameters object for t2i
-        t2i_parameters = generation.T2IParameters(
-            adapter_type=adapter_type,
-            adapter_weight=adapter_weight,
-            adapter_init_type=adapter_init_type)
         
         # Build our CLIP parameters
         if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
@@ -326,17 +318,14 @@ class StabilityInference:
             seed=seed,
             steps=steps,
             samples=samples,
+            adapter_type=adapter_type,
+            adapter_strength=adapter_strength,
+            adapter_init_type=adapter_init_type,
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-        t2i_parameters=generation.T2IParameters(
-            adapter_type=adapter_type,
-            adapter_weight=adapter_weight,
-            adapter_init_type=adapter_init_type)
-
         return self.emit_request(prompt=prompts, 
-                                 image_parameters=image_parameters,
-                                 extra_parameters=t2i_parameters if adapter_type else None)
+                                 image_parameters=image_parameters)
     
     def upscale(
         self,
