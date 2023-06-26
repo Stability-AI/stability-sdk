@@ -1,6 +1,7 @@
 import logging
 import mimetypes
 from enum import Enum
+from google.protobuf.struct_pb2 import Struct
 from PIL import Image
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -41,7 +42,7 @@ class FineTuneModel(BaseModel):
     id: str = Field(description="UUID")
     name: str = Field(description="Name for the fine tuned model")
     mode: FineTuneMode = Field(description="Mode for the fine tuning")
-    object_name: Optional[str] = Field(description="Name of the object to fine tune")
+    object_prompt: Optional[str] = Field(description="Prompt of the object for segmentation")
     project_id: str = Field(description="Project ID to fine tune")
     engine_id: str = Field(description="Engine ID to fine tune")
     user_id: str = Field(description="ID of the user who created the model")
@@ -51,7 +52,7 @@ class FineTuneModel(BaseModel):
 class FineTuneParameters(BaseModel):
     name: str = Field(description="Name for the fine tuned model")
     mode: FineTuneMode = Field(description="Mode for the fine tuning")
-    object_name: Optional[str] = Field(description="Name of the object to fine tune")
+    object_prompt: Optional[str] = Field(description="Prompt of the object for segmentation")
     engine_id: str = Field(description="Engine ID to fine tune")
 
 class Context:
@@ -84,7 +85,8 @@ FINETUNE_STATUS_MAP = {
 def create_model(
     context: Context, 
     params: FineTuneParameters, 
-    image_paths: List[str]
+    image_paths: List[str],
+    extras: Dict[str, Any] = None
 ) -> FineTuneModel:
     
     # Validate number of images
@@ -150,13 +152,19 @@ def create_model(
                 if artifact.type == generation.ARTIFACT_TEXT:
                     logging.info(f"Uploaded image {i}: {artifact.text}")
     
+    # Pass along extra training data for development and testing
+    extras_struct = Struct()
+    if extras is not None:
+        extras_struct.update(extras)
+
     # Create fine tuning model
     request = finetuning.CreateModelRequest(
         name=params.name,
         mode=mode_to_proto(params.mode),
-        object_name=params.object_name,
+        object_prompt=params.object_prompt,
         project_id=proj.id,
         engine_id=params.engine_id,
+        extras=extras_struct
     )
     result = context._stub_finetune.CreateModel(request)
     return model_from_proto(result.model)
@@ -186,14 +194,14 @@ def update_model(
     model_id: str,
     name: Optional[str] = None,
     mode: Optional[FineTuneMode] = None,
-    object_name: Optional[str] = None,
+    object_prompt: Optional[str] = None,
     engine_id: Optional[str] = None
 ) -> FineTuneModel:
     request = finetuning.UpdateModelRequest(
         id=model_id,
         name=name,
         mode=mode_to_proto(mode) if mode is not None else None,
-        object_name=object_name,
+        object_prompt=object_prompt,
         engine_id=engine_id,
     )
     result = context._stub_finetune.UpdateModel(request)
@@ -228,7 +236,7 @@ def model_from_proto(model: finetuning.FineTuningModel) -> FineTuneModel:
         id=model.id,
         name=model.name,
         mode=mode_from_proto(model.mode),
-        object_name=model.object_name,
+        object_prompt=model.object_prompt,
         project_id=model.project_id,
         engine_id=model.engine_id,
         user_id=model.user_id,
