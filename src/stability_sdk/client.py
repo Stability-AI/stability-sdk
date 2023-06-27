@@ -200,7 +200,7 @@ class StabilityInference:
         guidance_models: List[str] = None,
         adapter_type: generation.T2IAdapter = None,
         adapter_strength: float = 0.4,
-        adapter_init_type: generation.T2IAdapterInit = generation.IMAGE,
+        adapter_init_type: generation.T2IAdapterInit = generation.T2IADAPTERINIT_IMAGE,
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -307,6 +307,12 @@ class StabilityInference:
                 ],
             )
 
+        adapter_parameters = generation.T2IAdapterParameter(
+            adapter_type = adapter_type,
+            adapter_strength = adapter_strength,
+            adapter_init_type = adapter_init_type,
+        )
+
         transform=None
         if sampler:
             transform=generation.TransformType(diffusion=sampler)
@@ -318,9 +324,7 @@ class StabilityInference:
             seed=seed,
             steps=steps,
             samples=samples,
-            adapter_type=adapter_type,
-            adapter_strength=adapter_strength,
-            adapter_init_type=adapter_init_type,
+            adapter=adapter_parameters,
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
