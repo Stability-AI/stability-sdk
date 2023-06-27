@@ -95,7 +95,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-xl-beta-v2-2-2",
+        engine: str = "stable-diffusion-xl-1024-v0-9",
         upscale_engine: str = "esrgan-v1-x2plus",
         verbose: bool = False,
         wait_for_ready: bool = True,
@@ -155,8 +155,8 @@ class StabilityInference:
         prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]],
         init_image: Optional[Image.Image] = None,
         mask_image: Optional[Image.Image] = None,
-        height: int = 512,
-        width: int = 512,
+        height: int = 1024,
+        width: int = 1024,
         start_schedule: float = 1.0,
         end_schedule: float = 0.01,
         cfg_scale: float = 7.0,
@@ -493,10 +493,10 @@ def process_cli(logger: logging.Logger = None,
 
     parser_generate = subparsers.add_parser('generate')
     parser_generate.add_argument(
-        "--height", "-H", type=int, default=512, help="[512] height of image"
+        "--height", "-H", type=int, default=1024, help="[1024] height of image"
     )
     parser_generate.add_argument(
-        "--width", "-W", type=int, default=512, help="[512] width of image"
+        "--width", "-W", type=int, default=1024, help="[1024] width of image"
     )
     parser_generate.add_argument(
         "--start_schedule",
@@ -550,7 +550,7 @@ def process_cli(logger: logging.Logger = None,
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-xl-beta-v2-2-2",
+        default="stable-diffusion-xl-1024-v0-9",
     )
     parser_generate.add_argument(
         "--init_image",
