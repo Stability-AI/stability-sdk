@@ -1,22 +1,11 @@
-from concurrent import futures
-
 import grpc
+import pathlib
 import pytest
 
-import logging
-import pathlib
-import sys
+from concurrent import futures
+from PIL import Image
 
-thisPath = pathlib.Path(__file__).parent.parent.resolve()
-genPath = thisPath / "src/stability_sdk/interfaces/gooseai/generation"
-assert genPath.exists()
-
-
-logger = logging.getLogger(__name__)
-#sys.path.extend([str(genPath), str(tensPath)])
-
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+from stability_sdk.api import generation_grpc
 
 # modified from https://github.com/justdoit0823/grpc-resolver/blob/master/tests/conftest.py
 
@@ -37,3 +26,15 @@ def grpc_server(grpc_addr):
     server.start()
     yield server
     server.stop(0)
+
+@pytest.fixture(scope='module')
+def impath() -> str:
+    return str(next(pathlib.Path('.').glob('**/tests/assets/*.png')).resolve())
+
+@pytest.fixture(scope='module')
+def pil_image(impath) -> Image.Image:
+    return Image.open(impath)
+
+@pytest.fixture(scope='module')
+def vidpath() -> str:
+    return str(next(pathlib.Path('.').glob('**/tests/assets/*.mp4')))

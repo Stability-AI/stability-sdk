@@ -1,244 +1,173 @@
-import pytest
-import time
-import base64
+import io
+import numpy as np
+from PIL import Image
+from typing import Generator
 
-from stability_sdk.api import CreateRequest, CreateResponse, GenerationResponse
-from stability_sdk.interfaces.gooseai.generation.generation_pb2 import Answer, Artifact
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
+import stability_sdk.matrix as matrix
+from stability_sdk import utils
+from stability_sdk.api import Context, generation
 
-def test_text_to_image():
-    request = CreateRequest(
-        {
-            "text_prompts": [
-                {"text": "A photo of a cat sitting on a couch."},
-                {"text": "A photo of a dog sitting on a couch.", "weight": 0.5},
-                {"text": "Green.", "weight": -0.5},
-            ],
-            "height": 512,
-            "width": 512,
-            "cfg_scale": 7.0,
-            "samples": 1,
-            "steps": 50,
-            "sampler": "DDIM",
-            "seed": 1,
-            "style_preset": "neon-punk",
-            "extras": {"$IPC": {"test": "0"}},
-        }
+def _artifact_from_image(image: Image.Image) -> generation.Artifact:
+    binary = utils.image_to_png_bytes(image)            
+    return generation.Artifact(
+        type=generation.ARTIFACT_IMAGE, 
+        mime="image/png",
+        binary=binary,
+        size=len(binary)
     )
 
-    prompts = request.prompt
-    assert len(prompts) == 3
-    assert prompts[0].text == "A photo of a cat sitting on a couch."
-    assert prompts[0].parameters.weight == 1.0
-    assert prompts[1].text == "A photo of a dog sitting on a couch."
-    assert prompts[1].parameters.weight == 0.5
-    assert prompts[2].text == "Green."
-    assert prompts[2].parameters.weight == -0.5
+def _rand_image(width: int=512, height: int=512) -> Image.Image:
+    return Image.fromarray(np.random.randint(0, 255, (height, width, 3), dtype=np.uint8))
 
-    image = request.image
-    assert image.height == 512
-    assert image.width == 512
-    assert image.steps == 50
-    assert image.seed == [1]
+class MockStub:
+    def __init__(self):
+        pass
 
+    def ChainGenerate(self, chain: generation.ChainRequest, **kwargs) -> Generator[generation.Answer, None, None]:
+        # Not a full implementation of chaining, but enough to test current api.Context layer
+        artifacts = []
+        for stage in chain.stage:
+            stage.request.MergeFrom(generation.Request(prompt=[generation.Prompt(artifact=a) for a in artifacts]))
+            artifacts = []
+            for answer in self.Generate(stage.request):
+                artifacts.extend(answer.artifacts)
+        for artifact in artifacts:
+            yield generation.Answer(artifacts=[artifact])        
 
-def test_image_to_image_with_strength():
-    image_base64 = base64.b64encode(
-        open("tests/resources/beach.png", "rb").read()
-    ).decode("utf-8")
-    request = CreateRequest(
-        {
-            "text_prompts": [
-                {"text": "A photo of a cat sitting on a couch."},
-            ],
-            "init_image": image_base64,
-            "init_image_mode": "IMAGE_STRENGTH",
-            "image_strength": 0.5,
-        }
+    def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
+        if request.HasField("image"):
+            image = _rand_image(request.image.width or 512, request.image.height or 512)
+            yield generation.Answer(artifacts=[_artifact_from_image(image)])
+
+        elif request.HasField("interpolate"):
+            assert len(request.prompt) == 2
+            assert request.prompt[0].artifact.type == generation.ARTIFACT_IMAGE
+            assert request.prompt[1].artifact.type == generation.ARTIFACT_IMAGE
+            image_a = Image.open(io.BytesIO(request.prompt[0].artifact.binary))
+            image_b = Image.open(io.BytesIO(request.prompt[1].artifact.binary))
+            assert image_a.size == image_b.size
+            for ratio in request.interpolate.ratios:
+                tween = utils.image_mix(image_a, image_b, ratio)
+                yield generation.Answer(artifacts=[_artifact_from_image(tween)])
+
+        elif request.HasField("transform"):
+            assert len(request.prompt) >= 1
+
+            has_depth_input, has_tensor_input = False, False
+            for prompt in request.prompt:
+                if prompt.artifact.type == generation.ARTIFACT_DEPTH:
+                    has_depth_input = True
+                elif prompt.artifact.type == generation.ARTIFACT_TENSOR:
+                    has_tensor_input = True
+
+            # 3D resample and camera pose require a depth or depth tensor artifact
+            if request.transform.HasField("resample") and len(request.transform.resample.transform.data) == 16:
+                assert has_depth_input or has_tensor_input
+            if request.transform.HasField("camera_pose"):
+                assert has_depth_input or has_tensor_input
+
+            export_mask = request.transform.HasField("camera_pose")
+            if request.transform.HasField("resample"):
+                if request.transform.resample.HasField("export_mask"):
+                    export_mask = request.transform.resample.export_mask                       
+
+            for prompt in request.prompt:
+                if prompt.artifact.type == generation.ARTIFACT_IMAGE:
+                    image = Image.open(io.BytesIO(prompt.artifact.binary))
+                    artifact = _artifact_from_image(image)
+                    if request.transform.HasField("depth_calc"):
+                        if request.requested_type == generation.ARTIFACT_TENSOR:                        
+                            artifact.type = generation.ARTIFACT_TENSOR
+                        else:
+                            artifact.type = generation.ARTIFACT_DEPTH                            
+                    yield generation.Answer(artifacts=[artifact])
+
+                    if export_mask:
+                        mask = _rand_image(image.width, image.height).convert("L")
+                        artifact = _artifact_from_image(mask)
+                        artifact.type = generation.ARTIFACT_MASK
+                        yield generation.Answer(artifacts=[artifact])
+
+def test_api_generate():
+    api = Context(stub=MockStub())
+    width, height = 512, 768
+    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height)
+    assert isinstance(results, dict)
+    assert generation.ARTIFACT_IMAGE in results
+    assert len(results[generation.ARTIFACT_IMAGE]) == 1
+    image = results[generation.ARTIFACT_IMAGE][0]
+    assert isinstance(image, Image.Image)
+    assert image.size == (width, height)
+
+def test_api_inpaint():
+    api = Context(stub=MockStub())
+    width, height = 512, 768
+    image = _rand_image(width, height)
+    mask = _rand_image(width, height).convert("L")
+    results = api.inpaint(image, mask, prompts=["foo bar"], weights=[1.0])
+    assert generation.ARTIFACT_IMAGE in results
+    assert len(results[generation.ARTIFACT_IMAGE]) == 1
+    image = results[generation.ARTIFACT_IMAGE][0]
+    assert isinstance(image, Image.Image)
+    assert image.size == (width, height)
+
+def test_api_interpolate():
+    api = Context(stub=MockStub())
+    width, height = 512, 768
+    image_a = _rand_image(width, height)
+    image_b = _rand_image(width, height)
+    results = api.interpolate([image_a, image_b], [0.3, 0.5, 0.6])
+    assert len(results) == 3
+    for image in results:
+        assert isinstance(image, Image.Image)
+        assert image.size == (width, height)
+
+def test_api_transform_and_generate():
+    api = Context(stub=MockStub())
+    width, height = 512, 704
+    init_image = _rand_image(width, height)
+    generate_request = api.generate(["a cute cat"], [1], width=width, height=height, 
+                                    init_strength=0.65, return_request=True)
+    assert isinstance(generate_request, generation.Request)
+    image = api.transform_and_generate(init_image, [utils.color_adjust_transform()], generate_request)
+    assert isinstance(image, Image.Image)
+    assert image.size == (width, height)
+
+def test_api_transform_camera_pose():
+    api = Context(stub=MockStub())
+    image = _rand_image()
+    xform = matrix.identity
+    pose = utils.camera_pose_transform(
+        xform, 0.1, 100.0, 75.0,
+        camera_type='perspective',
+        render_mode='mesh',
+        do_prefill=True
     )
+    images, masks = api.transform_3d([image], utils.depth_calc_transform(blend_weight=1.0), pose)
+    assert len(images) == 1 and len(masks) == 1
+    assert isinstance(images[0], Image.Image)
+    assert isinstance(masks[0], Image.Image)
 
-    prompts = request.prompt
-    assert len(prompts) == 2
-    assert prompts[0].text == "A photo of a cat sitting on a couch."
-    assert prompts[0].parameters.weight == 1.0
-    assert prompts[1].artifact is not None
-    assert prompts[1].artifact.binary is not None
+def test_api_transform_color_adjust():
+    api = Context(stub=MockStub())
+    image = _rand_image()
+    images, masks = api.transform([image], utils.color_adjust_transform())
+    assert len(images) == 1 and not masks
+    assert isinstance(images[0], Image.Image)
+    images, masks = api.transform([image, image], utils.color_adjust_transform())
+    assert len(images) == 2 and not masks
 
-    # todo - check step schedule
+def test_api_transform_resample_3d():
+    api = Context(stub=MockStub())
+    image = _rand_image()
+    xform = matrix.identity
+    resample = utils.resample_transform('replicate', xform, xform, export_mask=True)
+    images, masks = api.transform_3d([image], utils.depth_calc_transform(blend_weight=0.5), resample)
+    assert len(images) == 1 and len(masks) == 1
+    assert isinstance(images[0], Image.Image)
+    assert isinstance(masks[0], Image.Image)
 
-
-def test_image_to_image_with_schedule():
-    image_base64 = base64.b64encode(
-        open("tests/resources/beach.png", "rb").read()
-    ).decode("utf-8")
-    request = CreateRequest(
-        {
-            "text_prompts": [
-                {"text": "A photo of a cat sitting on a couch."},
-            ],
-            "init_image": image_base64,
-            "init_image_mode": "STEP_SCHEDULE",
-            "step_schedule_start": 0.5,
-            "step_schedule_end": 0.75,
-        }
-    )
-
-    prompts = request.prompt
-    assert len(prompts) == 2
-    assert prompts[0].text == "A photo of a cat sitting on a couch."
-    assert prompts[0].parameters.weight == 1.0
-    assert prompts[1].artifact is not None
-    assert prompts[1].artifact.binary is not None
-
-    # todo - check step schedule
-
-
-def test_image_to_image_with_init_image_alpha():
-    image_base64 = base64.b64encode(
-        open("tests/resources/beach.png", "rb").read()
-    ).decode("utf-8")
-
-    request = CreateRequest(
-        {
-            "text_prompts": [
-                {"text": "A photo of a cat sitting on a couch."},
-            ],
-            "init_image": image_base64,
-            "mask_source": "INIT_IMAGE_ALPHA",
-        }
-    )
-
-    prompts = request.prompt
-    assert len(prompts) == 3
-    assert prompts[0].text == "A photo of a cat sitting on a couch."
-    assert prompts[0].parameters.weight == 1.0
-    assert prompts[1].artifact is not None
-    assert prompts[1].artifact.binary is not None
-    assert prompts[2].artifact is not None
-    assert prompts[2].artifact.binary is not None
-
-
-def test_image_to_image_with_mask_image_white():
-    image_base64 = base64.b64encode(
-        open("tests/resources/beach.png", "rb").read()
-    ).decode("utf-8")
-    # todo make a real mask so we can test image transforms
-    mask_base64 = base64.b64encode(
-        open("tests/resources/beach.png", "rb").read()
-    ).decode("utf-8")
-
-    request = CreateRequest(
-        {
-            "text_prompts": [
-                {"text": "A photo of a cat sitting on a couch."},
-            ],
-            "init_image": image_base64,
-            "mask_source": "MASK_IMAGE_WHITE",
-            "mask_image": mask_base64,
-        }
-    )
-
-    prompts = request.prompt
-    assert len(prompts) == 3
-    assert prompts[0].text == "A photo of a cat sitting on a couch."
-    assert prompts[0].parameters.weight == 1.0
-    assert prompts[1].artifact is not None
-    assert prompts[1].artifact.binary is not None
-    assert prompts[2].artifact is not None
-    assert prompts[2].artifact.binary is not None
-
-
-def test_image_to_image_with_mask_image_black():
-    image_base64 = base64.b64encode(
-        open("tests/resources/beach.png", "rb").read()
-    ).decode("utf-8")
-    # todo make a real mask so we can test image transforms
-    mask_base64 = base64.b64encode(
-        open("tests/resources/beach.png", "rb").read()
-    ).decode("utf-8")
-
-    request = CreateRequest(
-        {
-            "text_prompts": [
-                {"text": "A photo of a cat sitting on a couch."},
-            ],
-            "init_image": image_base64,
-            "mask_source": "MASK_IMAGE_BLACK",
-            "mask_image": mask_base64,
-        }
-    )
-
-    prompts = request.prompt
-    assert len(prompts) == 3
-    assert prompts[0].text == "A photo of a cat sitting on a couch."
-    assert prompts[0].parameters.weight == 1.0
-    assert prompts[1].artifact is not None
-    assert prompts[1].artifact.binary is not None
-    assert prompts[2].artifact is not None
-    assert prompts[2].artifact.binary is not None
-
-def test_generation_response_success():
-    test_result = {'result': 'success', 'artifacts': [{'base64': 'blahblah', 'finishReason': 'SUCCESS', 'seed': 1}]}
-    response = GenerationResponse.parse_obj(test_result)
-    assert response.result == 'success'
-    assert response.artifacts[0].finishReason == 'SUCCESS'
-    assert response.artifacts[0].seed == 1
-    assert response.artifacts[0].base64 == 'blahblah'
-
-def test_generation_response_error():
-    test_result = {'result': 'error', 'error': {'id': 'blahblah', 'message': 'blahblah', 'name': 'blahblah'}}
-    response = GenerationResponse.parse_obj(test_result)
-    assert response.result == 'error'
-    assert response.error.id == 'blahblah'
-    assert response.error.message == 'blahblah'
-    assert response.error.name == 'blahblah'
-    
-def test_generation_response_v1_error():
-    test_result = {'result': 'error', 'id': 'blahblah', 'message': 'blahblah', 'name': 'blahblah'}
-    response = GenerationResponse.parse_obj(test_result)
-    assert response.result == 'error'
-    assert response.error.id == 'blahblah'
-    assert response.error.message == 'blahblah'
-    assert response.error.name == 'blahblah'
-    
-def test_create_response_filter():
-    error_artifact = Artifact(
-        type=generation.ARTIFACT_TEXT,
-        mime="text/plain",
-        text="Prompt is invalid.",
-        finish_reason=generation.FILTER,
-    )
-    error_answer = generation.Answer(
-        answer_id="error",
-        request_id="test",
-        created=int(time.time() * 1000),
-        received=int(time.time() * 1000),
-    )
-    error_answer.artifacts.append(error_artifact)
-
-    error_response = CreateResponse(error_answer)
-    assert error_response.result == "error"
-    assert error_response.artifacts is None
-    assert error_response.error is not None
-    assert error_response.error.name == "invalid_prompts"
-
-def test_create_response_error():
-    error_artifact = Artifact(
-        type=generation.ARTIFACT_TEXT,
-        mime="text/plain",
-        text="Error generating.",
-        finish_reason=generation.ERROR,
-    )
-    error_answer = generation.Answer(
-        answer_id="error",
-        request_id="test",
-        created=int(time.time() * 1000),
-        received=int(time.time() * 1000),
-    )
-    error_answer.artifacts.append(error_artifact)
-
-    error_response = CreateResponse(error_answer)
-    assert error_response.result == "error"
-    assert error_response.artifacts is None
-    assert error_response.error is not None    
-    assert error_response.error.name == "generation_error"
+def test_api_upscale():
+    api = Context(stub=MockStub())
+    result = api.upscale(_rand_image())
+    assert isinstance(result, Image.Image)

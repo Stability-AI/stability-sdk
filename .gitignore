@@ -1,13 +1,10 @@
 *.pyc
 *.egg-info
-*.png
+.vscode/
+build/
 dist/
 pyenv/
 *venv/
 .env
 generation-*.pb.json
-build/
-!tests/resources/*.png
-__pycache__/
-.pytest_cache/
-.coverage
+Pipfile*

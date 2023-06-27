@@ -19,10 +19,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
-      - name: Install Hatch
+          cache-dependency-path: |
+            **/setup.py
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade hatch      
       - name: Test
         run: |
-          hatch run test.py${{ matrix.python-version }}${{ matrix.feature-suffix}}:run
+          pip install .[dev,anim]
+      - name: Test with pytest
+        run: |
+          pytest -s --ignore=src/stability_sdk/interfaces

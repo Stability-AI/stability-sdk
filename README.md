@@ -33,6 +33,14 @@ It will generate and put PNGs in your current directory.
 To upscale:
 `python3 -m stability_sdk upscale -i "/path/to/image.png"`
 
+## Animation UI
+
+Install with 
+`pip install stability-sdk[anim_ui]`
+
+Then run with 
+`python3 -m stability_sdk animate --gui`
+
 ## SDK Usage
 
 Be sure to check out [Platform](https://platform.stability.ai) for comprehensive documentation on how to interact with our API.
@@ -57,7 +65,7 @@ options:
   --width WIDTH, -W WIDTH
                         [512] width of image
   --start_schedule START_SCHEDULE
-                        [0.5] start schedule for init image (must be greater than 0, 1 is full strength
+                        [0.5] start schedule for init image (must be greater than 0; 1 is full strength
                         text prompt, no trace of image)
   --end_schedule END_SCHEDULE
                         [0.01] end schedule for init image
