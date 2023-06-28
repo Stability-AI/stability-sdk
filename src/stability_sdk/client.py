@@ -198,9 +198,9 @@ class StabilityInference:
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
         :param adapter_type: T2I adapter type, if any.
-        :param adapter_strength: Float between 0, 1 represneting the proportion of unet passes into which we inject adapter weights
-        :param adapter_init_type: If "image" then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
-        if adapter_type is "sketch" then init_image is converted into a sketch.
+        :param adapter_strength: Float between 0, 1 representing the proportion of unet passes into which we inject adapter weights
+        :param adapter_init_type: If T2IADAPTERINIT_IMAGE then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
+        a sketch/depthmap/canny edge. If T2IADAPTERINIT_ADAPTER_IMAGE, then the init_image is treated as already a a sketch/depthmap/canny edge.
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
