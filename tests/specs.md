@@ -8,7 +8,7 @@ These examples generate and put PNGs in your current directory.
 
 Command line:
 
-`python3 -m stability_sdk generate -W 512 -H 512 "A stunning house."`
+`python3 -m stability_sdk generate -W 1024 -H 1024 "A stunning house."`
 
 SDK Usage:
 

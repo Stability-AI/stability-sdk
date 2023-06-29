@@ -26,7 +26,7 @@ Install the [PyPI](https://pypi.org/project/stability-sdk/) package via:
 
 Then to invoke:
 
-`python3 -m stability_sdk generate -W 512 -H 512 "A stunning house."`
+`python3 -m stability_sdk generate -W 1024 -H 1024 "A stunning house."`
 
 It will generate and put PNGs in your current directory.
 
@@ -61,9 +61,9 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --height HEIGHT, -H HEIGHT
-                        [512] height of image
+                        [1024] height of image
   --width WIDTH, -W WIDTH
-                        [512] width of image
+                        [1024] width of image
   --start_schedule START_SCHEDULE
                         [0.5] start schedule for init image (must be greater than 0; 1 is full strength
                         text prompt, no trace of image)
