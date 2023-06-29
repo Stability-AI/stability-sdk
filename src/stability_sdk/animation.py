@@ -332,6 +332,10 @@ class Animator:
         # configure Api to retry on classifier obfuscations
         self.api._retry_obfuscation = True
 
+        # two stage 1024 model requires longer timeout
+        if self.args.model.startswith('stable-diffusion-xl-1024'):
+            self.api._request_timeout = 120.0
+
         # create output directory
         if self.out_dir is not None:
             os.makedirs(self.out_dir, exist_ok=True)
