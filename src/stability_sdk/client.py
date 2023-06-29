@@ -171,6 +171,7 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
+        cai_add_default_manifest: bool = False,
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -194,6 +195,7 @@ class StabilityInference:
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
+        :param cai_add_default_manifest: Add default C2PA manifest or not.
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
@@ -277,6 +279,13 @@ class StabilityInference:
         transform=None
         if sampler:
             transform=generation.TransformType(diffusion=sampler)
+	
+	# empty CAI Parameters will result in images not being signed by the CAI server
+        caip = generation.CAIParameters()
+        if cai_add_default_manifest:
+            caip = generation.CAIParameters(
+                model_metadata=generation._CAIPARAMETERS_MODELMETADATA.values_by_name[
+                    'MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number)
 
         image_parameters=generation.ImageParameters(
             transform=transform,
@@ -286,6 +295,7 @@ class StabilityInference:
             steps=steps,
             samples=samples,
             parameters=[generation.StepParameter(**step_parameters)],
+            cai_parameters=caip,
         )
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters)
@@ -499,6 +509,9 @@ def process_cli(logger: logging.Logger = None,
         "--width", "-W", type=int, default=1024, help="[1024] width of image"
     )
     parser_generate.add_argument(
+        "--cai_add_default_manifest", type=bool, default=False, help="Attatch a signed manifest to artifacts using C2PA. The default manifest will contain engine id and publisher name (Stability AI)"
+    )
+    parser_generate.add_argument(
         "--start_schedule",
         type=float,
         default=0.5,
@@ -626,11 +639,12 @@ def process_cli(logger: logging.Logger = None,
             "width": args.width,
             "start_schedule": args.start_schedule,
             "end_schedule": args.end_schedule,
-            "cfg_scale": args.cfg_scale,            
+            "cfg_scale": args.cfg_scale,
             "seed": args.seed,
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
+            "cai_add_default_manifest": args.cai_add_default_manifest,
         }
 
         if args.sampler:
