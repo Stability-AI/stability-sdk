@@ -171,6 +171,7 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
+        cai_add_default_manifest: bool = False,
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -194,6 +195,7 @@ class StabilityInference:
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
+        :param cai_add_default_manifest: Add default C2PA manifest or not.
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
@@ -277,6 +279,13 @@ class StabilityInference:
         transform=None
         if sampler:
             transform=generation.TransformType(diffusion=sampler)
+	
+	# empty CAI Parameters will result in images not being signed by the CAI server
+        caip = generation.CAIParameters()
+        if cai_add_default_manifest:
+            caip = generation.CAIParameters(
+                model_metadata=generation._CAIPARAMETERS_MODELMETADATA.values_by_name[
+                    'MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number)
 
         image_parameters=generation.ImageParameters(
             transform=transform,
@@ -286,6 +295,7 @@ class StabilityInference:
             steps=steps,
             samples=samples,
             parameters=[generation.StepParameter(**step_parameters)],
+            cai_parameters=caip,
         )
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters)
