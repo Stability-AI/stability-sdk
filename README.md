@@ -48,12 +48,13 @@ Be sure to check out [Platform](https://platform.stability.ai) for comprehensive
 ## Command line usage
 
 ```
-usage: python -m stability_sdk generate [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
-                 [--end_schedule END_SCHEDULE] [--cfg_scale CFG_SCALE] [--sampler SAMPLER]
-                 [--steps STEPS] [--seed SEED] [--prefix PREFIX] [--engine ENGINE]
-                 [--num_samples NUM_SAMPLES] [--artifact_types ARTIFACT_TYPES]
-                 [--no-store] [--show] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
-                 [prompt ...]
+usage: python -m stability_sdk generate [-h] [--height HEIGHT] [--width WIDTH] 
+                [--start_schedule START_SCHEDULE] [--end_schedule END_SCHEDULE] 
+                [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS] 
+                [--style_preset STYLE_PRESET] [--seed SEED] [--prefix PREFIX] [--engine ENGINE]
+                [--num_samples NUM_SAMPLES] [--artifact_types ARTIFACT_TYPES]
+                [--no-store] [--show] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
+                [prompt ...]
 
 positional arguments:
   prompt
@@ -76,6 +77,10 @@ options:
                         k_dpm_2_ancestral, k_lms, k_dpmpp_2m, k_dpmpp_2s_ancestral)
   --steps STEPS, -s STEPS
                         [auto] number of steps
+  --style_preset STYLE_PRESET
+                        [none] (3d-model, analog-film, anime, cinematic, comic-book, digital-art, enhance, 
+                        fantasy-art, isometric, line-art, low-poly, modeling-compound, neon-punk, origami, 
+                        photographic, pixel-art, tile-texture)
   --seed SEED, -S SEED  random seed to use
   --prefix PREFIX, -p PREFIX
                         output prefixes for artifacts
