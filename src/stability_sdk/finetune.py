@@ -161,7 +161,7 @@ def create_model(
     request = finetuning.CreateModelRequest(
         name=params.name,
         mode=mode_to_proto(params.mode),
-        object_prompt=params.object_prompt,
+        object_prompt=params.object_prompt if params.mode == FineTuneMode.OBJECT else None,
         project_id=proj.id,
         engine_id=params.engine_id,
         extras=extras_struct

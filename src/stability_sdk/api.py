@@ -120,7 +120,8 @@ class Context:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
-        finetune_model: Optional[str] = None,
+        finetune_models: Optional[List[str]] = None,
+        finetune_weights: Optional[List[float]] = None,
         preset: Optional[str] = None,
         return_request: bool = False,
     ) -> Dict[int, List[Any]]:
@@ -144,7 +145,8 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
-        :param finetune_model: Finetune model to use
+        :param finetune_models: Finetune models to use
+        :param finetune_weights: Weight of each finetune model
         :param preset: Style preset to use
         :param return_request: Whether to return the request instead of running it
         :return: dict mapping artifact type to data
@@ -167,7 +169,8 @@ class Context:
         image_params = self._build_image_params(
             width, height, sampler, steps, seed, samples, cfg_scale, 
             start_schedule, init_noise_scale, masked_area_init, 
-            finetune_model, guidance_preset, guidance_cuts, guidance_strength,
+            finetune_models, finetune_weights,
+            guidance_preset, guidance_cuts, guidance_strength,
         )
         
         extras = Struct()
@@ -208,7 +211,8 @@ class Context:
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
-        finetune_model: Optional[str] = None,
+        finetune_models: Optional[List[str]] = None,
+        finetune_weights: Optional[List[float]] = None,
         preset: Optional[str] = None,
     ) -> Dict[int, List[Any]]:
         """
@@ -229,7 +233,8 @@ class Context:
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
-        :param finetune_model: Finetune model to use
+        :param finetune_models: Finetune models to use
+        :param finetune_weights: Weight of each finetune model
         :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
@@ -242,7 +247,8 @@ class Context:
         image_params = self._build_image_params(
             width, height, sampler, steps, seed, samples, cfg_scale, 
             start_schedule, init_noise_scale, masked_area_init, 
-            finetune_model, guidance_preset, guidance_cuts, guidance_strength,
+            finetune_models, finetune_weights,
+            guidance_preset, guidance_cuts, guidance_strength,
         )
 
         extras = Struct()
@@ -546,7 +552,8 @@ class Context:
 
     def _build_image_params(self, width, height, sampler, steps, seed, samples, cfg_scale, 
                             schedule_start, init_noise_scale, masked_area_init, 
-                            finetune_model, guidance_preset, guidance_cuts, guidance_strength):
+                            finetune_models, finetune_weights, 
+                            guidance_preset, guidance_cuts, guidance_strength):
 
         if not seed:
             seed = [random.randrange(0, 4294967295)]
@@ -577,10 +584,17 @@ class Context:
                 ]
             )
 
-        fine_tuning_parameters = (
-            [generation.FineTuningParameters(model_id=finetune_model)]
-            if finetune_model else None
-        )
+        fine_tuning_parameters = None
+        if finetune_models:
+            if not finetune_weights:
+                finetune_weights = [1.0] * len(finetune_models)
+            if len(finetune_models) != len(finetune_weights):
+                raise ValueError("finetune_models and finetune_weights must have the same length")
+            fine_tuning_parameters = []
+            for model, weight in zip(finetune_models, finetune_weights):
+                fine_tuning_parameters.append(
+                    generation.FineTuningParameters(model_id=model, weight=weight)
+                )
 
         return generation.ImageParameters(
             transform=generation.TransformType(diffusion=sampler) if sampler else None,
