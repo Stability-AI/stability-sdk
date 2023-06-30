@@ -122,7 +122,7 @@ class Context:
         guidance_strength: float = 0.0,
         preset: Optional[str] = None,
         return_request: bool = False,
-        cai_add_default_manifest: bool = False,
+        c2pa_add_default_manifest: bool = False,
     ) -> Dict[int, List[Any]]:
         """
         Generate an image from a set of weighted prompts.
@@ -165,7 +165,7 @@ class Context:
         start_schedule = 1.0 - init_strength
         image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
                                                 start_schedule, init_noise_scale, masked_area_init, 
-                                                guidance_preset, guidance_cuts, guidance_strength, cai_add_default_manifest)
+                                                guidance_preset, guidance_cuts, guidance_strength, c2pa_add_default_manifest)
 
         extras = Struct()
         if preset and preset.lower() != 'none':
@@ -236,7 +236,7 @@ class Context:
         start_schedule = 1.0-init_strength
         image_params = self._build_image_params(width, height, sampler, steps, seed, samples, cfg_scale, 
                                                 start_schedule, init_noise_scale, masked_area_init, 
-                                                guidance_preset, guidance_cuts, guidance_strength, cai_add_default_manifest=False)
+                                                guidance_preset, guidance_cuts, guidance_strength, c2pa_add_default_manifest=False)
 
         extras = Struct()
         if preset and preset.lower() != 'none':
@@ -539,7 +539,7 @@ class Context:
 
     def _build_image_params(self, width, height, sampler, steps, seed, samples, cfg_scale, 
                             schedule_start, init_noise_scale, masked_area_init, 
-                            guidance_preset, guidance_cuts, guidance_strength, cai_add_default_manifest):
+                            guidance_preset, guidance_cuts, guidance_strength, c2pa_add_default_manifest):
 
         if not seed:
             seed = [random.randrange(0, 4294967295)]
@@ -569,11 +569,11 @@ class Context:
                     )
                 ]
             )
-        # empty CAI Parameters will result in images not being signed by the CAI server
-        caip = generation.CAIParameters()
-        if cai_add_default_manifest:
-            caip = generation.CAIParameters(
-                model_metadata=generation._CAIPARAMETERS_MODELMETADATA.values_by_name[
+        # empty C2PA Parameters will result in images not being signed by the C2PA server
+        c2pa_params = generation.C2PAParameters()
+        if c2pa_add_default_manifest:
+            c2pa_params = generation.C2PAParameters(
+                model_metadata=generation._C2PAPARAMETERS_MODELMETADATA.values_by_name[
                     'MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number)
 
         return generation.ImageParameters(
@@ -585,7 +585,7 @@ class Context:
             samples=samples,
             masked_area_init=masked_area_init,
             parameters=[generation.StepParameter(**step_parameters)],
-            cai_parameters=caip
+            c2pa_parameters=c2pa_params
         )
 
     def _process_response(self, response) -> Dict[int, List[Any]]:

@@ -99,25 +99,25 @@ def test_api_generate():
     assert isinstance(image, Image.Image)
     assert image.size == (width, height)
 
-def test_api_generate_cai_signing_set():
-    class CAIMockStub(MockStub):
+def test_api_generate_c2pa_signing_set():
+    class C2PAMockStub(MockStub):
         def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
-            assert request.image.cai_parameters.model_metadata == \
-                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number
+            assert request.image.c2pa_parameters.model_metadata == \
+                generation._C2PAPARAMETERS_MODELMETADATA.values_by_name['MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number
             return super().Generate(request, **kwargs)
-    api = Context(stub=CAIMockStub())
+    api = Context(stub=C2PAMockStub())
     width, height = 512, 768
-    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height, cai_add_default_manifest=True)
+    results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height, c2pa_add_default_manifest=True)
 
-def test_api_generate_cai_signing_unset():
-    class CAIMockStub(MockStub):
+def test_api_generate_c2pa_signing_unset():
+    class C2PAMockStub(MockStub):
         def Generate(self, request: generation.Request, **kwargs) -> Generator[generation.Answer, None, None]:
-            assert request.image.cai_parameters.model_metadata == \
-                generation._CAIPARAMETERS_MODELMETADATA.values_by_name['MODEL_METADATA_UNSPECIFIED'].number
+            assert request.image.c2pa_parameters.model_metadata == \
+                generation._C2PAPARAMETERS_MODELMETADATA.values_by_name['MODEL_METADATA_UNSPECIFIED'].number
             return super().Generate(request, **kwargs)
-    api = Context(stub=CAIMockStub())
+    api = Context(stub=C2PAMockStub())
     width, height = 512, 768
-    # sign_with_cai should default to false.
+    # sign_with_c2pa should default to false.
     results = api.generate(prompts=["foo bar"], weights=[1.0], width=width, height=height)
 
 
