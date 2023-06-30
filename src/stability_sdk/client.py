@@ -171,6 +171,7 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
+        style_preset: Optional[str] = None
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -194,6 +195,7 @@ class StabilityInference:
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
+        :param style_preset: Style preset name to use (see https://platform.stability.ai/rest-api#tag/v1generation)
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
@@ -288,7 +290,13 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-        return self.emit_request(prompt=prompts, image_parameters=image_parameters)
+        if style_preset and style_preset.lower() != 'none':
+            extras = Struct()
+            extras.update({ '$IPC': { "preset": style_preset } })
+        else:
+            extras = None
+
+        return self.emit_request(prompt=prompts, image_parameters=image_parameters, extra_parameters=extras)
     
     def upscale(
         self,
@@ -391,9 +399,10 @@ class StabilityInference:
             yield answer
             start = time.time()
 
-def process_cli(logger: logging.Logger = None,
-                warn_client_call_deprecated: bool = True,
-                ):
+def process_cli(
+    logger: logging.Logger = None,
+    warn_client_call_deprecated: bool = True,
+):
     if not logger:
         logger = logging.getLogger(__name__)
         logger.setLevel(level=logging.INFO)
@@ -524,6 +533,7 @@ def process_cli(logger: logging.Logger = None,
     )
     parser_generate.add_argument(
         "--seed", "-S", type=int, default=0, help="random seed to use")
+    parser_generate.add_argument("--style_preset", type=str, help="style preset name")
     parser_generate.add_argument(
         "--prefix",
         "-p",
@@ -631,6 +641,7 @@ def process_cli(logger: logging.Logger = None,
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
+            "style_preset": args.style_preset,
         }
 
         if args.sampler:
