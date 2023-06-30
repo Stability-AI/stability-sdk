@@ -110,7 +110,7 @@ def create_model(
         else:
             images.append(None)
 
-    # Create project
+    # Create training project
     request = project.CreateProjectRequest(
         title=params.name, 
         type=project.PROJECT_TYPE_TRAINING,
@@ -120,54 +120,63 @@ def create_model(
     proj: project.Project = context._stub_project.Create(request)
     logging.info(f"Created project {proj.id}")
 
-    # Upload images
-    for i, image in enumerate(images):
-        logging.info(f"Uploading image {image_paths[i]} to project {proj.id}")
+    try:
+        # Upload images
+        for i, image in enumerate(images):
+            if image is None:
+                # Directly use the file from disk if it was already the right size
+                with open(image_paths[i], 'rb') as f:
+                    bytes = f.read()
+                mime_type, _ = mimetypes.guess_type(image_paths[i])
+                prompt = generation.Prompt(artifact=generation.Artifact(
+                    type=generation.ARTIFACT_IMAGE, 
+                    binary=bytes,
+                    mime=mime_type
+                ))
+            else:
+                # Encode the resized image
+                prompt = image_to_prompt(image)
 
-        if image is None:
-            # Directly use the file from disk if it was already the right size
-            with open(image_paths[i], 'rb') as f:
-                bytes = f.read()
-            mime_type, _ = mimetypes.guess_type(image_paths[i])
-            prompt = generation.Prompt(artifact=generation.Artifact(
-                type=generation.ARTIFACT_IMAGE, 
-                binary=bytes,
-                mime=mime_type
-            ))
-        else:
-            # Encode the resized image
-            prompt = image_to_prompt(image)
-
-        request = generation.Request(
-            engine_id="aws-asset-service",
-            prompt=[prompt],
-            asset=generation.AssetParameters(
-                action=generation.ASSET_PUT, 
-                project_id=proj.id, 
-                use=generation.ASSET_USE_INPUT
+            request = generation.Request(
+                engine_id="asset-service",
+                prompt=[prompt],
+                asset=generation.AssetParameters(
+                    action=generation.ASSET_PUT, 
+                    project_id=proj.id, 
+                    use=generation.ASSET_USE_INPUT
+                )
             )
-        )
-        for response in context._stub_generation.Generate(request):
-            for artifact in response.artifacts:
-                if artifact.type == generation.ARTIFACT_TEXT:
-                    logging.info(f"Uploaded image {i}: {artifact.text}")
-    
-    # Pass along extra training data for development and testing
-    extras_struct = Struct()
-    if extras is not None:
-        extras_struct.update(extras)
+            responses = context._stub_generation.Generate(request)
+            success = False
+            for response in context._stub_generation.Generate(request):
+                for artifact in response.artifacts:
+                    if artifact.type == generation.ARTIFACT_TEXT:
+                        logging.info(f"Uploaded image {i}: {artifact.text}")
+                        success = True
+            if not success:
+                raise RuntimeError(f"Failed to upload image {image_paths[i]}")
+        
+        # Pass along extra training data for development and testing
+        extras_struct = Struct()
+        if extras is not None:
+            extras_struct.update(extras)
 
-    # Create fine tuning model
-    request = finetuning.CreateModelRequest(
-        name=params.name,
-        mode=mode_to_proto(params.mode),
-        object_prompt=params.object_prompt if params.mode == FineTuneMode.OBJECT else None,
-        project_id=proj.id,
-        engine_id=params.engine_id,
-        extras=extras_struct
-    )
-    result = context._stub_finetune.CreateModel(request)
-    return model_from_proto(result.model)
+        # Create fine tuning model
+        request = finetuning.CreateModelRequest(
+            name=params.name,
+            mode=mode_to_proto(params.mode),
+            object_prompt=params.object_prompt if params.mode == FineTuneMode.OBJECT else None,
+            project_id=proj.id,
+            engine_id=params.engine_id,
+            extras=extras_struct
+        )
+        result = context._stub_finetune.CreateModel(request)
+        return model_from_proto(result.model)
+
+    except Exception as e:
+        logging.info(f"Encountered error, deleting training project {proj.id}")
+        context._stub_project.Delete(project.DeleteProjectRequest(id=proj.id))
+        raise e
 
 def delete_model(context: Context, model_id: str) -> FineTuneModel:
     request = finetuning.DeleteModelRequest(id=model_id)
