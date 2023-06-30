@@ -26,7 +26,7 @@ Install the [PyPI](https://pypi.org/project/stability-sdk/) package via:
 
 Then to invoke:
 
-`python3 -m stability_sdk generate -W 512 -H 512 "A stunning house."`
+`python3 -m stability_sdk generate -W 1024 -H 1024 "A stunning house."`
 
 It will generate and put PNGs in your current directory.
 
@@ -48,12 +48,13 @@ Be sure to check out [Platform](https://platform.stability.ai) for comprehensive
 ## Command line usage
 
 ```
-usage: python -m stability_sdk generate [-h] [--height HEIGHT] [--width WIDTH] [--start_schedule START_SCHEDULE]
-                 [--end_schedule END_SCHEDULE] [--cfg_scale CFG_SCALE] [--sampler SAMPLER]
-                 [--steps STEPS] [--seed SEED] [--prefix PREFIX] [--engine ENGINE]
-                 [--num_samples NUM_SAMPLES] [--artifact_types ARTIFACT_TYPES]
-                 [--no-store] [--show] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
-                 [prompt ...]
+usage: python -m stability_sdk generate [-h] [--height HEIGHT] [--width WIDTH] 
+                [--start_schedule START_SCHEDULE] [--end_schedule END_SCHEDULE] 
+                [--cfg_scale CFG_SCALE] [--sampler SAMPLER] [--steps STEPS] 
+                [--style_preset STYLE_PRESET] [--seed SEED] [--prefix PREFIX] [--engine ENGINE]
+                [--num_samples NUM_SAMPLES] [--artifact_types ARTIFACT_TYPES]
+                [--no-store] [--show] [--init_image INIT_IMAGE] [--mask_image MASK_IMAGE]
+                [prompt ...]
 
 positional arguments:
   prompt
@@ -61,9 +62,9 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --height HEIGHT, -H HEIGHT
-                        [512] height of image
+                        [1024] height of image
   --width WIDTH, -W WIDTH
-                        [512] width of image
+                        [1024] width of image
   --start_schedule START_SCHEDULE
                         [0.5] start schedule for init image (must be greater than 0; 1 is full strength
                         text prompt, no trace of image)
@@ -76,6 +77,10 @@ options:
                         k_dpm_2_ancestral, k_lms, k_dpmpp_2m, k_dpmpp_2s_ancestral)
   --steps STEPS, -s STEPS
                         [auto] number of steps
+  --style_preset STYLE_PRESET
+                        [none] (3d-model, analog-film, anime, cinematic, comic-book, digital-art, enhance, 
+                        fantasy-art, isometric, line-art, low-poly, modeling-compound, neon-punk, origami, 
+                        photographic, pixel-art, tile-texture)
   --seed SEED, -S SEED  random seed to use
   --prefix PREFIX, -p PREFIX
                         output prefixes for artifacts

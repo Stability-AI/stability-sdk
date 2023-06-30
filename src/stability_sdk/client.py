@@ -95,7 +95,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-xl-beta-v2-2-2",
+        engine: str = "stable-diffusion-xl-1024-v0-9",
         upscale_engine: str = "esrgan-v1-x2plus",
         verbose: bool = False,
         wait_for_ready: bool = True,
@@ -155,8 +155,8 @@ class StabilityInference:
         prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]],
         init_image: Optional[Image.Image] = None,
         mask_image: Optional[Image.Image] = None,
-        height: int = 512,
-        width: int = 512,
+        height: int = 1024,
+        width: int = 1024,
         start_schedule: float = 1.0,
         end_schedule: float = 0.01,
         cfg_scale: float = 7.0,
@@ -171,6 +171,7 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
+        style_preset: Optional[str] = None
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -194,6 +195,7 @@ class StabilityInference:
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
+        :param style_preset: Style preset name to use (see https://platform.stability.ai/rest-api#tag/v1generation)
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
@@ -288,7 +290,13 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-        return self.emit_request(prompt=prompts, image_parameters=image_parameters)
+        if style_preset and style_preset.lower() != 'none':
+            extras = Struct()
+            extras.update({ '$IPC': { "preset": style_preset } })
+        else:
+            extras = None
+
+        return self.emit_request(prompt=prompts, image_parameters=image_parameters, extra_parameters=extras)
     
     def upscale(
         self,
@@ -391,9 +399,10 @@ class StabilityInference:
             yield answer
             start = time.time()
 
-def process_cli(logger: logging.Logger = None,
-                warn_client_call_deprecated: bool = True,
-                ):
+def process_cli(
+    logger: logging.Logger = None,
+    warn_client_call_deprecated: bool = True,
+):
     if not logger:
         logger = logging.getLogger(__name__)
         logger.setLevel(level=logging.INFO)
@@ -493,10 +502,10 @@ def process_cli(logger: logging.Logger = None,
 
     parser_generate = subparsers.add_parser('generate')
     parser_generate.add_argument(
-        "--height", "-H", type=int, default=512, help="[512] height of image"
+        "--height", "-H", type=int, default=1024, help="[1024] height of image"
     )
     parser_generate.add_argument(
-        "--width", "-W", type=int, default=512, help="[512] width of image"
+        "--width", "-W", type=int, default=1024, help="[1024] width of image"
     )
     parser_generate.add_argument(
         "--start_schedule",
@@ -524,6 +533,7 @@ def process_cli(logger: logging.Logger = None,
     )
     parser_generate.add_argument(
         "--seed", "-S", type=int, default=0, help="random seed to use")
+    parser_generate.add_argument("--style_preset", type=str, help="style preset name")
     parser_generate.add_argument(
         "--prefix",
         "-p",
@@ -550,7 +560,7 @@ def process_cli(logger: logging.Logger = None,
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-xl-beta-v2-2-2",
+        default="stable-diffusion-xl-1024-v0-9",
     )
     parser_generate.add_argument(
         "--init_image",
@@ -631,6 +641,7 @@ def process_cli(logger: logging.Logger = None,
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
+            "style_preset": args.style_preset,
         }
 
         if args.sampler:
