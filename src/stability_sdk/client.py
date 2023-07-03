@@ -174,6 +174,7 @@ class StabilityInference:
         adapter_type: generation.T2IAdapter = None,
         adapter_strength: float = 0.4,
         adapter_init_type: generation.T2IAdapterInit = generation.T2IADAPTERINIT_IMAGE,
+        style_preset: Optional[str] = None
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -201,6 +202,7 @@ class StabilityInference:
         :param adapter_strength: Float between 0, 1 representing the proportion of unet passes into which we inject adapter weights
         :param adapter_init_type: If T2IADAPTERINIT_IMAGE then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
         a sketch/depthmap/canny edge. If T2IADAPTERINIT_ADAPTER_IMAGE, then the init_image is treated as already a a sketch/depthmap/canny edge.
+        :param style_preset: Style preset name to use (see https://platform.stability.ai/rest-api#tag/v1generation)
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
@@ -301,8 +303,13 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-        return self.emit_request(prompt=prompts, 
-                                 image_parameters=image_parameters)
+        if style_preset and style_preset.lower() != 'none':
+            extras = Struct()
+            extras.update({ '$IPC': { "preset": style_preset } })
+        else:
+            extras = None
+
+        return self.emit_request(prompt=prompts, image_parameters=image_parameters, extra_parameters=extras)
     
     def upscale(
         self,
@@ -405,9 +412,10 @@ class StabilityInference:
             yield answer
             start = time.time()
 
-def process_cli(logger: logging.Logger = None,
-                warn_client_call_deprecated: bool = True,
-                ):
+def process_cli(
+    logger: logging.Logger = None,
+    warn_client_call_deprecated: bool = True,
+):
     if not logger:
         logger = logging.getLogger(__name__)
         logger.setLevel(level=logging.INFO)
@@ -538,6 +546,7 @@ def process_cli(logger: logging.Logger = None,
     )
     parser_generate.add_argument(
         "--seed", "-S", type=int, default=0, help="random seed to use")
+    parser_generate.add_argument("--style_preset", type=str, help="style preset name")
     parser_generate.add_argument(
         "--prefix",
         "-p",
@@ -645,6 +654,7 @@ def process_cli(logger: logging.Logger = None,
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
+            "style_preset": args.style_preset,
         }
 
         if args.sampler:
