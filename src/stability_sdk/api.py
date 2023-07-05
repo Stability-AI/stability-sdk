@@ -117,11 +117,11 @@ class Context:
         init_depth: Optional[Image.Image] = None,
         mask: Optional[Image.Image] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ORIGINAL,
+        finetune_models: Optional[List[str]] = None,
+        finetune_weights: Optional[List[float]] = None,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
-        finetune_models: Optional[List[str]] = None,
-        finetune_weights: Optional[List[float]] = None,
         preset: Optional[str] = None,
         return_request: bool = False,
     ) -> Dict[int, List[Any]]:
@@ -142,11 +142,11 @@ class Context:
         :param init_noise_scale: Scale of the initial noise
         :param mask: Mask to use (0 for pixels to change, 255 for pixels to keep)
         :param masked_area_init: How to initialize the masked area
+        :param finetune_models: Finetune models to use
+        :param finetune_weights: Weight of each finetune model
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
-        :param finetune_models: Finetune models to use
-        :param finetune_weights: Weight of each finetune model
         :param preset: Style preset to use
         :param return_request: Whether to return the request instead of running it
         :return: dict mapping artifact type to data
@@ -208,11 +208,11 @@ class Context:
         init_strength: float = 0.0,
         init_noise_scale: Optional[float] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
+        finetune_models: Optional[List[str]] = None,
+        finetune_weights: Optional[List[float]] = None,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
-        finetune_models: Optional[List[str]] = None,
-        finetune_weights: Optional[List[float]] = None,
         preset: Optional[str] = None,
     ) -> Dict[int, List[Any]]:
         """
@@ -230,11 +230,11 @@ class Context:
         :param init_strength: Strength of the initial image
         :param init_noise_scale: Scale of the initial noise
         :param masked_area_init: How to initialize the masked area
+        :param finetune_models: Finetune models to use
+        :param finetune_weights: Weight of each finetune model
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
-        :param finetune_models: Finetune models to use
-        :param finetune_weights: Weight of each finetune model
         :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
@@ -588,13 +588,12 @@ class Context:
         if finetune_models:
             if not finetune_weights:
                 finetune_weights = [1.0] * len(finetune_models)
-            if len(finetune_models) != len(finetune_weights):
+            elif len(finetune_models) != len(finetune_weights):
                 raise ValueError("finetune_models and finetune_weights must have the same length")
-            fine_tuning_parameters = []
-            for model, weight in zip(finetune_models, finetune_weights):
-                fine_tuning_parameters.append(
-                    generation.FineTuningParameters(model_id=model, weight=weight)
-                )
+            fine_tuning_parameters = [
+                generation.FineTuningParameters(model_id=model, weight=weight)
+                for model, weight in zip(finetune_models, finetune_weights)
+            ]
 
         return generation.ImageParameters(
             transform=generation.TransformType(diffusion=sampler) if sampler else None,

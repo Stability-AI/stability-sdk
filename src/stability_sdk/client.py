@@ -166,6 +166,8 @@ class StabilityInference:
         samples: int = 1,
         safety: bool = True,
         classifiers: Optional[generation.ClassifierParameters] = None,
+        finetune_models: Optional[List[str]] = None,
+        finetune_weights: Optional[List[float]] = None,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: Optional[float] = None,
@@ -190,6 +192,8 @@ class StabilityInference:
         :param samples: Number of samples to generate.
         :param safety: DEPRECATED/UNUSED - Cannot be disabled.
         :param classifiers: DEPRECATED/UNUSED - Has no effect on image generation.
+        :param finetune_models: Finetune models to use
+        :param finetune_weights: Weight of each finetune model
         :param guidance_preset: Guidance preset to use. See generation.GuidancePreset for supported values.
         :param guidance_cuts: Number of cuts to use for guidance.
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
@@ -276,17 +280,29 @@ class StabilityInference:
                 ],
             )
 
-        transform=None
+        transform = None
         if sampler:
-            transform=generation.TransformType(diffusion=sampler)
+            transform = generation.TransformType(diffusion=sampler)
 
-        image_parameters=generation.ImageParameters(
+        fine_tuning_parameters = None
+        if finetune_models:
+            if not finetune_weights:
+                finetune_weights = [1.0] * len(finetune_models)
+            elif len(finetune_models) != len(finetune_weights):
+                raise ValueError("finetune_models and finetune_weights must have the same length")
+            fine_tuning_parameters = [
+                generation.FineTuningParameters(model_id=model, weight=weight)
+                for model, weight in zip(finetune_models, finetune_weights)
+            ]
+
+        image_parameters = generation.ImageParameters(
             transform=transform,
             height=height,
             width=width,
             seed=seed,
             steps=steps,
             samples=samples,
+            fine_tuning_parameters=fine_tuning_parameters,
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
