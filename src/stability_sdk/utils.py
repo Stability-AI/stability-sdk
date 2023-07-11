@@ -1,10 +1,12 @@
 import io
 import logging
+import math
 import os
+import re
 import subprocess
 
 from PIL import Image
-from typing import Dict, Generator, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import Dict, Generator, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 from .api import generation
 from .matrix import Matrix
@@ -341,6 +343,30 @@ def open_images(
             img = Image.open(io.BytesIO(artifact.binary))
             img.show()
         yield (path, artifact)
+
+def parse_models_from_prompts(prompts: Union[str, List[str]]) -> List[Tuple[str, float]]:
+    """
+    Parses prompt strings for model names and weights with syntax <model:weight>.
+    :param prompts: List of prompt strings.
+    :return: A list of tuples of model names and weights.
+    """
+    if not prompts:
+        prompts = []
+    prompts = [prompts] if isinstance(prompts, str) else prompts
+    pattern = re.compile(r'<([^<>:]+)(?::([^>]+))?>')
+    models = {}
+    for prompt in prompts:
+        matches = pattern.findall(prompt)
+        for model, weight in matches:
+            # ignore default TI tokens until servers updated
+            if model in ["s1", "s2", "s3"]:
+                continue
+            try:
+                weight = max(float(weight) if weight else 1.0, models.get(model, -math.inf))
+            except ValueError as e:
+                raise ValueError(f'Invalid weight for model "{model}": "{weight}"') from e
+            models[model] = weight
+    return list(models.items())
 
 def tensor_to_prompt(tensor: 'tensors_pb.Tensor') -> generation.Prompt:
     """

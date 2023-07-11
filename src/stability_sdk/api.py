@@ -10,12 +10,17 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2 as dashboard
 import stability_sdk.interfaces.gooseai.dashboard.dashboard_pb2_grpc as dashboard_grpc
+import stability_sdk.interfaces.gooseai.finetuning.finetuning_pb2 as finetuning
+import stability_sdk.interfaces.gooseai.finetuning.finetuning_pb2_grpc as finetuning_grpc
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 import stability_sdk.interfaces.gooseai.generation.generation_pb2_grpc as generation_grpc
+import stability_sdk.interfaces.gooseai.project.project_pb2 as project
+import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
 
 from .utils import (
     image_mix,
     image_to_prompt,
+    parse_models_from_prompts,
     tensor_to_prompt,
 )
 
@@ -76,22 +81,26 @@ class Context:
         upscale_engine_id: str="esrgan-v1-x2plus",
     ):
         if not host and stub is None:
-            raise Exception("Must provide either GRPC host or stub to Api")
+            raise Exception("Must provide either GRPC host or generation stub to Api")
 
         channel = open_channel(host, api_key) if host else None
         if not stub:
             stub = generation_grpc.GenerationServiceStub(channel)
 
-        self._dashboard_stub = dashboard_grpc.DashboardServiceStub(channel) if channel else None
+        self._stub_dashboard = dashboard_grpc.DashboardServiceStub(channel) if channel else None
+        self._stub_finetune = finetuning_grpc.FineTuningServiceStub(channel) if channel else None
+        self._stub_generation = stub
+        self._stub_project = project_grpc.ProjectServiceStub(channel) if channel else None
 
-        self._generate = Endpoint(stub, generate_engine_id)
-        self._inpaint = Endpoint(stub, inpaint_engine_id)
-        self._interpolate = Endpoint(stub, interpolate_engine_id)
-        self._transform = Endpoint(stub, transform_engine_id)
-        self._upscale = Endpoint(stub, upscale_engine_id)
+        # endpoints allow overriding RPC connection for specific engines
+        self._generate = Endpoint(self._stub_generation, generate_engine_id)
+        self._inpaint = Endpoint(self._stub_generation, inpaint_engine_id)
+        self._interpolate = Endpoint(self._stub_generation, interpolate_engine_id)
+        self._transform = Endpoint(self._stub_generation, transform_engine_id)
+        self._upscale = Endpoint(self._stub_generation, upscale_engine_id)
 
         self._debug_no_chains = False
-        self._max_retries = 5             # retry request on RPC error
+        self._max_retries = 1             # retry request on RPC error
         self._request_timeout = 30.0      # timeout in seconds for each request
         self._retry_delay = 1.0           # base delay in seconds between retries, each attempt will double
         self._retry_obfuscation = False   # retry request with different seed on classifier obfuscation
@@ -117,8 +126,6 @@ class Context:
         init_depth: Optional[Image.Image] = None,
         mask: Optional[Image.Image] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ORIGINAL,
-        finetune_models: Optional[List[str]] = None,
-        finetune_weights: Optional[List[float]] = None,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
@@ -142,8 +149,6 @@ class Context:
         :param init_noise_scale: Scale of the initial noise
         :param mask: Mask to use (0 for pixels to change, 255 for pixels to keep)
         :param masked_area_init: How to initialize the masked area
-        :param finetune_models: Finetune models to use
-        :param finetune_weights: Weight of each finetune model
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
@@ -165,11 +170,12 @@ class Context:
         if init_depth is not None:
             p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
 
+        finetune_models = parse_models_from_prompts(prompts)
+
         start_schedule = 1.0 - init_strength
         image_params = self._build_image_params(
             width, height, sampler, steps, seed, samples, cfg_scale, 
-            start_schedule, init_noise_scale, masked_area_init, 
-            finetune_models, finetune_weights,
+            start_schedule, init_noise_scale, masked_area_init, finetune_models,
             guidance_preset, guidance_cuts, guidance_strength,
         )
         
@@ -188,10 +194,10 @@ class Context:
     def get_user_info(self) -> Tuple[float, str]:
         """Get the number of credits the user has remaining and their profile picture."""
         if not self._user_organization_id:
-            user = self._dashboard_stub.GetMe(dashboard.EmptyRequest())
+            user = self._stub_dashboard.GetMe(dashboard.EmptyRequest())
             self._user_profile_picture = user.profile_picture
             self._user_organization_id = user.organizations[0].organization.id
-        organization = self._dashboard_stub.GetOrganization(dashboard.GetOrganizationRequest(id=self._user_organization_id))
+        organization = self._stub_dashboard.GetOrganization(dashboard.GetOrganizationRequest(id=self._user_organization_id))
         return organization.payment_info.balance * 100, self._user_profile_picture
 
     def inpaint(
@@ -208,8 +214,6 @@ class Context:
         init_strength: float = 0.0,
         init_noise_scale: Optional[float] = None,
         masked_area_init: generation.MaskedAreaInit = generation.MASKED_AREA_INIT_ZERO,
-        finetune_models: Optional[List[str]] = None,
-        finetune_weights: Optional[List[float]] = None,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: float = 0.0,
@@ -230,8 +234,6 @@ class Context:
         :param init_strength: Strength of the initial image
         :param init_noise_scale: Scale of the initial noise
         :param masked_area_init: How to initialize the masked area
-        :param finetune_models: Finetune models to use
-        :param finetune_weights: Weight of each finetune model
         :param guidance_preset: Preset to use for CLIP guidance
         :param guidance_cuts: Number of cuts to use with CLIP guidance
         :param guidance_strength: Strength of CLIP guidance
@@ -242,12 +244,13 @@ class Context:
         p.append(image_to_prompt(image))
         p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
 
+        finetune_models = parse_models_from_prompts(prompts)
+
         width, height = image.size
         start_schedule = 1.0-init_strength
         image_params = self._build_image_params(
             width, height, sampler, steps, seed, samples, cfg_scale, 
-            start_schedule, init_noise_scale, masked_area_init, 
-            finetune_models, finetune_weights,
+            start_schedule, init_noise_scale, masked_area_init, finetune_models,
             guidance_preset, guidance_cuts, guidance_strength,
         )
 
@@ -551,10 +554,8 @@ class Context:
                 schedule.start = max(0.0, min(1.0, schedule.start + self._retry_schedule_offset))
 
     def _build_image_params(self, width, height, sampler, steps, seed, samples, cfg_scale, 
-                            schedule_start, init_noise_scale, masked_area_init, 
-                            finetune_models, finetune_weights, 
+                            schedule_start, init_noise_scale, masked_area_init, finetune_models, 
                             guidance_preset, guidance_cuts, guidance_strength):
-
         if not seed:
             seed = [random.randrange(0, 4294967295)]
         elif isinstance(seed, int):
@@ -584,16 +585,11 @@ class Context:
                 ]
             )
 
-        fine_tuning_parameters = None
-        if finetune_models:
-            if not finetune_weights:
-                finetune_weights = [1.0] * len(finetune_models)
-            elif len(finetune_models) != len(finetune_weights):
-                raise ValueError("finetune_models and finetune_weights must have the same length")
-            fine_tuning_parameters = [
-                generation.FineTuningParameters(model_id=model, weight=weight)
-                for model, weight in zip(finetune_models, finetune_weights)
-            ]
+        fine_tuning_parameters = (
+            [generation.FineTuningParameters(model_id=model, weight=weight)
+            for model, weight in finetune_models]
+            if finetune_models else None
+        )
 
         return generation.ImageParameters(
             transform=generation.TransformType(diffusion=sampler) if sampler else None,

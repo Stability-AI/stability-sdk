@@ -4,17 +4,12 @@ from enum import Enum
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional
 
-import stability_sdk.interfaces.gooseai.finetuning.finetuning_pb2 as finetuning
-import stability_sdk.interfaces.gooseai.finetuning.finetuning_pb2_grpc as finetuning_grpc
-import stability_sdk.interfaces.gooseai.project.project_pb2 as project
-import stability_sdk.interfaces.gooseai.project.project_pb2_grpc as project_grpc
-
-from .api import generation, generation_grpc, open_channel
+from .api import Context, finetuning, generation, project
 from .utils import image_to_prompt
 
-TRAINING_IMAGE_MAX_COUNT = 64
+TRAINING_IMAGE_MAX_COUNT = 128
 TRAINING_IMAGE_MIN_COUNT = 4
 
 TRAINING_IMAGE_MAX_SIZE = 1024
@@ -54,13 +49,6 @@ class FineTuneParameters(BaseModel):
     mode: FineTuneMode = Field(description="Mode for the fine tuning")
     object_prompt: Optional[str] = Field(description="Prompt of the object for segmentation")
     engine_id: str = Field(description="Engine ID to fine tune")
-
-class Context:
-    def __init__(self, host: str, key: str):
-        channel = open_channel(host, key)
-        self._stub_finetune = finetuning_grpc.FineTuningServiceStub(channel)
-        self._stub_generation = generation_grpc.GenerationServiceStub(channel)
-        self._stub_project = project_grpc.ProjectServiceStub(channel)
 
 FINETUNE_MODE_MAP = {
     FineTuneMode.NONE: finetuning.FINE_TUNING_MODE_UNSPECIFIED,
@@ -188,8 +176,10 @@ def get_model(context: Context, model_id: str) -> FineTuneModel:
     result = context._stub_finetune.GetModel(request)
     return model_from_proto(result.model)
 
-def list_models(context: Context, org_id: str) -> List[FineTuneModel]:
-    request = finetuning.ListModelsRequest(org_id=org_id)
+def list_models(context: Context, org_id: str=None, user_id: str=None) -> List[FineTuneModel]:
+    if org_id and user_id:
+        raise ValueError("Only one of org_id and user_id can be specified")
+    request = finetuning.ListModelsRequest(org_id=org_id, user_id=user_id)
     result = context._stub_finetune.ListModels(request)
     return [model_from_proto(model) for model in result.models]
 

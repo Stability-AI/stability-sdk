@@ -20,6 +20,7 @@ from stability_sdk.utils import (
     image_to_jpg_bytes,
     image_to_png_bytes,
     image_to_prompt,
+    parse_models_from_prompts,
     resample_transform,
     sampler_from_string,
     truncate_fit,
@@ -69,6 +70,21 @@ def test_color_match_from_string_valid(color_match_mode):
 def test_color_match_from_string_invalid():
     with pytest.raises(ValueError, match="invalid color match"):
         color_match_from_string(s='not a real color match mode')
+
+def test_parse_models_from_prompts():
+    assert parse_models_from_prompts(None) == []
+    assert parse_models_from_prompts([]) == []
+    assert parse_models_from_prompts("a simple prompt") == []
+    assert parse_models_from_prompts("a <my-model>") == [("my-model", 1.0)]
+    assert parse_models_from_prompts("a <model-one> and a <model two>") == [("model-one", 1.0), ("model two", 1.0)]
+    assert parse_models_from_prompts("a <with-weight:0.25>") == [("with-weight", 0.25)]
+    assert parse_models_from_prompts("a <neg-weight:-.75>") == [("neg-weight", -0.75)]
+    assert parse_models_from_prompts("a <scientific:1e-2>") == [("scientific", 1e-2)]
+    assert parse_models_from_prompts("a <zero:0>") == [("zero", 0.0)]
+    assert parse_models_from_prompts(["none", "<model-one:1.0>", "<model-two:2.0>"]) == [("model-one", 1.0), ("model-two", 2.0)]
+    assert parse_models_from_prompts(["<dupe:0.25> and <dupe:0.5>"]) == [("dupe", 0.5)]
+    with pytest.raises(ValueError, match="Invalid weight for model \"model-id\": \"bad-weight\""):
+        parse_models_from_prompts("a <model-id:bad-weight>")
 
 
 ####################################
