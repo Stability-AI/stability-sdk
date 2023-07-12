@@ -9,6 +9,7 @@ import numpy as np
 import os
 import param
 import random
+import re
 import shutil
 
 from collections import OrderedDict, deque
@@ -857,7 +858,7 @@ class Animator:
         def remap_model_names(prompt: str) -> str:
             for model, _ in parse_models_from_prompts([prompt]):
                 if model in finetunes:
-                    prompt = prompt.replace(f"<{model}", f"<{finetunes[model]}")
+                    prompt = re.sub(f"<{model}([^>]*)>", f"<{finetunes[model]}\\1>", prompt)
                 else:
                     logging.error(f"No fine-tune model matching name or ID {model}")
             return prompt
