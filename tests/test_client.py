@@ -1,9 +1,40 @@
 from PIL import Image
-from typing import Generator
+from google.protobuf.struct_pb2 import Struct
+from typing import Generator, Optional
 
 from stability_sdk import client
 from stability_sdk.api import generation
 
+class TestStabilityInferenceImageParameters(client.StabilityInference):
+    def emit_request(
+        self,
+        prompt: generation.Prompt,
+        image_parameters: generation.ImageParameters,
+        extra_parameters: Optional[Struct] = None,
+        engine_id: str = None,
+        request_id: str = None,
+    ):
+        return image_parameters
+
+
+def test_content_credentials_not_set():
+    class_instance = TestStabilityInferenceImageParameters(
+        host='foo.bar.baz', key='thisIsNotARealKey')
+    image_params = class_instance.generate(prompt="foo bar")
+
+    assert image_params.content_credentials_parameters.model_metadata == \
+                generation._CONTENTCREDENTIALSPARAMETERS_MODELMETADATA.values_by_name[
+                    'MODEL_METADATA_UNSPECIFIED'].number
+
+def test_content_credentials_set():
+    class_instance = TestStabilityInferenceImageParameters(
+        host='foo.bar.baz', key='thisIsNotARealKey')
+    image_params = class_instance.generate(prompt="foo bar",
+                                           content_credentials_add_default=True)
+
+    assert image_params.content_credentials_parameters.model_metadata == \
+                generation._CONTENTCREDENTIALSPARAMETERS_MODELMETADATA.values_by_name[
+                    'MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number
 
 def test_StabilityInference_init():
     _ = client.StabilityInference(key='thisIsNotARealKey')

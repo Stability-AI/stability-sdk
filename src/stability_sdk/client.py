@@ -171,7 +171,7 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
-        c2pa_add_default_manifest: bool = False,
+        content_credentials_add_default: bool = False,
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -195,7 +195,7 @@ class StabilityInference:
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
-        :param c2pa_add_default_manifest: Add default C2PA manifest or not.
+        :param content_credentials_add_default: Add default Content Credentials or not.
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
@@ -280,11 +280,11 @@ class StabilityInference:
         if sampler:
             transform=generation.TransformType(diffusion=sampler)
 	
-	# empty C2PA Parameters will result in images not being signed by the C2PA server
-        c2pa_params = generation.C2PAParameters()
-        if c2pa_add_default_manifest:
-            c2pa_params = generation.C2PAParameters(
-                model_metadata=generation._C2PAPARAMETERS_MODELMETADATA.values_by_name[
+	# empty Content Credential Parameters will result in images not being signed by the Content Credential server
+        content_credentials_params = generation.ContentCredentialsParameters()
+        if content_credentials_add_default:
+            content_credentials_params = generation.ContentCredentialsParameters(
+                model_metadata=generation._CONTENTCREDENTIALSPARAMETERS_MODELMETADATA.values_by_name[
                     'MODEL_METADATA_SIGN_WITH_ENGINE_ID'].number)
 
         image_parameters=generation.ImageParameters(
@@ -295,7 +295,7 @@ class StabilityInference:
             steps=steps,
             samples=samples,
             parameters=[generation.StepParameter(**step_parameters)],
-            c2pa_parameters=c2pa_params,
+            content_credentials_parameters=content_credentials_params,
         )
 
         return self.emit_request(prompt=prompts, image_parameters=image_parameters)
@@ -509,7 +509,7 @@ def process_cli(logger: logging.Logger = None,
         "--width", "-W", type=int, default=512, help="[512] width of image"
     )
     parser_generate.add_argument(
-        "--c2pa_add_default_manifest", type=bool, action='store_true', default=False, help="Attatch a signed manifest to artifacts using C2PA. The default manifest will contain engine id and publisher name (Stability AI)"
+        "--content_credentials_add_default", type=bool, action='store_true', default=False, help="Attatch a signed manifest to artifacts using C2PA. The default manifest will contain engine id and publisher name (Stability AI)"
     )
     parser_generate.add_argument(
         "--start_schedule",
@@ -644,7 +644,7 @@ def process_cli(logger: logging.Logger = None,
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
-            "c2pa_add_default_manifest": args.c2pa_add_default_manifest,
+            "content_credentials_add_default": args.content_credentials_add_default,
         }
 
         if args.sampler:
