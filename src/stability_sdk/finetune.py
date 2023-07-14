@@ -1,5 +1,6 @@
 import logging
 import mimetypes
+
 from enum import Enum
 from google.protobuf.struct_pb2 import Struct
 from PIL import Image
@@ -134,13 +135,14 @@ def create_model(
                     use=generation.ASSET_USE_INPUT
                 )
             )
-            responses = context._stub_generation.Generate(request)
+
             success = False
             for response in context._stub_generation.Generate(request):
                 for artifact in response.artifacts:
                     if artifact.type == generation.ARTIFACT_TEXT:
                         logging.info(f"Uploaded image {i}: {artifact.text}")
                         success = True
+                        break
             if not success:
                 raise RuntimeError(f"Failed to upload image {image_paths[i]}")
         
