@@ -171,6 +171,9 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
+        adapter_type: generation.T2IAdapter = None,
+        adapter_strength: float = 0.4,
+        adapter_init_type: generation.T2IAdapterInit = generation.T2IADAPTERINIT_IMAGE,
         style_preset: Optional[str] = None
     ) -> Generator[generation.Answer, None, None]:
         """
@@ -195,6 +198,10 @@ class StabilityInference:
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
+        :param adapter_type: T2I adapter type, if any.
+        :param adapter_strength: Float between 0, 1 representing the proportion of unet passes into which we inject adapter weights
+        :param adapter_init_type: If T2IADAPTERINIT_IMAGE then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
+        a sketch/depthmap/canny edge. If T2IADAPTERINIT_ADAPTER_IMAGE, then the init_image is treated as already a a sketch/depthmap/canny edge.
         :param style_preset: Style preset name to use (see https://platform.stability.ai/rest-api#tag/v1generation)
         :return: Generator of Answer objects.
         """
@@ -247,8 +254,7 @@ class StabilityInference:
                 raise ValueError("guidance_prompt must be a string or Prompt object")
         if guidance_strength == 0.0:
             guidance_strength = None
-
-
+        
         # Build our CLIP parameters
         if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
             # to do: make it so user can override this
@@ -276,6 +282,12 @@ class StabilityInference:
                 ],
             )
 
+        adapter_parameters = generation.T2IAdapterParameter(
+            adapter_type = adapter_type,
+            adapter_strength = adapter_strength,
+            adapter_init_type = adapter_init_type,
+        )
+
         transform=None
         if sampler:
             transform=generation.TransformType(diffusion=sampler)
@@ -287,6 +299,7 @@ class StabilityInference:
             seed=seed,
             steps=steps,
             samples=samples,
+            adapter=adapter_parameters,
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
