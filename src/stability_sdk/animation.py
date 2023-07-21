@@ -856,7 +856,11 @@ class Animator:
         # remap model names to IDs in prompts
         finetunes = self._load_finetunes()
         def remap_model_names(prompt: str) -> str:
-            for model, _ in parse_models_from_prompts([prompt]):
+            if not prompt:
+                return prompt
+            prompts, models = parse_models_from_prompts(prompt)
+            prompt = prompts[0]
+            for model, _ in models:
                 if model in finetunes:
                     prompt = re.sub(f"<{model}([^>]*)>", f"<{finetunes[model]}\\1>", prompt)
                 else:

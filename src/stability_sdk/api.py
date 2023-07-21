@@ -162,6 +162,7 @@ class Context:
         if (mask is not None) and (init_image is None) and not return_request:
             raise ValueError("If mask_image is provided, init_image must also be provided")
 
+        prompts, finetune_models = parse_models_from_prompts(prompts)
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         if init_image is not None:
             p.append(image_to_prompt(init_image))
@@ -169,8 +170,6 @@ class Context:
             p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
         if init_depth is not None:
             p.append(image_to_prompt(init_depth, type=generation.ARTIFACT_DEPTH))
-
-        finetune_models = parse_models_from_prompts(prompts)
 
         start_schedule = 1.0 - init_strength
         image_params = self._build_image_params(
@@ -240,11 +239,10 @@ class Context:
         :param preset: Style preset to use
         :return: dict mapping artifact type to data
         """
+        prompts, finetune_models = parse_models_from_prompts(prompts)
         p = [generation.Prompt(text=prompt, parameters=generation.PromptParameters(weight=weight)) for prompt,weight in zip(prompts, weights)]
         p.append(image_to_prompt(image))
         p.append(image_to_prompt(mask, type=generation.ARTIFACT_MASK))
-
-        finetune_models = parse_models_from_prompts(prompts)
 
         width, height = image.size
         start_schedule = 1.0-init_strength

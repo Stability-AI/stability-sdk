@@ -72,17 +72,18 @@ def test_color_match_from_string_invalid():
         color_match_from_string(s='not a real color match mode')
 
 def test_parse_models_from_prompts():
-    assert parse_models_from_prompts(None) == []
-    assert parse_models_from_prompts([]) == []
-    assert parse_models_from_prompts("a simple prompt") == []
-    assert parse_models_from_prompts("a <my-model>") == [("my-model", 1.0)]
-    assert parse_models_from_prompts("a <model-one> and a <model two>") == [("model-one", 1.0), ("model two", 1.0)]
-    assert parse_models_from_prompts("a <with-weight:0.25>") == [("with-weight", 0.25)]
-    assert parse_models_from_prompts("a <neg-weight:-.75>") == [("neg-weight", -0.75)]
-    assert parse_models_from_prompts("a <scientific:1e-2>") == [("scientific", 1e-2)]
-    assert parse_models_from_prompts("a <zero:0>") == [("zero", 0.0)]
-    assert parse_models_from_prompts(["none", "<model-one:1.0>", "<model-two:2.0>"]) == [("model-one", 1.0), ("model-two", 2.0)]
-    assert parse_models_from_prompts(["<dupe:0.25> and <dupe:0.5>"]) == [("dupe", 0.5)]
+    assert parse_models_from_prompts(None) == ([], [])
+    assert parse_models_from_prompts([]) == ([], [])
+    assert parse_models_from_prompts("a simple prompt") == (["a simple prompt"], [])
+    assert parse_models_from_prompts("<weight-strip:0.25>") == (["<weight-strip>"], [("weight-strip", 0.25)])
+    assert parse_models_from_prompts("a <my-model>")[1] == [("my-model", 1.0)]
+    assert parse_models_from_prompts("a <model-one> and a <model two>")[1] == [("model-one", 1.0), ("model two", 1.0)]
+    assert parse_models_from_prompts("a <with-weight:0.25>")[1] == [("with-weight", 0.25)]
+    assert parse_models_from_prompts("a <neg-weight:-.75>")[1] == [("neg-weight", -0.75)]
+    assert parse_models_from_prompts("a <scientific:1e-2>")[1] == [("scientific", 1e-2)]
+    assert parse_models_from_prompts("a <zero:0>")[1] == [("zero", 0.0)]
+    assert parse_models_from_prompts(["none", "<model-one:1.0>", "<model-two:2.0>"])[1] == [("model-one", 1.0), ("model-two", 2.0)]
+    assert parse_models_from_prompts(["<dupe:0.25> and <dupe:0.5>"])[1] == [("dupe", 0.5)]
     with pytest.raises(ValueError, match="Invalid weight for model \"model-id\": \"bad-weight\""):
         parse_models_from_prompts("a <model-id:bad-weight>")
 
