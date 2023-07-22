@@ -1,6 +1,8 @@
 import pytest
 import time
 import base64
+from PIL import Image 
+from io import BytesIO
 
 from stability_sdk.api import CreateRequest, CreateResponse, GenerationResponse
 from stability_sdk.interfaces.gooseai.generation.generation_pb2 import Answer, Artifact
@@ -116,6 +118,8 @@ def test_image_to_image_with_init_image_alpha():
     assert prompts[1].artifact.binary is not None
     assert prompts[2].artifact is not None
     assert prompts[2].artifact.binary is not None
+    image = Image.open(BytesIO(prompts[2].artifact.binary))
+    assert image is not None
 
 
 def test_image_to_image_with_mask_image_white():
@@ -146,6 +150,8 @@ def test_image_to_image_with_mask_image_white():
     assert prompts[1].artifact.binary is not None
     assert prompts[2].artifact is not None
     assert prompts[2].artifact.binary is not None
+    image = Image.open(BytesIO(prompts[2].artifact.binary))
+    assert image is not None
 
 
 def test_image_to_image_with_mask_image_black():
@@ -176,6 +182,8 @@ def test_image_to_image_with_mask_image_black():
     assert prompts[1].artifact.binary is not None
     assert prompts[2].artifact is not None
     assert prompts[2].artifact.binary is not None
+    image = Image.open(BytesIO(prompts[2].artifact.binary))
+    assert image is not None
 
 def test_generation_response_success():
     test_result = {'result': 'success', 'artifacts': [{'base64': 'blahblah', 'finishReason': 'SUCCESS', 'seed': 1}]}

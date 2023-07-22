@@ -189,7 +189,9 @@ def api_request_to_proto(req: GenerationRequest) -> generation.Request:
             if init_image.mode != "RGBA":
                 init_image = init_image.convert("RGBA")
             mask_image = init_image.split()[-1]  # Extract alpha channel
-            mask_binary = mask_image.tobytes()
+            mask_bytes = BytesIO()
+            mask_image.save(mask_bytes, format="PNG")
+            mask_binary = mask_bytes.getvalue()
         elif mask_source == MaskSource.MASK_IMAGE_WHITE:
             # Inverts the provided mask image, having the effect of masking out white pixels.
             if req.mask_image is None:
@@ -201,7 +203,9 @@ def api_request_to_proto(req: GenerationRequest) -> generation.Request:
             if mask_image.mode != "L":
                 mask_image = mask_image.convert("L")
             mask_image = ImageOps.invert(mask_image)
-            mask_binary = mask_image.tobytes()
+            mask_bytes = BytesIO()
+            mask_image.save(mask_bytes, format="PNG")
+            mask_binary = mask_bytes.getvalue()
         elif mask_source == MaskSource.MASK_IMAGE_BLACK:
             # Uses the given mask image as-is, so that black pixels are masked out.
             if req.mask_image is None:
