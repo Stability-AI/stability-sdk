@@ -202,7 +202,7 @@ class StabilityInference:
         :param adapter_strength: Float between 0, 1 representing the proportion of unet passes into which we inject adapter weights
         :param adapter_init_type: If T2IADAPTERINIT_IMAGE then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
         a sketch/depthmap/canny edge. If T2IADAPTERINIT_ADAPTER_IMAGE, then the init_image is treated as already a a sketch/depthmap/canny edge.
-        :param style_preset: Style preset name to use (see https://platform.stability.ai/rest-api#tag/v1generation)
+        :param style_preset: Style preset name to use (see https://platform.stability.ai/docs/api-reference#tag/v1generation)
         :return: Generator of Answer objects.
         """
         if (prompt is None) and (init_image is None):
