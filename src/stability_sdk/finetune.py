@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from .api import Context, finetuning, generation, project
 from .utils import image_to_prompt
 
-TRAINING_IMAGE_MAX_COUNT = 128
+TRAINING_IMAGE_MAX_COUNT = {"none":64, "face":64, "style":128, "object":64}
 TRAINING_IMAGE_MIN_COUNT = 4
 
 TRAINING_IMAGE_MAX_SIZE = 1024
@@ -79,8 +79,10 @@ def create_model(
 ) -> FineTuneModel:
     
     # Validate number of images
-    if len(image_paths) > TRAINING_IMAGE_MAX_COUNT:
-        raise ValueError(f"Too many images, please use at most {TRAINING_IMAGE_MAX_COUNT}")
+    assert params.mode in TRAINING_IMAGE_MAX_COUNT
+    mode_max_count = TRAINING_IMAGE_MAX_COUNT[params.mode]
+    if len(image_paths) > mode_max_count:
+        raise ValueError(f"Too many images for mode \"{params.mode}\", please use at most {mode_max_count}")
     if len(image_paths) < TRAINING_IMAGE_MIN_COUNT:
         raise ValueError(f"Too few images, please use at least {TRAINING_IMAGE_MIN_COUNT}")
     
