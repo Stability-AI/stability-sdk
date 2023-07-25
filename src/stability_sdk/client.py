@@ -28,6 +28,7 @@ from .utils import (
     artifact_type_to_string,
     image_to_prompt,
     open_images,
+    parse_models_from_prompts,
     sampler_from_string,
     truncate_fit,
 )
@@ -166,8 +167,6 @@ class StabilityInference:
         samples: int = 1,
         safety: bool = True,
         classifiers: Optional[generation.ClassifierParameters] = None,
-        finetune_models: Optional[List[str]] = None,
-        finetune_weights: Optional[List[float]] = None,
         guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
         guidance_cuts: int = 0,
         guidance_strength: Optional[float] = None,
@@ -234,6 +233,8 @@ class StabilityInference:
                 raise TypeError("prompt must be a string or generation.Prompt object")
             prompts.append(p)
 
+        prompts, finetune_models = parse_models_from_prompts(prompts)
+
         step_parameters = dict(
             scaled_step=0,
             sampler=generation.SamplerParameters(cfg_scale=cfg_scale),
@@ -296,16 +297,11 @@ class StabilityInference:
         if sampler:
             transform = generation.TransformType(diffusion=sampler)
 
-        fine_tuning_parameters = None
-        if finetune_models:
-            if not finetune_weights:
-                finetune_weights = [1.0] * len(finetune_models)
-            elif len(finetune_models) != len(finetune_weights):
-                raise ValueError("finetune_models and finetune_weights must have the same length")
-            fine_tuning_parameters = [
-                generation.FineTuningParameters(model_id=model, weight=weight)
-                for model, weight in zip(finetune_models, finetune_weights)
-            ]
+        fine_tuning_parameters = (
+            [generation.FineTuningParameters(model_id=model, weight=weight)
+            for model, weight in finetune_models]
+            if finetune_models else None
+        )
 
         image_parameters = generation.ImageParameters(
             transform=transform,

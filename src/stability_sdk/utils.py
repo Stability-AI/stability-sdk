@@ -6,7 +6,7 @@ import re
 import subprocess
 
 from PIL import Image
-from typing import Dict, Generator, List, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 from .api import generation
 from .matrix import Matrix
@@ -344,20 +344,21 @@ def open_images(
             img.show()
         yield (path, artifact)
 
-def parse_models_from_prompts(prompts: Union[str, List[str]]) -> Tuple[List[str], List[Tuple[str, float]]]:
+def parse_models_from_prompts(prompts: Union[Any, List[Any]]) -> Tuple[List[Any], List[Tuple[str, float]]]:
     """
     Parses prompt strings for model names and weights with syntax <model:weight>.
-    :param prompts: List of prompt strings.
-    :return: A list of tuples of model names and weights.
+    :param prompts: List of prompt strings or objects.
+    :return: Updated prompts and list of tuples with model names and weights.
     """
     if not prompts:
         return [], []
-    prompts = [prompts] if isinstance(prompts, str) else prompts
+    prompts = prompts if isinstance(prompts, List) else [prompts]
     pattern = re.compile(r'<([^<>:]+)(?::([^>]+))?>')
     models = {}
-    out_prompts = []
-    for prompt in prompts:
-        matches = pattern.findall(prompt)
+
+    def _process_prompt(prompt):
+        text = prompt.text if isinstance(prompt, generation.Prompt) else prompt
+        matches = pattern.findall(text)
         for model, weight in matches:
             # pass default TI tokens through unmodified
             if model in ["s1", "s2", "s3"]:
@@ -366,9 +367,19 @@ def parse_models_from_prompts(prompts: Union[str, List[str]]) -> Tuple[List[str]
                 weight = max(float(weight) if weight else 1.0, models.get(model, -math.inf))
             except ValueError as e:
                 raise ValueError(f'Invalid weight for model "{model}": "{weight}"') from e
-            prompt = prompt.replace(f'<{model}:{weight}>', f'<{model}>')
+            text = text.replace(f'<{model}:{weight}>', f'<{model}>')
             models[model] = weight
-        out_prompts.append(prompt)
+        return text
+
+    out_prompts = []
+    for prompt in prompts:
+        text = _process_prompt(prompt)
+        if isinstance(prompt, generation.Prompt):
+            prompt.text = text
+            out_prompts.append(prompt)
+        else:
+            out_prompts.append(text)
+
     return out_prompts, list(models.items())
 
 def tensor_to_prompt(tensor: 'tensors_pb.Tensor') -> generation.Prompt:

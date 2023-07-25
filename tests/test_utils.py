@@ -87,6 +87,9 @@ def test_parse_models_from_prompts():
     with pytest.raises(ValueError, match="Invalid weight for model \"model-id\": \"bad-weight\""):
         parse_models_from_prompts("a <model-id:bad-weight>")
 
+    # test support for generation.Prompt objects
+    assert isinstance(parse_models_from_prompts(generation.Prompt(text="a simple prompt"))[0][0], generation.Prompt)
+    assert isinstance(parse_models_from_prompts(["plain str", generation.Prompt(text="a simple prompt")])[0][1], generation.Prompt)
 
 ####################################
 # to do: pytest.mark.paramaterized #
