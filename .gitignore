@@ -8,3 +8,4 @@ pyenv/
 .env
 generation-*.pb.json
 Pipfile*
+.DS_Store

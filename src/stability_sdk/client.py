@@ -28,6 +28,7 @@ from .utils import (
     artifact_type_to_string,
     image_to_prompt,
     open_images,
+    parse_models_from_prompts,
     sampler_from_string,
     truncate_fit,
 )
@@ -193,6 +194,8 @@ class StabilityInference:
         :param samples: Number of samples to generate.
         :param safety: DEPRECATED/UNUSED - Cannot be disabled.
         :param classifiers: DEPRECATED/UNUSED - Has no effect on image generation.
+        :param finetune_models: Finetune models to use
+        :param finetune_weights: Weight of each finetune model
         :param guidance_preset: Guidance preset to use. See generation.GuidancePreset for supported values.
         :param guidance_cuts: Number of cuts to use for guidance.
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
@@ -229,6 +232,8 @@ class StabilityInference:
             elif not isinstance(p, generation.Prompt):
                 raise TypeError("prompt must be a string or generation.Prompt object")
             prompts.append(p)
+
+        prompts, finetune_models = parse_models_from_prompts(prompts)
 
         step_parameters = dict(
             scaled_step=0,
@@ -290,15 +295,22 @@ class StabilityInference:
 
         transform=None
         if sampler:
-            transform=generation.TransformType(diffusion=sampler)
+            transform = generation.TransformType(diffusion=sampler)
 
-        image_parameters=generation.ImageParameters(
+        fine_tuning_parameters = (
+            [generation.FineTuningParameters(model_id=model, weight=weight)
+            for model, weight in finetune_models]
+            if finetune_models else None
+        )
+
+        image_parameters = generation.ImageParameters(
             transform=transform,
             height=height,
             width=width,
             seed=seed,
             steps=steps,
             samples=samples,
+            fine_tuning_parameters=fine_tuning_parameters,
             adapter=adapter_parameters,
             parameters=[generation.StepParameter(**step_parameters)],
         )

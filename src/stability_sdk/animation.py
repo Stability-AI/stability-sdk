@@ -9,6 +9,7 @@ import numpy as np
 import os
 import param
 import random
+import re
 import shutil
 
 from collections import OrderedDict, deque
@@ -27,9 +28,11 @@ from stability_sdk.utils import (
     image_mix,
     image_to_png_bytes,
     interpolate_mode_from_string,
+    parse_models_from_prompts,
     resample_transform,
     sampler_from_string,
 )
+import stability_sdk.finetune as ft
 import stability_sdk.matrix as matrix
 
 logger = logging.getLogger(__name__)
@@ -322,14 +325,15 @@ class Animator:
         self.cadence_on: bool = False
         self.prior_frames: Deque[Image.Image] = deque([], 1)    # forward warped prior frames. stores one image with cadence off, two images otherwise
         self.prior_diffused: Deque[Image.Image] = deque([], 1)  # results of diffusion. stores one image with cadence off, two images otherwise
-        self.prior_xforms: Deque[matrix.Matrix] = deque([], 1)   # accumulated transforms since last diffusion. stores one with cadence off, two otherwise
+        self.prior_xforms: Deque[matrix.Matrix] = deque([], 1)  # accumulated transforms since last diffusion. stores one with cadence off, two otherwise
         self.negative_prompt: str = negative_prompt
         self.negative_prompt_weight: float = negative_prompt_weight
         self.start_frame_idx: int = 0
         self.video_prev_frame: Optional[Image.Image] = None
         self.video_reader: Optional[cv2.VideoCapture] = None
 
-        # configure Api to retry on classifier obfuscations
+        # configure Api to retry on RPC exceptions and classifier obfuscations
+        self.api._max_retries = 5
         self.api._retry_obfuscation = True
 
         # two stage 1024 model requires longer timeout
@@ -849,6 +853,22 @@ class Animator:
         self.load_video()
         self.load_init_image()
 
+        # remap model names to IDs in prompts
+        finetunes = self._load_finetunes()
+        def remap_model_names(prompt: str) -> str:
+            if not prompt:
+                return prompt
+            prompts, models = parse_models_from_prompts(prompt)
+            prompt = prompts[0]
+            for model, _ in models:
+                if model in finetunes:
+                    prompt = re.sub(f"<{model}([^>]*)>", f"<{finetunes[model]}\\1>", prompt)
+                else:
+                    logging.error(f"No fine-tune model matching name or ID {model}")
+            return prompt
+        self.animation_prompts = {k: remap_model_names(v) for k, v in self.animation_prompts.items()}
+        self.negative_prompt = remap_model_names(self.negative_prompt)
+
         # handle resuming animation from last frames of a previous run
         if resume:
             if not self.out_dir:
@@ -963,6 +983,19 @@ class Animator:
             self.video_prev_frame = video_next_frame
             return mask
         return None
+
+    def _load_finetunes(self) -> dict:
+        finetunes = {}
+        if self.api._stub_finetune:
+            try:
+                for model in ft.list_models(self.api):
+                    if model.status == ft.FineTuneStatus.COMPLETED:
+                        finetunes[model.id] = model.id
+                        finetunes[model.name] = model.id
+            except Exception as e:
+                logger.error(f"Failed loading fine-tune models with exception: {e}")
+            logger.info(f"Found {len(finetunes)} fine-tune models")
+        return finetunes
 
     def _postprocess_inpainting_mask(
         self,
