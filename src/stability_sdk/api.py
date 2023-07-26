@@ -69,7 +69,7 @@ class Context:
             host: str="", 
             api_key: str=None, 
             stub: generation_grpc.GenerationServiceStub=None,
-            generate_engine_id: str="stable-diffusion-xl-1024-v0-9",
+            generate_engine_id: str="stable-diffusion-xl-1024-v1-0",
             inpaint_engine_id: str="stable-inpainting-512-v2-0",
             interpolate_engine_id: str="interpolation-server-v1",
             transform_engine_id: str="transform-server-v1",

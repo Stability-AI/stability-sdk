@@ -95,7 +95,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-xl-1024-v0-9",
+        engine: str = "stable-diffusion-xl-1024-v1-0",
         upscale_engine: str = "esrgan-v1-x2plus",
         verbose: bool = False,
         wait_for_ready: bool = True,
@@ -573,7 +573,7 @@ def process_cli(
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-xl-1024-v0-9",
+        default="stable-diffusion-xl-1024-v1-0",
     )
     parser_generate.add_argument(
         "--init_image",
