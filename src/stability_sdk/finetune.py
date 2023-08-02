@@ -13,7 +13,7 @@ from .utils import image_to_prompt
 TRAINING_IMAGE_MAX_COUNT = {"none":64, "face":64, "style":128, "object":64}
 TRAINING_IMAGE_MIN_COUNT = 4
 
-TRAINING_IMAGE_MAX_SIZE = 1024
+TRAINING_IMAGE_MAX_SIZE = 2048
 TRAINING_IMAGE_MIN_SIZE = 384
 
 
