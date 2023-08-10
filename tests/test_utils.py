@@ -74,6 +74,8 @@ def test_color_match_from_string_invalid():
 def test_parse_models_from_prompts():
     assert parse_models_from_prompts(None) == ([], [])
     assert parse_models_from_prompts([]) == ([], [])
+    assert parse_models_from_prompts("a <one:1>")[1] == [("one", 1.0)]
+    assert parse_models_from_prompts("a <one:1.0>")[1] == [("one", 1.0)]
     assert parse_models_from_prompts("a simple prompt") == (["a simple prompt"], [])
     assert parse_models_from_prompts("<weight-strip:0.25>") == (["<weight-strip>"], [("weight-strip", 0.25)])
     assert parse_models_from_prompts("a <my-model>")[1] == [("my-model", 1.0)]

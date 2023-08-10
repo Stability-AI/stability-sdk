@@ -353,23 +353,22 @@ def parse_models_from_prompts(prompts: Union[Any, List[Any]]) -> Tuple[List[Any]
     if not prompts:
         return [], []
     prompts = prompts if isinstance(prompts, List) else [prompts]
-    pattern = re.compile(r"<([^:]+):([^>]+)>")
+    pattern = re.compile(r"<([^:>]+)(?::([^>]+))?>")
     models = {}
 
     def _process_prompt(prompt):
         text = prompt.text if isinstance(prompt, generation.Prompt) else prompt
         matches = pattern.findall(text)
         for model, weight in matches:
+            weight_text = weight if weight else ""
             # pass default TI tokens through unmodified
             if model in ["s1", "s2", "s3"]:
                 continue
             try:
                 weight = max(float(weight) if weight else 1.0, models.get(model, -math.inf))
-                if weight == 1.0:
-                    weight = int(weight)
             except ValueError as e:
                 raise ValueError(f'Invalid weight for model "{model}": "{weight}"') from e
-            text = text.replace(f'<{model}:{weight}>', f'<{model}>')
+            text = text.replace(f'<{model}:{weight_text}>', f'<{model}>')
             models[model] = weight
         return text
 
