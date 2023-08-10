@@ -353,7 +353,7 @@ def parse_models_from_prompts(prompts: Union[Any, List[Any]]) -> Tuple[List[Any]
     if not prompts:
         return [], []
     prompts = prompts if isinstance(prompts, List) else [prompts]
-    pattern = re.compile(r'<([^<>:]+)(?::([^>]+))?>')
+    pattern = re.compile(r"<([^:]+):([^>]+)>")
     models = {}
 
     def _process_prompt(prompt):
@@ -365,6 +365,8 @@ def parse_models_from_prompts(prompts: Union[Any, List[Any]]) -> Tuple[List[Any]
                 continue
             try:
                 weight = max(float(weight) if weight else 1.0, models.get(model, -math.inf))
+                if weight == 1.0:
+                    weight = int(weight)
             except ValueError as e:
                 raise ValueError(f'Invalid weight for model "{model}": "{weight}"') from e
             text = text.replace(f'<{model}:{weight}>', f'<{model}>')
