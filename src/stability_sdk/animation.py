@@ -62,7 +62,7 @@ class BasicSettings(param.Parameterized):
         check_on_set=False, # allow old and new models without raising ValueError
         objects=[
             "stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1", 
-            "stable-diffusion-depth-v2-0", "stable-diffusion-xl-beta-v2-2-2",
+            "stable-diffusion-depth-v2-0", "stable-diffusion-xl-beta-v2-2-2", "stable-diffusion-xl-1024-v1-0",
             "custom"
         ]
     )
@@ -331,6 +331,10 @@ class Animator:
 
         # configure Api to retry on classifier obfuscations
         self.api._retry_obfuscation = True
+
+        # two stage 1024 model requires longer timeout
+        if self.args.model.startswith('stable-diffusion-xl-1024'):
+            self.api._request_timeout = 120.0
 
         # create output directory
         if self.out_dir is not None:

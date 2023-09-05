@@ -95,7 +95,7 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-xl-beta-v2-2-2",
+        engine: str = "stable-diffusion-xl-1024-v1-0",
         upscale_engine: str = "esrgan-v1-x2plus",
         enhance_engine: str = "face-enhance-v1",
         verbose: bool = False,
@@ -157,8 +157,8 @@ class StabilityInference:
         prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]],
         init_image: Optional[Image.Image] = None,
         mask_image: Optional[Image.Image] = None,
-        height: int = 512,
-        width: int = 512,
+        height: int = 1024,
+        width: int = 1024,
         start_schedule: float = 1.0,
         end_schedule: float = 0.01,
         cfg_scale: float = 7.0,
@@ -175,6 +175,10 @@ class StabilityInference:
         guidance_models: List[str] = None,
         upscale: Union[bool, Dict[str, Any]] = False,
         enhance: Union[bool, Dict[str, Any]] = False,
+        adapter_type: generation.T2IAdapter = None,
+        adapter_strength: float = 0.4,
+        adapter_init_type: generation.T2IAdapterInit = generation.T2IADAPTERINIT_IMAGE,
+        style_preset: Optional[str] = None
     ) -> Generator[generation.Answer, None, None]:
         """
         Generate images from a prompt.
@@ -200,6 +204,11 @@ class StabilityInference:
         :param guidance_models: Models to use for guidance.
         :param upscale: Whether to upscale the generated images. Can also pass a dictionary of upscale arguments. See client.upscale for supported values.
         :param enhance: Whether to enhance the generated images. Can also pass a dictionary of enhance arguments. See client._make_enhance_request for supported values.
+        :param adapter_type: T2I adapter type, if any.
+        :param adapter_strength: Float between 0, 1 representing the proportion of unet passes into which we inject adapter weights
+        :param adapter_init_type: If T2IADAPTERINIT_IMAGE then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
+        a sketch/depthmap/canny edge. If T2IADAPTERINIT_ADAPTER_IMAGE, then the init_image is treated as already a a sketch/depthmap/canny edge.
+        :param style_preset: Style preset name to use (see https://platform.stability.ai/docs/api-reference#tag/v1generation)
         :return: Generator of Answer objects.
         """
         
@@ -220,7 +229,11 @@ class StabilityInference:
                 guidance_cuts = guidance_cuts,
                 guidance_strength = guidance_strength,
                 guidance_prompt = guidance_prompt,
-                guidance_models = guidance_models
+                guidance_models = guidance_models,
+                adapter_type = adapter_type,
+                adapter_strength = adapter_strength,
+                adapter_init_type = adapter_init_type,
+                style_preset = style_preset
             )
         
         if not upscale and not enhance:
@@ -378,6 +391,10 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
+        adapter_type: generation.T2IAdapter = None,
+        adapter_strength: float = 0.4,
+        adapter_init_type: generation.T2IAdapterInit = generation.T2IADAPTERINIT_IMAGE,
+        style_preset: Optional[str] = None
     ):
         """
         Create a generate request
@@ -435,8 +452,7 @@ class StabilityInference:
                 raise ValueError("guidance_prompt must be a string or Prompt object")
         if guidance_strength == 0.0:
             guidance_strength = None
-
-
+        
         # Build our CLIP parameters
         if guidance_preset is not generation.GUIDANCE_PRESET_NONE:
             # to do: make it so user can override this
@@ -464,6 +480,12 @@ class StabilityInference:
                 ],
             )
 
+        adapter_parameters = generation.T2IAdapterParameter(
+            adapter_type = adapter_type,
+            adapter_strength = adapter_strength,
+            adapter_init_type = adapter_init_type,
+        )
+
         transform=None
         if sampler:
             transform=generation.TransformType(diffusion=sampler)
@@ -475,17 +497,25 @@ class StabilityInference:
             seed=seed,
             steps=steps,
             samples=samples,
+            adapter=adapter_parameters,
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
         request_id = str(uuid.uuid4())
         engine_id = self.engine
 
+        if style_preset and style_preset.lower() != 'none':
+            extras = Struct()
+            extras.update({ '$IPC': { "preset": style_preset } })
+        else:
+            extras = None
+
         rq = generation.Request(
             engine_id=engine_id,
             request_id=request_id,
             prompt=prompts,
             image=image_parameters,
+            extras=extras
         )
 
         return rq
@@ -641,9 +671,10 @@ class StabilityInference:
             yield answer
             start = time.time()
 
-def process_cli(logger: logging.Logger = None,
-                warn_client_call_deprecated: bool = True,
-                ):
+def process_cli(
+    logger: logging.Logger = None,
+    warn_client_call_deprecated: bool = True,
+):
     if not logger:
         logger = logging.getLogger(__name__)
         logger.setLevel(level=logging.INFO)
@@ -742,10 +773,10 @@ def process_cli(logger: logging.Logger = None,
 
     parser_generate = subparsers.add_parser('generate')
     parser_generate.add_argument(
-        "--height", "-H", type=int, default=512, help="[512] height of image"
+        "--height", "-H", type=int, default=1024, help="[1024] height of image"
     )
     parser_generate.add_argument(
-        "--width", "-W", type=int, default=512, help="[512] width of image"
+        "--width", "-W", type=int, default=1024, help="[1024] width of image"
     )
     parser_generate.add_argument(
         "--start_schedule",
@@ -773,6 +804,7 @@ def process_cli(logger: logging.Logger = None,
     )
     parser_generate.add_argument(
         "--seed", "-S", type=int, default=0, help="random seed to use")
+    parser_generate.add_argument("--style_preset", type=str, help="style preset name")
     parser_generate.add_argument(
         "--prefix",
         "-p",
@@ -799,7 +831,7 @@ def process_cli(logger: logging.Logger = None,
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-xl-beta-v2-2-2",
+        default="stable-diffusion-xl-1024-v1-0",
     )
     parser_generate.add_argument(
         "--init_image",
@@ -908,6 +940,7 @@ def process_cli(logger: logging.Logger = None,
             "mask_image": args.mask_image,
             "upscale": upscale,
             "enhance": enhance,
+            "style_preset": args.style_preset,
         }
 
         if args.sampler:
