@@ -10,7 +10,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.8.4',
+    version='0.8.5',
     author='Stability AI',
     author_email='support@stability.ai',
     maintainer='Stability AI',
@@ -22,8 +22,8 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         'Pillow',
-        'grpcio==1.53.0',
-        'grpcio-tools==1.53.0',
+        'grpcio==1.59.0',
+        'grpcio-tools==1.59.0',
         'python-dotenv',
         'param',
         'protobuf==4.21.12'
