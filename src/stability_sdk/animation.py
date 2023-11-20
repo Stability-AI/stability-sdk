@@ -35,7 +35,7 @@ import stability_sdk.matrix as matrix
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
-DEFAULT_MODEL = 'stable-diffusion-v1-5'
+DEFAULT_MODEL = 'stable-diffusion-xl-1024-v0-9'
 TRANSLATION_SCALE = 1.0/200.0 # matches Disco and Deforum
 
 docstring_bordermode = ( 
@@ -61,9 +61,8 @@ class BasicSettings(param.Parameterized):
         default=DEFAULT_MODEL, 
         check_on_set=False, # allow old and new models without raising ValueError
         objects=[
-            "stable-diffusion-v1-5", "stable-diffusion-512-v2-1", "stable-diffusion-768-v2-1", 
-            "stable-diffusion-depth-v2-0", "stable-diffusion-xl-beta-v2-2-2", "stable-diffusion-xl-1024-v1-0",
-            "custom"
+            "stable-diffusion-512-v2-1", "stable-diffusion-xl-beta-v2-2-2", "stable-diffusion-xl-1024-v0-9", 
+            "stable-diffusion-xl-1024-v1-0", "custom"
         ]
     )
     custom_model = param.String(default="", doc="Identifier of custom model to use.")

@@ -10,7 +10,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.8.4',
+    version='0.8.5',
     author='Stability AI',
     author_email='support@stability.ai',
     maintainer='Stability AI',
@@ -40,7 +40,7 @@ setup(
         ],
         'anim_ui': [
             'keyframed',
-            'gradio',
+            'gradio==3.50.2',
             'numpy',
             'opencv-python-headless',
             'tqdm',

@@ -158,7 +158,7 @@ negative_prompt = "blurry, low resolution"
 negative_prompt_weight = -1.0
 
 controls: Dict[str, gr.components.Component] = {}
-header = gr.HTML("", show_progress=False)
+header = gr.HTML("")
 interrupt = False
 last_interp_factor = None
 last_interp_mode = None
