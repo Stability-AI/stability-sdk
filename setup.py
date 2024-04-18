@@ -22,7 +22,7 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         'Pillow',
-        'grpcio==1.53.0',
+        'grpcio==1.53.2',
         'grpcio-tools==1.53.0',
         'python-dotenv',
         'param',
