@@ -22,8 +22,8 @@ setup(
     long_description_content_type="text/markdown",
     install_requires=[
         'Pillow',
-        'grpcio==1.53.0',
-        'grpcio-tools==1.53.0',
+        'grpcio>=1.53.0,<1.64.0',
+        'grpcio-tools>=1.53.0,<1.64.0',
         'python-dotenv',
         'param',
         'protobuf==4.21.12'
