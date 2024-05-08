@@ -10,7 +10,7 @@ with open('README.md','r') as f:
 
 setup(
     name='stability-sdk',
-    version='0.8.5',
+    version='0.8.6',
     author='Stability AI',
     author_email='support@stability.ai',
     maintainer='Stability AI',
@@ -26,7 +26,7 @@ setup(
         'grpcio-tools>=1.53.0,<1.64.0',
         'python-dotenv',
         'param',
-        'protobuf==4.21.12'
+        'protobuf>=4.21.12,<6.0.0'
     ],
     extras_require={
         'dev': [
