@@ -97,6 +97,7 @@ class StabilityInference:
         key: str = "",
         engine: str = "stable-diffusion-xl-1024-v1-0",
         upscale_engine: str = "esrgan-v1-x2plus",
+        enhance_engine: str = "face-enhance-v1",
         verbose: bool = False,
         wait_for_ready: bool = True,
     ):
@@ -114,6 +115,7 @@ class StabilityInference:
         self.verbose = verbose
         self.engine = engine
         self.upscale_engine = upscale_engine
+        self.enhance_engine = enhance_engine
 
         self.grpc_args = {"wait_for_ready": wait_for_ready}
         if verbose:
@@ -171,6 +173,8 @@ class StabilityInference:
         guidance_strength: Optional[float] = None,
         guidance_prompt: Union[str, generation.Prompt] = None,
         guidance_models: List[str] = None,
+        upscale: Union[bool, Dict[str, Any]] = False,
+        enhance: Union[bool, Dict[str, Any]] = False,
         adapter_type: generation.T2IAdapter = None,
         adapter_strength: float = 0.4,
         adapter_init_type: generation.T2IAdapterInit = generation.T2IADAPTERINIT_IMAGE,
@@ -198,12 +202,206 @@ class StabilityInference:
         :param guidance_strength: Strength of the guidance. We recommend values in range [0.0,1.0]. A good default is 0.25
         :param guidance_prompt: Prompt to use for guidance, defaults to `prompt` argument (above) if not specified.
         :param guidance_models: Models to use for guidance.
+        :param upscale: Whether to upscale the generated images. Can also pass a dictionary of upscale arguments. See client.upscale for supported values.
+        :param enhance: Whether to enhance the generated images. Can also pass a dictionary of enhance arguments. See client._make_enhance_request for supported values.
         :param adapter_type: T2I adapter type, if any.
         :param adapter_strength: Float between 0, 1 representing the proportion of unet passes into which we inject adapter weights
         :param adapter_init_type: If T2IADAPTERINIT_IMAGE then init_image is converted into an initialising image corresponding to the adapter_type. i.e.
         a sketch/depthmap/canny edge. If T2IADAPTERINIT_ADAPTER_IMAGE, then the init_image is treated as already a a sketch/depthmap/canny edge.
         :param style_preset: Style preset name to use (see https://platform.stability.ai/docs/api-reference#tag/v1generation)
         :return: Generator of Answer objects.
+        """
+        
+        generate_rq = self._make_generate_request(
+                prompt = prompt,
+                init_image = init_image,
+                mask_image = mask_image,
+                height = height,
+                width = width,
+                start_schedule = start_schedule,
+                end_schedule = end_schedule,
+                cfg_scale = cfg_scale,
+                sampler = sampler,
+                steps = steps,
+                seed = seed,
+                samples = samples,
+                guidance_preset = guidance_preset,
+                guidance_cuts = guidance_cuts,
+                guidance_strength = guidance_strength,
+                guidance_prompt = guidance_prompt,
+                guidance_models = guidance_models,
+                adapter_type = adapter_type,
+                adapter_strength = adapter_strength,
+                adapter_init_type = adapter_init_type,
+                style_preset = style_preset
+            )
+        
+        if not upscale and not enhance:
+            yield from self.run_request(generate_rq)
+        else:
+            if isinstance(upscale, bool):
+                upscale_kwargs = {}
+            elif isinstance(upscale, dict):
+                upscale_kwargs = upscale
+                upscale = True
+            else:
+                raise ValueError("upscale must be a boolean or dict")
+            if isinstance(enhance, bool):
+                enhance_kwargs = {}
+            elif isinstance(enhance, dict):
+                enhance_kwargs = enhance
+                enhance = True
+            else:
+                raise ValueError("enhance must be a boolean or dict")
+
+            # Remove init image if it is in upscale_kwargs. 
+            # It is not needed for chaining
+            init_image_upscale_arg = upscale_kwargs.pop('init_image', None)
+            if init_image_upscale_arg is not None:
+                logger.info(f"Generate upscale request: " \
+                            f"init_image not needed in upscale_kwargs, but was provided. It has been automatically removed from the request. " \
+                            "init_image: {init_image}")
+
+            # Construct requests for the chain
+            chain_rq_list = [generate_rq]
+            stage_ids = ['generate']
+            if upscale:
+                upscale_rq = self._make_upscale_request(**upscale_kwargs)
+                chain_rq_list.append(upscale_rq)
+                stage_ids.append('upscale')
+            if enhance:
+                enhance_rq = self._make_enhance_request(**enhance_kwargs)
+                chain_rq_list.append(enhance_rq)
+                stage_ids.append('enhance')
+
+            yield from self.run_request_chain(
+                requests = chain_rq_list,
+                stage_ids = stage_ids
+                )
+    
+    def upscale(
+        self,
+        init_image: Image.Image,
+        height: int = None,
+        width: int = None,
+        prompt: Union[str, generation.Prompt] = None,
+        steps: Optional[int] = 20,
+        cfg_scale: float = 7.0,
+        seed: int = 0
+    ) -> Generator[generation.Answer, None, None]:
+        """
+        Upscale an image.
+
+        :param init_image: Image to upscale.
+
+        Optional parameters for upscale method:
+
+        :param height: Height of the output images.
+        :param width: Width of the output images.
+        :param prompt: Prompt used in text conditioned models
+        :param steps: Number of diffusion steps
+        :param cfg_scale: Intensity of the prompt, when a prompt is used
+        :param seed: Seed for the random number generator.
+
+        Some variables are not used for specific engines, but are included for consistency.
+
+        Variables ignored in ESRGAN engines: prompt, steps, cfg_scale, seed
+
+        :return: Generator of Answer objects.
+        """
+        rq = self._make_upscale_request(
+                init_image=init_image,
+                height=height,
+                width=width,
+                prompt=prompt,
+                steps=steps,
+                cfg_scale=cfg_scale,
+                seed=seed
+        )
+
+        yield from self.run_request(rq)
+
+    def run_request_chain(
+            self,
+            requests: List[generation.Request],
+            stage_ids: List[str] = None,
+            request_id: str = None,
+    ):
+        chain_rq = self._make_linear_chain(
+                requests = requests,
+                stage_ids = stage_ids,
+                request_id = request_id
+            )
+
+        yield from self.run_request(chain_rq)
+        
+    
+    def _make_linear_chain(
+            self,
+            requests: List[generation.Request],
+            stage_ids: List[str] = None,
+            request_id: str = None,
+    ):
+        if stage_ids is None:
+            stage_ids = [f"stage_{i}" for i in range(len(requests))]
+        elif len(stage_ids) != len(requests):
+            raise ValueError("stage_ids must be the same length as requests")
+        if request_id is None:
+            request_id = "generate_chain"
+        
+        # Construct stages from the requests
+        stages = []
+        for i in range(len(requests)):
+            # Action = return on the last stage, pass on all others
+            if i == len(requests) - 1:
+                action = [generation.STAGE_ACTION_RETURN]
+                target = None
+            else:
+                action = [generation.STAGE_ACTION_PASS]
+                target = stage_ids[i+1]
+
+            stages.append(generation.Stage(
+                id=stage_ids[i],
+                request=requests[i], 
+                on_status=[generation.OnStatus(
+                    action=action,
+                    target=target
+                )]
+            ))
+
+        chain_rq = generation.ChainRequest(request_id=request_id, stage=stages)
+        return chain_rq
+
+    def _make_generate_request(
+        self,
+        prompt: Union[str, List[str], generation.Prompt, List[generation.Prompt]],
+        init_image: Optional[Image.Image] = None,
+        mask_image: Optional[Image.Image] = None,
+        height: int = 512,
+        width: int = 512,
+        start_schedule: float = 1.0,
+        end_schedule: float = 0.01,
+        cfg_scale: float = 7.0,
+        sampler: generation.DiffusionSampler = None,
+        steps: Optional[int] = None,
+        seed: Union[Sequence[int], int] = 0,
+        samples: int = 1,
+        guidance_preset: generation.GuidancePreset = generation.GUIDANCE_PRESET_NONE,
+        guidance_cuts: int = 0,
+        guidance_strength: Optional[float] = None,
+        guidance_prompt: Union[str, generation.Prompt] = None,
+        guidance_models: List[str] = None,
+        adapter_type: generation.T2IAdapter = None,
+        adapter_strength: float = 0.4,
+        adapter_init_type: generation.T2IAdapterInit = generation.T2IADAPTERINIT_IMAGE,
+        style_preset: Optional[str] = None
+    ):
+        """
+        Create a generate request
+
+        Refer to client.generate for parameter descriptions.
+
+        :return: generation.Request object.
         """
         if (prompt is None) and (init_image is None):
             raise ValueError("prompt and/or init_image must be provided")
@@ -303,44 +501,53 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
+        request_id = str(uuid.uuid4())
+        engine_id = self.engine
+
         if style_preset and style_preset.lower() != 'none':
             extras = Struct()
             extras.update({ '$IPC': { "preset": style_preset } })
         else:
             extras = None
 
-        return self.emit_request(prompt=prompts, image_parameters=image_parameters, extra_parameters=extras)
+        rq = generation.Request(
+            engine_id=engine_id,
+            request_id=request_id,
+            prompt=prompts,
+            image=image_parameters,
+            extras=extras
+        )
+
+        return rq
     
-    def upscale(
+    def _make_upscale_request(
         self,
-        init_image: Image.Image,
+        init_image: Image.Image = None,
         height: int = None,
         width: int = None,
         prompt: Union[str, generation.Prompt] = None,
         steps: Optional[int] = 20,
         cfg_scale: float = 7.0,
         seed: int = 0
-    ) -> Generator[generation.Answer, None, None]:
+    ) -> generation.Request:
         """
-        Upscale an image.
+        Create an upscale request for a chain of engines.
 
-        :param init_image: Image to upscale.
+        Refer to client.upscale for parameter descriptions.
 
-        Optional parameters for upscale method:
-
-        :param height: Height of the output images.
-        :param width: Width of the output images.
-        :param prompt: Prompt used in text conditioned models
-        :param steps: Number of diffusion steps
-        :param cfg_scale: Intensity of the prompt, when a prompt is used
-        :param seed: Seed for the random number generator.
-
-        Some variables are not used for specific engines, but are included for consistency.
-
-        Variables ignored in ESRGAN engines: prompt, steps, cfg_scale, seed
-
-        :return: Tuple of (prompts, image_parameters)
+        :return: generation.Request object.
         """
+        if init_image is None:
+            prompts = []
+        else:
+            prompts = [image_to_prompt(init_image)]
+
+        if prompt:
+            if isinstance(prompt, str):
+                prompt = generation.Prompt(text=prompt)
+            elif not isinstance(prompt, generation.Prompt):
+                raise ValueError("prompt must be a string or Prompt object")
+            prompts.append(prompt)
 
         step_parameters = dict(
             sampler=generation.SamplerParameters(cfg_scale=cfg_scale)
@@ -354,17 +561,51 @@ class StabilityInference:
             parameters=[generation.StepParameter(**step_parameters)],
         )
 
-        prompts = [image_to_prompt(init_image)]
+        request_id = str(uuid.uuid4())
 
-        if prompt:
-            if isinstance(prompt, str):
-                prompt = generation.Prompt(text=prompt)
-            elif not isinstance(prompt, generation.Prompt):
-                raise ValueError("prompt must be a string or Prompt object")
-            prompts.append(prompt)
+        rq = generation.Request(
+            engine_id=self.upscale_engine,
+            request_id=request_id,
+            prompt=prompts,
+            image=image_parameters
+        )
 
-        return self.emit_request(prompt=prompts, image_parameters=image_parameters, engine_id=self.upscale_engine)
+        return rq
     
+    def _make_enhance_request(
+        self,
+        weight: int = 0.7,
+        engine_id: str = None,
+        request_id: str = None,
+    ) -> generation.Request:
+        """
+        Create an enhance request for a chain of engines.
+
+        Optional parameters for enhance method:
+
+        :param weight: Weight of the enhancement. 0 is no enhancement, 1 is full enhancement.
+
+        :return: generation.Request object.
+        """
+        extras = Struct()
+        extras.update({
+            'weight': weight
+        })
+
+        image_parameters=generation.ImageParameters()
+        
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        if not engine_id:
+            engine_id = self.enhance_engine
+
+        rq = generation.Request(
+            engine_id=engine_id,
+            request_id=request_id,
+            image=image_parameters,
+            extras=extras
+        )
+        return rq    
 
     # The motivation here is to facilitate constructing requests by passing protobuf objects directly.
     def emit_request(
@@ -375,6 +616,13 @@ class StabilityInference:
         engine_id: str = None,
         request_id: str = None,
     ):
+        logger.warning(
+            "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
+            "[Deprecation Warning] Please modify your code to use " 
+            "[Deprecation Warning] `generate_rq = client._make_generate_request(...` " 
+            "[Deprecation Warning] and "
+            "[Deprecation Warning] `client.run_request(generate_rq)`"
+        )
         if not request_id:
             request_id = str(uuid.uuid4())
         if not engine_id:
@@ -388,11 +636,22 @@ class StabilityInference:
             extras=extra_parameters
         )
 
+        yield from self.run_request(rq)
+
+
+    def run_request(self,
+                   rq: Union[generation.ChainRequest, generation.Request]
+    ) -> generation.Answer:
         if self.verbose:
             logger.info("Sending request.")
 
+        if isinstance(rq, generation.Request):
+            generate_func = self.stub.Generate
+        else:
+            generate_func = self.stub.ChainGenerate
+
         start = time.time()
-        for answer in self.stub.Generate(rq, **self.grpc_args):
+        for answer in generate_func(rq, **self.grpc_args):
             duration = time.time() - start
             if self.verbose:
                 if len(answer.artifacts) > 0:
@@ -506,7 +765,6 @@ def process_cli(
         "prompt", nargs="*"
     )
 
-
     parser_animate = subparsers.add_parser('animate')
     parser_animate.add_argument("--gui", action="store_true", help="serve Gradio UI")
     parser_animate.add_argument("--share", action="store_true", help="create shareable UI link")
@@ -587,6 +845,21 @@ def process_cli(
         type=str,
         help="Mask image",
     )
+    parser_generate.add_argument(
+        "--upscale_engine",
+        "-U",
+        type=str,
+        help="Engine to upscale image. Can be 'none' for no upscale, or 'default' to use the default upscale engine ('esrgan-v1-x2plus').",
+        default='none',
+    )
+    parser_generate.add_argument(
+        "--enhance_engine",
+        "-E",
+        type=str,
+        help="Engine to enhance image. Can be 'none' for no enhancement, or 'default' to use the default enhancement engine ('face-enhance-v1').",
+        default='none',
+
+    )
     parser_generate.add_argument("prompt", nargs="*")
 
     
@@ -601,7 +874,7 @@ def process_cli(
             "[Deprecation Warning] The method you have used to invoke the sdk will be deprecated shortly."
             "[Deprecation Warning] Please modify your code to call the sdk with the following syntax:"
             "[Deprecation Warning] python -m stability_sdk <command> <args>"
-            "[Deprecation Warning] Where <command> is one of: upscale, generate"
+            "[Deprecation Warning] Where <command> is one of: upscale, generate, animate"
         )
         input_args = ['generate'] + input_args
       
@@ -644,6 +917,17 @@ def process_cli(
         if args.mask_image:
             args.mask_image = Image.open(args.mask_image)
 
+
+        engine_kwargs = {'engine': args.engine}
+
+        upscale = args.upscale_engine != 'none'
+        if upscale and args.upscale_engine != 'default':
+            engine_kwargs['upscale_engine'] = args.upscale_engine
+
+        enhance = args.enhance_engine != 'none'
+        if enhance and args.enhance_engine != 'default':
+            engine_kwargs['enhance_engine'] = args.enhance_engine
+
         request =  {
             "height": args.height,
             "width": args.width,
@@ -654,6 +938,8 @@ def process_cli(
             "samples": args.num_samples,
             "init_image": args.init_image,
             "mask_image": args.mask_image,
+            "upscale": upscale,
+            "enhance": enhance,
             "style_preset": args.style_preset,
         }
 
@@ -664,7 +950,7 @@ def process_cli(
             request["steps"] = args.steps
 
         stability_api = StabilityInference(
-            STABILITY_HOST, STABILITY_KEY, engine=args.engine, verbose=True
+            STABILITY_HOST, STABILITY_KEY, verbose=True, **engine_kwargs
         )
         answers = stability_api.generate(args.prompt, **request)
         artifacts = process_artifacts_from_answers(
