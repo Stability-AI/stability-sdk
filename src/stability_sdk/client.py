@@ -95,8 +95,8 @@ class StabilityInference:
         self,
         host: str = "grpc.stability.ai:443",
         key: str = "",
-        engine: str = "stable-diffusion-xl-1024-v1-0",
-        upscale_engine: str = "esrgan-v1-x2plus",
+        engine: str = None,
+        upscale_engine: str = None,
         verbose: bool = False,
         wait_for_ready: bool = True,
     ):
@@ -105,16 +105,20 @@ class StabilityInference:
 
         :param host: Host to connect to.
         :param key: Key to use for authentication.
-        :param engine: Engine to use.
-        :param upscale_engine: Upscale engine to use.
+        :param engine: Engine to use. Defaults to the value from the environment
+            variable DEFAULT_ENGINE, or "stable-diffusion-xl-1024-v1-0" if the
+            variable is not set.
+        :param upscale_engine: Upscale engine to use. Defaults to the value from the
+            environment variable UPSCALE_ENGINE, or "esrgan-v1-x2plus" if the variable
+            is not set.
         :param verbose: Whether to print debug messages.
         :param wait_for_ready: Whether to wait for the server to be ready, or
             to fail immediately.
         """
         self.verbose = verbose
-        self.engine = engine
-        self.upscale_engine = upscale_engine
-
+        self.engine = engine or os.getenv("DEFAULT_ENGINE", "stable-diffusion-xl-1024-v1-0")
+        self.upscale_engine = upscale_engine or os.getenv("DEFAULT_UPSCALE_ENGINE", "esrgan-v1-x2plus")
+        
         self.grpc_args = {"wait_for_ready": wait_for_ready}
         if verbose:
             logger.info(f"Opening channel to {host}")
@@ -500,7 +504,7 @@ def process_cli(
         "-e",
         type=str,
         help="engine to use for upscale",
-        default="esrgan-v1-x2plus",
+        default=None,
     )
     parser_upscale.add_argument(
         "prompt", nargs="*"
@@ -573,7 +577,7 @@ def process_cli(
         "-e",
         type=str,
         help="engine to use for inference",
-        default="stable-diffusion-xl-1024-v1-0",
+        default=None,
     )
     parser_generate.add_argument(
         "--init_image",

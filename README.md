@@ -23,6 +23,8 @@ Install the [PyPI](https://pypi.org/project/stability-sdk/) package via:
 - `pyenv/bin/activate` to use the venv.
 - Set the `STABILITY_HOST` environment variable. This is by default set to the production endpoint `grpc.stability.ai:443`.
 - Set the `STABILITY_KEY` environment variable.
+- Optional, set the `DEFAULT_ENGINE` environment variable. This is by default set to `stable-diffusion-xl-1024-v1-0`.
+- Optional, set the `DEFAULT_UPSCALE_ENGINE` environment variable. This is by default set to `esrgan-v1-x2plus`.
 
 Then to invoke:
 
